@@ -44,15 +44,35 @@ const toRequestId = () =>
 
 export const collectVoidContext = async (
   source: VoidBridgeContextSource,
-): Promise<TaskContextPayload> => ({
-  activeFile: await source.getActiveFile(),
-  selection: await source.getSelection(),
-  openFiles: await source.getOpenFiles(),
-  diagnostics: await source.getDiagnostics(),
-  gitDiff: await source.getGitDiff(),
-  terminalTail: await source.getTerminalTail(),
-  testLogs: await source.getTestLogs(),
-})
+): Promise<TaskContextPayload> => {
+  const [
+    activeFile,
+    selection,
+    openFiles,
+    diagnostics,
+    gitDiff,
+    terminalTail,
+    testLogs,
+  ] = await Promise.all([
+    source.getActiveFile(),
+    source.getSelection(),
+    source.getOpenFiles(),
+    source.getDiagnostics(),
+    source.getGitDiff(),
+    source.getTerminalTail(),
+    source.getTestLogs(),
+  ])
+
+  return {
+    activeFile,
+    selection,
+    openFiles,
+    diagnostics,
+    gitDiff,
+    terminalTail,
+    testLogs,
+  }
+}
 
 export const buildVoidTaskRequest = async (
   source: VoidBridgeContextSource,
@@ -63,6 +83,12 @@ export const buildVoidTaskRequest = async (
     ...args.policy,
   }
 
+  const [repoRootPath, branch, context] = await Promise.all([
+    source.getRepoRootPath(),
+    source.getBranch?.(),
+    collectVoidContext(source),
+  ])
+
   return {
     requestId: args.requestIdFactory?.() ?? toRequestId(),
     sessionId: args.sessionId,
@@ -70,10 +96,10 @@ export const buildVoidTaskRequest = async (
     mode: args.mode,
     userPrompt: args.userPrompt,
     repo: {
-      rootPath: await source.getRepoRootPath(),
-      branch: await source.getBranch?.(),
+      rootPath: repoRootPath,
+      branch,
     },
-    context: await collectVoidContext(source),
+    context,
     policy,
   }
 }

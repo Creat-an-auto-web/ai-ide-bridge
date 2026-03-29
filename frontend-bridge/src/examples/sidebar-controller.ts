@@ -6,8 +6,8 @@ import {
   TaskStatus,
 } from '../protocol.js'
 import { BridgeState } from '../state.js'
+import { VoidBridgeContextSource } from '../void-adapter.js'
 import {
-  VoidBridgeContextSource,
   VoidBridgeController,
 } from './void-source-skeleton.js'
 
@@ -117,10 +117,10 @@ const toSidebarState = (
 export type BridgeSidebarListener = (state: BridgeSidebarPanelState) => void
 
 /**
- * This is a UI-facing controller skeleton.
+ * 这是一个面向 UI 的 controller 骨架。
  *
- * It stays in pure TypeScript so you can reuse it from a React sidebar, a native
- * panel, or a different host without changing the bridge client.
+ * 它保持为纯 TypeScript，实现上可以被 React sidebar、本地面板或其他宿主复用，
+ * 不需要改动 bridge client。
  */
 export class BridgeSidebarController {
   private readonly bridgeClient: BridgeClient

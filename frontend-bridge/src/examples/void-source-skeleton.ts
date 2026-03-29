@@ -11,11 +11,10 @@ import {
 } from '../index.js'
 
 /**
- * This file is a source skeleton only.
+ * 这个文件只提供接入骨架。
  *
- * It is intentionally placed in ai-ide-bridge/frontend-bridge instead of void/.
- * The goal is to define exactly what a Void-side adapter should provide without
- * modifying Void internals directly from this repository.
+ * 它被有意放在 ai-ide-bridge/frontend-bridge，而不是 void/ 里。
+ * 目标是在不直接修改 Void 内部实现的前提下，明确 Void 侧适配层需要提供什么能力。
  */
 
 export interface VoidModelLike {
@@ -41,32 +40,31 @@ export interface VoidMarkerLike {
 }
 
 /**
- * This interface is the concrete contract your Void-side glue code should
- * satisfy by calling existing Void services.
+ * 这个接口就是你们 Void 侧胶水代码应当满足的具体契约。
  *
- * Recommended mappings to existing Void services:
+ * 推荐与现有 Void 服务的映射关系：
  *
- * - repo root:
+ * - 仓库根目录：
  *   IWorkspaceContextService.getWorkspace().folders[0]?.uri.fsPath
  *
- * - active editor / active file / selection:
+ * - 当前编辑器 / 当前文件 / 选区：
  *   ICodeEditorService.getActiveCodeEditor()
  *
- * - open file models:
+ * - 已打开文件模型：
  *   IModelService.getModels()
  *
- * - diagnostics:
+ * - 诊断信息：
  *   IMarkerService.read({ resource })
  *
- * - terminal tail:
+ * - 终端尾部输出：
  *   ITerminalToolService.listPersistentTerminalIds()
  *   ITerminalToolService.readTerminal(id)
  *
- * - git diff:
- *   either a dedicated SCM wrapper you add later, or an empty string in stage 1
+ * - git diff：
+ *   第一阶段可以先返回空字符串，后续再接专门的 SCM 包装层
  *
- * - test logs:
- *   either terminal-derived output, or a dedicated test runner integration later
+ * - 测试日志：
+ *   第一阶段可以先从终端输出中提取，后续再接专门的测试运行器集成
  */
 export interface VoidHostServices {
   getRepoRootPath(): Promise<string> | string
@@ -117,6 +115,37 @@ export const mapVoidMarker = (
   raw: marker,
 })
 
+const uniqueFilePaths = (filePaths: Array<string | undefined>): string[] => {
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const filePath of filePaths) {
+    if (!filePath || seen.has(filePath)) {
+      continue
+    }
+    seen.add(filePath)
+    result.push(filePath)
+  }
+
+  return result
+}
+
+const collectDiagnosticsForFiles = async (
+  host: VoidHostServices,
+  filePaths: string[],
+): Promise<DiagnosticItem[]> => {
+  const markerLists = await Promise.all(
+    filePaths.map(async (filePath) => ({
+      filePath,
+      markers: await host.getDiagnosticsForFile(filePath),
+    })),
+  )
+
+  return markerLists.flatMap(({ filePath, markers }) =>
+    markers.map((marker) => mapVoidMarker(marker, filePath)),
+  )
+}
+
 export const createVoidBridgeContextSource = (
   host: VoidHostServices,
 ): VoidBridgeContextSource => ({
@@ -139,15 +168,25 @@ export const createVoidBridgeContextSource = (
 
   async getOpenFiles() {
     const models = await host.getOpenModels()
-    return models.map(model => model.uri.fsPath)
+    return uniqueFilePaths(models.map((model) => model.uri.fsPath))
   },
 
   async getDiagnostics() {
-    const model = await host.getActiveModel()
-    const filePath = model?.uri.fsPath
-    if (!filePath) return []
-    const markers = await host.getDiagnosticsForFile(filePath)
-    return markers.map(marker => mapVoidMarker(marker, filePath))
+    const [activeModel, openModels] = await Promise.all([
+      host.getActiveModel(),
+      host.getOpenModels(),
+    ])
+
+    const filePaths = uniqueFilePaths([
+      activeModel?.uri.fsPath,
+      ...openModels.map((model) => model.uri.fsPath),
+    ])
+
+    if (filePaths.length === 0) {
+      return []
+    }
+
+    return await collectDiagnosticsForFiles(host, filePaths)
   },
 
   async getGitDiff() {
@@ -164,13 +203,13 @@ export const createVoidBridgeContextSource = (
 })
 
 /**
- * Stage-1 orchestration skeleton:
+ * 第一阶段编排骨架：
  *
- * 1. create a context source from Void services
- * 2. build a bridge request
- * 3. create a task
- * 4. subscribe to task state
- * 5. explicitly approve or reject command requests
+ * 1. 基于 Void 服务创建 context source
+ * 2. 构造 bridge 请求
+ * 3. 创建任务
+ * 4. 订阅任务状态
+ * 5. 显式批准或拒绝命令请求
  */
 export class VoidBridgeController {
   constructor(
