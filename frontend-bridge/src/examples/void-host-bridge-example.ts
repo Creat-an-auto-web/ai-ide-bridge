@@ -17,6 +17,7 @@ export interface VoidSidebarView {
   }): void
   focusApprovalCard(): void
   showPatchPreview(summary: string): void
+  showWorkspaceEdit(summary: string): void
   setFinalSummary(summary: string): void
   setError(message: string): void
 }
@@ -39,6 +40,9 @@ const createCallbacks = (view: VoidSidebarView): VoidHostBridgeCallbacks => ({
   },
   onPatchReady(patch) {
     view.showPatchPreview(patch.summary)
+  },
+  onWorkspaceEditReady(editModel) {
+    view.showWorkspaceEdit(editModel.summary)
   },
   onFinalSummary(summary) {
     view.setFinalSummary(summary)

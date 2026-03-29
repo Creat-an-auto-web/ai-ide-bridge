@@ -5,6 +5,7 @@ import {
 } from './examples/sidebar-controller.js'
 import { createPatchReviewModel, PatchReviewModel } from './patch-review.js'
 import { TaskPolicy } from './protocol.js'
+import { createWorkspaceEditModel, WorkspaceEditModel } from './workspace-edit.js'
 import {
   CreateVoidBridgeRuntimeOptions,
   createVoidBridgeSidebarControllerFromServices,
@@ -22,6 +23,7 @@ export interface VoidHostBridgeCallbacks {
   onApprovalStateChange?: (state: BridgeSidebarPanelState['approval']) => void
   onPatchReady?: (patch: NonNullable<BridgeSidebarPanelState['patch']>) => void
   onPatchReviewReady?: (review: PatchReviewModel) => void
+  onWorkspaceEditReady?: (editModel: WorkspaceEditModel) => void
   onFinalSummary?: (summary: NonNullable<BridgeSidebarPanelState['finalSummary']>) => void
   onError?: (message: string) => void
 }
@@ -103,6 +105,7 @@ export class VoidHostBridge {
     if (changed(prevState.patch?.patchId, nextState.patch?.patchId) && nextState.patch) {
       this.callbacks.onPatchReady?.(nextState.patch)
       this.callbacks.onPatchReviewReady?.(createPatchReviewModel(nextState.patch))
+      this.callbacks.onWorkspaceEditReady?.(createWorkspaceEditModel(nextState.patch))
       this.callbacks.onNotification?.({
         level: 'info',
         title: '补丁已就绪',

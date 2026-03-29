@@ -7,12 +7,14 @@ import {
   VoidHostNotification,
   createVoidHostBridgeFromServices,
 } from './void-host-bridge.js'
+import { WorkspaceEditModel } from './workspace-edit.js'
 
 export interface VoidIdeSidebarView {
   renderPanel(state: BridgeSidebarPanelState): void
   showNotification?(notification: VoidHostNotification): void
   focusApprovalCard?(): void
   showPatchReview?(review: PatchReviewModel): void
+  showWorkspaceEdit?(editModel: WorkspaceEditModel): void
   showFinalSummary?(summary: string): void
   showError?(message: string): void
 }
@@ -99,6 +101,9 @@ export const attachVoidIdeSidebar = (
       },
       onPatchReviewReady(review) {
         options.view.showPatchReview?.(review)
+      },
+      onWorkspaceEditReady(editModel) {
+        options.view.showWorkspaceEdit?.(editModel)
       },
       onFinalSummary(summary) {
         options.view.showFinalSummary?.(summary)

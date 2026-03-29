@@ -35,6 +35,7 @@ export interface MockVoidView {
   showNotification(notification: { severity: string; title: string; message: string }): void
   focusApprovalCard(): void
   showPatchPreview(summary: string): void
+  showWorkspaceEdit(summary: string): void
   setFinalSummary(summary: string): void
   setError(message: string): void
 }
@@ -58,6 +59,9 @@ export const createMockVoidView = (): MockVoidView => {
     },
     showPatchPreview(summary) {
       logs.push({ kind: 'patch', message: summary })
+    },
+    showWorkspaceEdit(summary) {
+      logs.push({ kind: 'patch', message: `workspace:${summary}` })
     },
     setFinalSummary(summary) {
       logs.push({ kind: 'final', message: summary })
