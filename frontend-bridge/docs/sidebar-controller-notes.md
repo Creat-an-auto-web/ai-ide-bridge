@@ -1,32 +1,31 @@
-# Sidebar Controller Notes
+# Sidebar Controller 说明
 
-This note explains how to use the UI-facing controller skeleton in:
+这份说明解释如何使用面向 UI 的 controller 骨架，相关文件在：
 
 - `src/examples/sidebar-controller.ts`
 
-The point of this file is to save you from re-deriving UI state from raw bridge
-events in every sidebar component.
+这个文件的意义在于，避免你在每个 sidebar 组件里都从原始 bridge 事件重新推导一遍 UI 状态。
 
-## 1. What It Solves
+## 1. 它解决什么问题
 
-Raw bridge state is protocol-oriented.
+原始 bridge 状态是面向协议的。
 
-A sidebar usually wants UI-oriented state such as:
+而 sidebar 通常更想拿到面向 UI 的状态，例如：
 
-- current prompt
-- selected task mode
-- whether the Run button should be enabled
-- current high-level task summary
-- whether an approval card should be visible
-- a flat log list for rendering
-- a patch preview payload
-- final summary text
+- 当前 prompt
+- 已选择的任务模式
+- Run 按钮是否可用
+- 当前任务的高层摘要
+- 是否应该显示审批卡片
+- 可直接渲染的扁平日志列表
+- patch 预览数据
+- 最终摘要文本
 
-`BridgeSidebarController` translates backend task state into that shape.
+`BridgeSidebarController` 会把后端任务状态转换成这种形态。
 
-## 2. State Shape
+## 2. 状态结构
 
-The controller produces `BridgeSidebarPanelState`, which contains:
+这个 controller 会产出 `BridgeSidebarPanelState`，其中包含：
 
 - `composer`
 - `summary`
@@ -38,14 +37,14 @@ The controller produces `BridgeSidebarPanelState`, which contains:
 - `finalSummary`
 - `errorMessage`
 
-That shape is intentionally close to what a sidebar component wants to render.
+这个结构被有意设计得贴近 sidebar 组件真正需要渲染的数据。
 
-## 3. Recommended Usage Pattern
+## 3. 推荐用法
 
 1. Create a `VoidBridgeContextSource`
-2. Create a `BridgeSidebarController`
-3. Subscribe to controller state changes
-4. Bind UI events to:
+2. 创建 `BridgeSidebarController`
+3. 订阅 controller 的状态变化
+4. 将 UI 事件绑定到：
    - `setPrompt(...)`
    - `setMode(...)`
    - `runCurrentPrompt(...)`
@@ -53,7 +52,7 @@ That shape is intentionally close to what a sidebar component wants to render.
    - `rejectPendingCommand(...)`
    - `cancelTask()`
 
-## 4. Minimal Host-Side Sketch
+## 4. Host 侧最小示例
 
 ```ts
 import {
@@ -74,27 +73,27 @@ const dispose = controller.subscribe((state) => {
   renderSidebar(state)
 })
 
-controller.setPrompt('Fix the current failing test')
+controller.setPrompt('修复当前失败的测试')
 controller.setMode('fix_test')
 await controller.runCurrentPrompt()
 ```
 
-## 5. Why This Layer Matters
+## 5. 为什么这一层很重要
 
-Without this layer, your Void sidebar glue code tends to mix together:
+没有这一层的话，你的 Void sidebar 胶水代码通常会把这些东西混在一起：
 
-- prompt input state
-- backend connection state
-- protocol event handling
-- derived UI booleans
-- approval action wiring
+- prompt 输入状态
+- 后端连接状态
+- 协议事件处理
+- UI 派生布尔值
+- 审批动作绑定
 
-That becomes hard to maintain quickly.
+这样很快就会变得难以维护。
 
-This controller keeps:
+这个 controller 把职责拆成：
 
-- protocol logic in `BridgeClient`
-- Void context collection in `VoidBridgeContextSource`
-- sidebar rendering state in `BridgeSidebarController`
+- `BridgeClient` 负责协议逻辑
+- `VoidBridgeContextSource` 负责收集 Void 上下文
+- `BridgeSidebarController` 负责 sidebar 渲染状态
 
-Those are the three layers you want to keep separate.
+这三层最好保持彼此分离。

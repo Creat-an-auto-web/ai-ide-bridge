@@ -1,0 +1,96 @@
+:root {
+  --bg: #f3efe5;
+  --bg-panel: rgba(255, 251, 245, 0.92);
+  --line: rgba(66, 49, 31, 0.14);
+  --fg: #1c140d;
+  --muted: #6d5d4d;
+  --accent: #0d6b63;
+  --warn: #9a5f00;
+  --error: #a32828;
+  --shadow: 0 14px 40px rgba(33, 20, 6, 0.08);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: var(--fg);
+  background:
+    radial-gradient(circle at top left, rgba(13, 107, 99, 0.12), transparent 30%),
+    radial-gradient(circle at top right, rgba(186, 137, 66, 0.16), transparent 24%),
+    linear-gradient(180deg, #f8f4ea 0%, var(--bg) 100%);
+}
+
+code, pre, input, textarea, select, button { font: inherit; }
+
+.shell { width: min(1200px, calc(100vw - 32px)); margin: 0 auto; padding: 24px 0 48px; }
+.hero { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 20px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+h1 { margin: 0; font-size: 38px; line-height: 1.05; }
+.sub { margin: 10px 0 0; max-width: 780px; color: var(--muted); line-height: 1.5; }
+.badge { border: 1px solid var(--line); background: var(--bg-panel); border-radius: 999px; padding: 8px 12px; box-shadow: var(--shadow); text-transform: uppercase; font-size: 12px; letter-spacing: 0.08em; color: var(--muted); }
+.panel { border: 1px solid var(--line); border-radius: 20px; background: var(--bg-panel); box-shadow: var(--shadow); padding: 18px; }
+.form-panel { margin-bottom: 20px; }
+.section-title { font-weight: 700; margin-bottom: 14px; }
+.grid { display: grid; gap: 16px; }
+.grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 20px; }
+label { display: grid; gap: 8px; margin-bottom: 14px; }
+label > span { font-size: 13px; color: var(--muted); }
+input, textarea, select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--fg);
+  padding: 12px 14px;
+  outline: none;
+}
+textarea { resize: vertical; }
+input:focus, textarea:focus, select:focus {
+  border-color: rgba(13, 107, 99, 0.45);
+  box-shadow: 0 0 0 4px rgba(13, 107, 99, 0.08);
+}
+.actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+button {
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--fg);
+  border-radius: 999px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+.checkbox { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--muted); }
+.checkbox input { width: auto; margin: 0; }
+.summary-list { display: grid; gap: 12px; margin: 0; }
+.summary-list div { display: grid; gap: 4px; }
+.summary-list dt { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.summary-list dd { margin: 0; }
+.approval-card { border-radius: 16px; border: 1px dashed var(--line); padding: 14px; min-height: 104px; }
+.approval-card.pending { border-style: solid; border-color: rgba(154, 95, 0, 0.3); background: rgba(154, 95, 0, 0.06); }
+.approval-card.empty, .empty { color: var(--muted); }
+.list { margin: 0; padding-left: 18px; }
+.log-output, .event-output {
+  margin: 0;
+  min-height: 140px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 14px;
+  border-radius: 16px;
+  background: #16120f;
+  color: #f6efe4;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.patch-file { border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: rgba(255, 255, 255, 0.72); margin-bottom: 12px; }
+.patch-file h4 { margin: 0 0 10px; font-size: 14px; }
+.patch-file pre { margin: 0; overflow: auto; white-space: pre-wrap; font-family: "IBM Plex Mono", "SFMono-Regular", monospace; font-size: 12px; line-height: 1.45; }
+.approval-actions { display: flex; gap: 10px; margin-top: 12px; }
+.muted { color: var(--muted); }
+.error { color: var(--error); }
+@media (max-width: 900px) {
+  .grid.two, .dashboard { grid-template-columns: 1fr; }
+  .hero { flex-direction: column; }
+}

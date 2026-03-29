@@ -1,111 +1,111 @@
-# Void Integration Notes
+# Void 接入说明
 
-This document explains how the frontend bridge in this repository is expected to connect to existing Void interfaces without modifying `void/` directly from here.
+这份文档说明当前仓库中的前端 bridge 应当如何连接到现有 Void 接口，同时不在这里直接修改 `void/`。
 
-## 1. Integration Boundary
+## 1. 集成边界
 
-`frontend-bridge` is not the UI.
+`frontend-bridge` 不是 UI。
 
-It is a standalone adapter layer that:
+它是一个独立的适配层，负责：
 
-- understands bridge protocol payloads
-- knows how to build requests from Void-derived context
-- knows how to talk to `backend-bridge`
+- 理解 bridge 协议载荷
+- 根据来自 Void 的上下文构造请求
+- 与 `backend-bridge` 通信
 
-The actual Void-side integration code should live in your own bridge glue on the product side and call into this module.
+真正的 Void 侧集成代码应当写在你们产品侧自己的 bridge 胶水层里，再去调用这个模块。
 
-## 2. Recommended Void Service Mapping
+## 2. 推荐的 Void 服务映射
 
-### 2.1 Active File and Selection
+### 2.1 当前文件与选区
 
-Use:
+可使用：
 
 - `ICodeEditorService.getActiveCodeEditor()`
 - `editor.getModel()`
 - `editor.getSelection()`
 
-Map:
+映射为：
 
 - `model.uri.fsPath` -> `context.activeFile`
-- editor selection -> protocol `Selection`
+- 编辑器选区 -> 协议里的 `Selection`
 
-### 2.2 Open Files
+### 2.2 已打开文件
 
-Use:
+可使用：
 
 - `IModelService.getModels()`
 
-Map:
+映射为：
 
-- each `model.uri.fsPath` -> `context.openFiles[]`
+- 每个 `model.uri.fsPath` -> `context.openFiles[]`
 
-### 2.3 Repository Root
+### 2.3 仓库根目录
 
-Use:
+可使用：
 
 - `IWorkspaceContextService.getWorkspace().folders[0]?.uri.fsPath`
 
-Map:
+映射为：
 
-- root folder path -> `repo.rootPath`
+- 根目录路径 -> `repo.rootPath`
 
-### 2.4 Diagnostics
+### 2.4 诊断信息
 
-Use:
+可使用：
 
 - `IMarkerService.read({ resource })`
 
-Map:
+映射为：
 
-- markers -> `context.diagnostics[]`
+- marker 列表 -> `context.diagnostics[]`
 
-### 2.5 Terminal Output
+### 2.5 终端输出
 
-Use:
+可使用：
 
 - `ITerminalToolService.listPersistentTerminalIds()`
 - `ITerminalToolService.readTerminal(id)`
 
-Map:
+映射为：
 
-- recent terminal text -> `context.terminalTail`
+- 最近的终端文本 -> `context.terminalTail`
 
 ### 2.6 Git Diff
 
-Stage 1:
+第一阶段：
 
-- allow empty string if you do not yet have a clean SCM integration
+- 如果你还没有稳定的 SCM 集成，可以先允许这里为空字符串
 
-Later:
+后续：
 
-- add a dedicated SCM adapter and map the diff text into `context.gitDiff`
+- 增加专门的 SCM 适配层，并把 diff 文本映射到 `context.gitDiff`
 
-### 2.7 Test Logs
+### 2.7 测试日志
 
-Stage 1:
+第一阶段：
 
-- allow empty string or derive from terminal output
+- 允许为空字符串，或者直接从终端输出中提取
 
-Later:
+后续：
 
-- add a dedicated test runner adapter and map structured output into `context.testLogs`
+- 增加专门的测试运行器适配层，并把结构化输出映射到 `context.testLogs`
 
-## 3. Stage-1 Integration Loop
+## 3. 第一阶段集成闭环
 
 1. Implement `VoidHostServices`
-2. Create a `VoidBridgeContextSource` with `createVoidBridgeContextSource(...)`
-3. Build a request with `buildVoidTaskRequest(...)`
-4. Call `BridgeClient.createTask(...)`
-5. Subscribe to client state and events
-6. Render:
-   - task status
-   - plan
-   - logs
-   - command approval
-   - patch preview
-   - final result
+2. 用 `createVoidBridgeContextSource(...)` 创建 `VoidBridgeContextSource`
+3. 用 `buildVoidTaskRequest(...)` 构造请求
+4. 调用 `BridgeClient.createTask(...)`
+5. 订阅 client 状态和事件
+6. 渲染：
+   - 任务状态
+   - 计划
+   - 日志
+   - 命令审批
+   - patch 预览
+   - 最终结果
 
-## 4. Minimal Example
+## 4. 最小示例
 
 ```ts
 import {
@@ -137,6 +137,6 @@ client.subscribe({
 
 await controller.runTask({
   mode: 'fix_test',
-  userPrompt: 'Fix the current failing test',
+  userPrompt: '修复当前失败的测试',
 })
 ```
