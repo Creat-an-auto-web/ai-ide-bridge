@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI IDE Bridge 本地界面</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <div class="eyebrow">AI IDE Bridge</div>
+          <h1>本地 IDE Bridge 界面</h1>
+          <p class="sub">
+            这个界面完全位于 <code>frontend/frontend-bridge</code> 下，通过本地代理服务连接
+            <code>backend-bridge</code>，不修改原始 <code>void/</code> 目录或后端应用代码。
+          </p>
+        </div>
+        <div class="badge" id="connectionBadge">idle</div>
+      </header>
+
+      <section class="panel form-panel">
+        <div class="section-title">任务输入</div>
+        <div class="grid two">
+          <label>
+            <span>模式</span>
+            <select id="mode">
+              <option value="fix_test">fix_test</option>
+              <option value="repo_chat">repo_chat</option>
+              <option value="edit_selection">edit_selection</option>
+              <option value="refactor_scope">refactor_scope</option>
+              <option value="explain_error">explain_error</option>
+            </select>
+          </label>
+          <label>
+            <span>仓库根目录</span>
+            <input id="repoRootPath" type="text" placeholder="/path/to/repo" />
+          </label>
+        </div>
+
+        <label>
+          <span>任务提示词</span>
+          <textarea id="userPrompt" rows="4" placeholder="修复当前失败的测试"></textarea>
+        </label>
+
+        <div class="grid two">
+          <label>
+            <span>当前文件</span>
+            <input id="activeFile" type="text" placeholder="src/example.py" />
+          </label>
+          <label>
+            <span>已打开文件</span>
+            <input id="openFiles" type="text" placeholder="src/example.py, tests/test_example.py" />
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label>
+            <span>终端尾部输出</span>
+            <textarea id="terminalTail" rows="4" placeholder="可选的终端输出"></textarea>
+          </label>
+          <label>
+            <span>测试日志</span>
+            <textarea id="testLogs" rows="4" placeholder="可选的测试输出"></textarea>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="createTaskBtn" class="primary">创建任务</button>
+          <button id="cancelTaskBtn">取消任务</button>
+          <label class="checkbox">
+            <input id="autoApprove" type="checkbox" checked />
+            <span>自动批准命令审批请求</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="grid dashboard">
+        <article class="panel">
+          <div class="section-title">任务摘要</div>
+          <dl class="summary-list">
+            <div><dt>任务 ID</dt><dd id="taskId">-</dd></div>
+            <div><dt>状态</dt><dd id="taskStatus">idle</dd></div>
+            <div><dt>最新消息</dt><dd id="latestMessage">-</dd></div>
+          </dl>
+        </article>
+
+        <article class="panel">
+          <div class="section-title">审批</div>
+          <div id="approvalCard" class="approval-card empty">当前没有待审批命令</div>
+        </article>
+      </section>
+
+      <section class="grid dashboard">
+        <article class="panel">
+          <div class="section-title">计划</div>
+          <ol id="planList" class="list empty"></ol>
+        </article>
+
+        <article class="panel">
+          <div class="section-title">测试结果</div>
+          <div id="testResult" class="empty">当前还没有测试结果</div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">补丁</div>
+        <div id="patchContainer" class="empty">当前还没有补丁</div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">日志</div>
+        <pre id="logOutput" class="log-output"></pre>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">事件流</div>
+        <pre id="eventOutput" class="event-output"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

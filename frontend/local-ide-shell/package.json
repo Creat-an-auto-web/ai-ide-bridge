@@ -1,0 +1,14 @@
+{
+  "name": "@ai-ide-bridge/local-ide-shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./main.mjs",
+  "scripts": {
+    "start": "node ./browser-shell.mjs",
+    "start:desktop": "electron ./main.mjs"
+  },
+  "devDependencies": {
+    "electron": "^37.10.3"
+  }
+}

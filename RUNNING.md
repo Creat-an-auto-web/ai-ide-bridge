@@ -9,12 +9,12 @@
   - HTTP 任务接口
   - WebSocket 任务事件流
 
-- `frontend-bridge/`
+- `frontend/frontend-bridge/`
   - 前端 bridge 模块
   - 可独立运行的 demo UI
-  - 不修改 `void/`
+  - 不修改原始 `void/`
 
-- `harness/`
+- `frontend/harness/`
   - 基于 CLI 的 HTTP + WebSocket smoke test
 
 ## 1. 启动后端
@@ -49,7 +49,7 @@ http://127.0.0.1:27182/healthz
 在另一个终端执行：
 
 ```bash
-npm run demo --prefix ai-ide-bridge/frontend-bridge
+npm run demo --prefix ai-ide-bridge/frontend/frontend-bridge
 ```
 
 然后打开：
@@ -65,6 +65,23 @@ http://127.0.0.1:4310
 - 将 `/v1/*` WebSocket 流量代理到 `backend-bridge`
 
 这样可以在不修改后端的前提下保持浏览器同源。
+
+## 2.5 启动本地 IDE 壳
+
+如果你想直接启动一个本地桌面窗口，而不是手动打开浏览器：
+
+```bash
+npm install --prefix ai-ide-bridge/frontend/local-ide-shell
+npm run start --prefix ai-ide-bridge/frontend/local-ide-shell
+```
+
+这个桌面壳会自动：
+
+- 启动 `backend-bridge`
+- 启动 `frontend-bridge/demo`
+- 打开本地桌面窗口承载当前 bridge 界面
+
+它的目标是让桥接项目先达到“可启动本地 IDE 界面”的程度。
 
 ## 3. Demo 操作流程
 
@@ -90,7 +107,7 @@ http://127.0.0.1:4310
 如果你想走一条不依赖 UI 的验证路径：
 
 ```bash
-node ai-ide-bridge/harness/bridge_smoke_test.mjs
+node ai-ide-bridge/frontend/harness/bridge_smoke_test.mjs
 ```
 
 常用覆盖参数：
@@ -98,15 +115,16 @@ node ai-ide-bridge/harness/bridge_smoke_test.mjs
 ```bash
 BRIDGE_REPO_PATH=/home/ricebean/ai-agent \
 BRIDGE_PROMPT="修复当前失败的测试" \
-node ai-ide-bridge/harness/bridge_smoke_test.mjs
+node ai-ide-bridge/frontend/harness/bridge_smoke_test.mjs
 ```
 
 ## 5. 当前边界
 
 当前可运行的前端位于：
 
-- `ai-ide-bridge/frontend-bridge`
-- 不依赖修改 `void/`
+- `ai-ide-bridge/frontend/frontend-bridge`
+- `ai-ide-bridge/frontend/void`
+- 不依赖修改原始 `void/`
 - 不依赖 `backend-bridge` 内部实现细节
 
 这是有意为之。
@@ -140,7 +158,7 @@ node ai-ide-bridge/harness/bridge_smoke_test.mjs
 ## 7. 最小文件地图
 
 - `ai-ide-bridge/backend-bridge/app/main.py`
-- `ai-ide-bridge/frontend-bridge/demo/server.mjs`
-- `ai-ide-bridge/frontend-bridge/demo/index.html`
-- `ai-ide-bridge/frontend-bridge/demo/app.js`
-- `ai-ide-bridge/harness/bridge_smoke_test.mjs`
+- `ai-ide-bridge/frontend/frontend-bridge/demo/server.mjs`
+- `ai-ide-bridge/frontend/frontend-bridge/demo/index.html`
+- `ai-ide-bridge/frontend/frontend-bridge/demo/app.js`
+- `ai-ide-bridge/frontend/harness/bridge_smoke_test.mjs`
