@@ -1,0 +1,318 @@
+:root {
+  color-scheme: dark;
+  --app-bg: #0b0f14;
+  --panel-bg: #121821;
+  --panel-alt-bg: #0f141b;
+  --panel-border: #263041;
+  --text-main: #e6edf6;
+  --text-muted: #8ea2bd;
+  --accent: #4ea1ff;
+  --success: #5cc489;
+  --danger: #ff6b6b;
+  --warning: #ffc857;
+  --input-bg: #0d131b;
+  --vscode-panel-border: #263041;
+  --vscode-errorForeground: #ff6b6b;
+  --vscode-sideBar-background: #0f141b;
+  --vscode-editor-background: #0f141b;
+  --vscode-editor-foreground: #e6edf6;
+  --vscode-input-background: #0d131b;
+  --vscode-input-foreground: #e6edf6;
+  --vscode-input-placeholderForeground: #7890ad;
+  --vscode-badge-background: #142131;
+  --vscode-tab-activeForeground: #e6edf6;
+  --vscode-list-deemphasizedForeground: #8ea2bd;
+  --vscode-charts-yellow: #ffc857;
+  --vscode-commandCenter-activeBorder: #335d8f;
+  --vscode-commandCenter-border: #263041;
+  --vscode-commandCenter-inactiveBorder: #1c2533;
+  --vscode-editorGroup-border: #1b2330;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  height: 100%;
+  background: var(--app-bg);
+  color: var(--text-main);
+  font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+
+body {
+  overflow: hidden;
+}
+
+#root,
+.local-ide-shell,
+.local-ide-shell * {
+  color: var(--text-main);
+}
+
+h1,
+h2,
+h3,
+p,
+span,
+div,
+label,
+li,
+ol,
+ul,
+pre,
+code,
+button,
+input,
+textarea {
+  color: inherit;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+input,
+textarea {
+  color: var(--text-main);
+}
+
+textarea::placeholder,
+input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.local-ide-shell {
+  display: grid;
+  grid-template-rows: 56px 1fr;
+  height: 100%;
+  background:
+    radial-gradient(circle at top right, rgba(78, 161, 255, 0.16), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%),
+    var(--app-bg);
+}
+
+.local-ide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--panel-border);
+  background: rgba(8, 11, 16, 0.88);
+  backdrop-filter: blur(10px);
+}
+
+.local-ide-header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-main);
+}
+
+.local-ide-header p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.header-badges {
+  display: flex;
+  gap: 8px;
+}
+
+.badge {
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.badge.ok {
+  color: var(--success);
+}
+
+.badge.error {
+  color: var(--danger);
+}
+
+.local-ide-main {
+  display: grid;
+  grid-template-columns: 420px minmax(420px, 1fr);
+  min-height: 0;
+}
+
+.sidebar-frame {
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--panel-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.01)),
+    var(--panel-alt-bg);
+  overflow: auto;
+}
+
+.workspace-frame {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.workspace-toolbar h2 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-main);
+}
+
+.workspace-toolbar span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.workspace-content {
+  overflow: auto;
+  padding: 16px;
+}
+
+.workspace-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.workspace-card {
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  padding: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.018));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.workspace-card.full {
+  grid-column: 1 / -1;
+}
+
+.workspace-card h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.workspace-card p {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.field-list {
+  display: grid;
+  gap: 12px;
+}
+
+.field-list.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--input-bg);
+  color: var(--text-main);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.field textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.primary-btn,
+.secondary-btn {
+  border-radius: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+}
+
+.primary-btn {
+  background: rgba(78, 161, 255, 0.18);
+  border-color: rgba(78, 161, 255, 0.4);
+}
+
+.primary-btn:hover,
+.secondary-btn:hover,
+button:hover {
+  filter: brightness(1.08);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.selection-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1200px) {
+  .local-ide-main {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(420px, 48vh) 1fr;
+  }
+
+  .sidebar-frame {
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border);
+  }
+
+  .workspace-grid,
+  .field-list.two,
+  .selection-grid {
+    grid-template-columns: 1fr;
+  }
+}

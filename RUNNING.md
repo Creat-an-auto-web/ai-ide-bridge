@@ -14,6 +14,10 @@
   - 可独立运行的 demo UI
   - 不修改原始 `void/`
 
+- `frontend/void/`
+  - Void 补丁层与原生启动器
+  - 正式的原生 Void 前端启动入口
+
 - `frontend/harness/`
   - 基于 CLI 的 HTTP + WebSocket smoke test
 
@@ -66,22 +70,38 @@ http://127.0.0.1:4310
 
 这样可以在不修改后端的前提下保持浏览器同源。
 
-## 2.5 启动本地 IDE 壳
+## 2.5 启动原生 Void 前端
 
-如果你想直接启动一个本地桌面窗口，而不是手动打开浏览器：
+如果你要通过我们的桥接层启动 Void 原生前端，推荐执行：
 
 ```bash
-npm install --prefix ai-ide-bridge/frontend/local-ide-shell
-npm run start --prefix ai-ide-bridge/frontend/local-ide-shell
+npm run install:native-deps --prefix ai-ide-bridge/frontend/void
+npm run start:native --prefix ai-ide-bridge/frontend/void
 ```
 
-这个桌面壳会自动：
+这条链路会自动：
 
 - 启动 `backend-bridge`
-- 启动 `frontend-bridge/demo`
-- 打开本地桌面窗口承载当前 bridge 界面
+- 创建 `frontend/.runtime/void-native/` 运行时副本
+- 覆盖 `frontend/void` 中的 bridge 补丁
+- 映射 `frontend/frontend-bridge/src`
+- 在运行时副本中执行 `npm run buildreact`
+- 在运行时副本中执行 `npm run watch`
+- 调用 Void 自己的 `./scripts/code.sh` 打开原生开发窗口
 
-它的目标是让桥接项目先达到“可启动本地 IDE 界面”的程度。
+注意：
+
+- 这不是我们自建的 Web 壳，而是 Void 原生开发窗口
+- 首次安装依赖耗时较长
+- 原始 `void/` 目录不会被改写，所有运行态内容都在 `frontend/.runtime/void-native/`
+- 启动前请先确保 Node 版本符合 `void/.nvmrc`，当前要求为 `20.18.2`
+- 如果在 Linux / WSL 安装依赖时报 `gssapi/gssapi.h` 缺失，需要安装 `libkrb5-dev`
+
+如果你还想打开旧的浏览器 demo，可执行：
+
+```bash
+npm run start:browser-demo --prefix ai-ide-bridge/frontend/local-ide-shell
+```
 
 ## 3. Demo 操作流程
 
@@ -124,16 +144,17 @@ node ai-ide-bridge/frontend/harness/bridge_smoke_test.mjs
 
 - `ai-ide-bridge/frontend/frontend-bridge`
 - `ai-ide-bridge/frontend/void`
+- 原始 UI 由 Void 原生前端承载
 - 不依赖修改原始 `void/`
 - 不依赖 `backend-bridge` 内部实现细节
 
 这是有意为之。
 
-下一步集成应当是让真实的 Void 侧胶水代码调用：
+桥接集成主线已经切到：
 
-- `frontend-bridge/src/void-adapter.ts`
-- `frontend-bridge/src/examples/void-source-skeleton.ts`
-- `frontend-bridge/src/examples/sidebar-controller.ts`
+- 用 `frontend/void` 提供对 Void 原生前端的最小补丁
+- 用 `frontend/frontend-bridge` 提供桥接状态机、协议客户端和宿主服务适配
+- 用 `frontend/void/scripts/native-launcher.mjs` 把两者注入原始 Void 运行副本
 
 ## 6. 排查建议
 
@@ -155,10 +176,21 @@ node ai-ide-bridge/frontend/harness/bridge_smoke_test.mjs
 - 检查是否启用了自动审批
 - 或手动点击批准按钮
 
+如果 `npm run start:native --prefix ai-ide-bridge/frontend/void` 无法启动：
+
+- 先确认 `void/` 依赖已安装成功
+- 确认当前 Node 版本接近 `void/.nvmrc` 中要求的 `20.18.2`
+- 查看 `frontend/.runtime/void-native/void` 下是否已经生成 `node_modules/`
+- 查看终端里 `watch` 是否已经出现 `Finished compilation` 和 `Finished compilation extensions`
+- 如果 `npm install` 卡在 `kerberos`，优先检查 `libkrb5-dev` 是否已安装，以及当前 Node 版本是否错误地使用了 `22.x`
+
 ## 7. 最小文件地图
 
 - `ai-ide-bridge/backend-bridge/app/main.py`
 - `ai-ide-bridge/frontend/frontend-bridge/demo/server.mjs`
 - `ai-ide-bridge/frontend/frontend-bridge/demo/index.html`
 - `ai-ide-bridge/frontend/frontend-bridge/demo/app.js`
+- `ai-ide-bridge/frontend/void/scripts/native-launcher.mjs`
+- `ai-ide-bridge/frontend/void/src/vs/workbench/contrib/void/browser/react/src/bridge/useAiIdeBridge.tsx`
+- `ai-ide-bridge/frontend/void/src/vs/workbench/contrib/void/browser/react/src/bridge/AiIdeBridgePanel.tsx`
 - `ai-ide-bridge/frontend/harness/bridge_smoke_test.mjs`

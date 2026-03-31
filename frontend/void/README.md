@@ -1,41 +1,63 @@
-# void 对照代码
+# frontend/void 说明
 
-这个目录用于存放从上游 Void 复制过来的、当前桥接项目确实需要参考和对接的代码副本。
+这个目录不是重新实现一套前端，而是我们项目里的 Void 补丁层与启动器。
 
-当前已复制的文件如下：
+## 目录职责
 
-- `src/vs/workbench/contrib/void/browser/sidebarPane.ts`
-  - Void 侧边栏的真实挂载入口
-  - 用于确认本地 IDE 中 sidebar 的注册和挂载方式
+- `src/vs/workbench/contrib/void/...`
+  - 存放从原始 `void/` 复制进来的最小必要补丁文件
+  - 这些文件会覆盖到运行时 Void 副本里
+  - 其中真正属于桥接层的核心入口是：
+    - `react/src/bridge/useAiIdeBridge.tsx`
+    - `react/src/bridge/AiIdeBridgePanel.tsx`
+    - `react/src/sidebar-tsx/SidebarWithAiIdeBridge.tsx`
 
-- `src/vs/workbench/contrib/void/browser/terminalToolService.ts`
-  - Void 现有终端工具服务
-  - 用于确认 terminal tail、持久终端和命令执行相关接口
+- `scripts/native-launcher.mjs`
+  - 原生 Void 启动器
+  - 负责创建运行时副本、覆盖 bridge 补丁、映射 `frontend-bridge/src`，并按 Void 官方开发模式启动
 
-- `src/vs/workbench/contrib/void/browser/react/src/util/services.tsx`
-  - Void React 侧服务访问层
-  - 用于确认 `useAccessor()` 可拿到哪些真实服务对象
+- `scripts/build.mjs`
+  - 仅用于之前的调试壳构建
+  - 不是正式交付入口
 
-- `src/vs/workbench/contrib/void/browser/react/src/sidebar-tsx/SidebarChat.tsx`
-  - Void 现有 sidebar 主组件
-  - 用于分析真实 UI 接入点和交互结构
+- `src/local-host/*`
+  - 仅保留为历史调试代码
+  - 不再作为正式本地 IDE 入口继续推进
 
-- `src/vs/workbench/contrib/void/browser/react/src/sidebar-tsx/Sidebar.tsx`
-- `src/vs/workbench/contrib/void/browser/react/src/sidebar-tsx/index.tsx`
-- `src/vs/workbench/contrib/void/browser/react/src/sidebar-tsx/ErrorBoundary.tsx`
-- `src/vs/workbench/contrib/void/browser/react/src/util/mountFnGenerator.tsx`
-- `src/vs/workbench/contrib/void/browser/react/src/styles.css`
-  - 这些文件共同构成 sidebar 的最小挂载链
-  - 当前已经在这份副本里接入 `AI IDE Bridge` 面板
+## 正式启动路径
 
-- `src/vs/workbench/contrib/void/browser/react/src/bridge/*`
-  - 这是我们在项目目录内新增的桥接接入层
-  - 它通过 `useAccessor()` 调用真实 Void 风格的服务接口
-  - 并把 bridge 面板并入复制出来的 sidebar 接入位
+当前推荐的正式启动方式是直接通过原生 Void 开发窗口启动：
 
-说明：
+```bash
+npm run install:native-deps --prefix ai-ide-bridge/frontend/void
+npm run start:native --prefix ai-ide-bridge/frontend/void
+```
 
-- 这里复制的是“当前桥接项目需要用到的最小必要文件集”，不是完整镜像原始 `void/`
-- 这些文件的作用是为 `ai-ide-bridge` 内的桥接开发提供本地参考副本
-- 后续如果桥接层确实需要更多 Void 文件，再按实际依赖继续补充
-- 目前这份副本已经不是单纯参考代码，而是包含了“并入 Void 接口后的最小联调版本”
+启动前请先确认：
+
+- 当前 Node 版本与 `void/.nvmrc` 一致，当前要求是 `20.18.2`
+- Linux / WSL 环境已经安装 Void 所需原生编译依赖
+- 如果缺少 `gssapi/gssapi.h`，需要补齐 Kerberos 开发头文件
+
+在 Debian / Ubuntu / WSL Ubuntu 上，至少应包含：
+
+```bash
+sudo apt-get install build-essential g++ libx11-dev libxkbfile-dev libsecret-1-dev libkrb5-dev python-is-python3
+```
+
+这条链路会做几件事：
+
+1. 在 `ai-ide-bridge/frontend/.runtime/void-native/` 下创建一个 Void 运行时副本
+2. 将本目录下的 Void 补丁文件覆盖到运行时副本
+3. 将 `frontend/frontend-bridge/src` 映射到运行时副本旁路目录，供桥接层源码直接引用
+4. 启动 `backend-bridge`
+5. 在运行时副本里执行 `npm run buildreact`
+6. 在运行时副本里执行 `npm run watch`
+7. 调用运行时副本里的 `./scripts/code.sh`，打开 Void 原生开发窗口
+
+## 重要边界
+
+- 不修改原始 `../..../void/` 目录
+- 不在这里重做一套 Web 前端
+- 最终承载 UI 的是 Void 原生前端
+- 我们只提供桥接补丁层和启动流程

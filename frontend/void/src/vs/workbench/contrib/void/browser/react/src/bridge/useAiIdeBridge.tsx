@@ -5,7 +5,7 @@ import {
   WorkspaceEditModel,
   attachVoidRealIdeSidebarFromAccessor,
   emptyBridgeSidebarState,
-} from '../../../../../../../../../../frontend-bridge/src/index.js'
+} from '../../../../../../../../ai-ide-bridge/frontend-bridge/src/index.js'
 import { useAccessor } from '../util/services.js'
 
 export interface AiIdeBridgeUiState {
@@ -26,6 +26,15 @@ export interface UseAiIdeBridgeOptions {
 
 export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
   const accessor = useAccessor()
+  const hostOptions =
+    ('get' in accessor
+      ? accessor.get('__bridgeHostBridgeOptions' as never) as {
+          baseUrl?: string
+          branchProvider?: () => Promise<string | undefined> | string | undefined
+          gitDiffProvider?: () => Promise<string> | string
+          testLogsProvider?: () => Promise<string> | string
+        }
+      : {}) ?? {}
   const entryRef = useRef<ReturnType<typeof attachVoidRealIdeSidebarFromAccessor> | null>(null)
 
   const [uiState, setUiState] = useState<AiIdeBridgeUiState>({
@@ -41,11 +50,11 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     const entry = attachVoidRealIdeSidebarFromAccessor({
       accessor,
       bridgeClientOptions: {
-        baseUrl: options.baseUrl,
+        baseUrl: options.baseUrl ?? hostOptions.baseUrl,
       },
-      branchProvider: options.branchProvider,
-      gitDiffProvider: options.gitDiffProvider,
-      testLogsProvider: options.testLogsProvider,
+      branchProvider: options.branchProvider ?? hostOptions.branchProvider,
+      gitDiffProvider: options.gitDiffProvider ?? hostOptions.gitDiffProvider,
+      testLogsProvider: options.testLogsProvider ?? hostOptions.testLogsProvider,
       view: {
         renderPanel(panel) {
           setUiState((prev) => ({ ...prev, panel }))
@@ -77,7 +86,17 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       entry.dispose()
       entryRef.current = null
     }
-  }, [accessor, options.baseUrl, options.branchProvider, options.gitDiffProvider, options.testLogsProvider])
+  }, [
+    accessor,
+    hostOptions.baseUrl,
+    hostOptions.branchProvider,
+    hostOptions.gitDiffProvider,
+    hostOptions.testLogsProvider,
+    options.baseUrl,
+    options.branchProvider,
+    options.gitDiffProvider,
+    options.testLogsProvider,
+  ])
 
   return useMemo(() => ({
     uiState,

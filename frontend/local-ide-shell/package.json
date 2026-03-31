@@ -5,8 +5,9 @@
   "type": "module",
   "main": "./main.mjs",
   "scripts": {
-    "start": "node ./browser-shell.mjs",
-    "start:desktop": "electron ./main.mjs"
+    "start": "electron --no-sandbox ./main.mjs",
+    "start:browser-demo": "node ./browser-shell.mjs",
+    "start:desktop": "electron --no-sandbox ./main.mjs"
   },
   "devDependencies": {
     "electron": "^37.10.3"

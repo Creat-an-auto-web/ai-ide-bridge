@@ -34,7 +34,6 @@ export interface VoidIdeBridgeEntry {
 class MountedVoidIdeBridgeEntry implements VoidIdeBridgeEntry {
   constructor(
     private readonly bridge: VoidHostBridge,
-    private readonly view: VoidIdeSidebarView,
   ) {}
 
   getState(): BridgeSidebarPanelState {
@@ -114,5 +113,5 @@ export const attachVoidIdeSidebar = (
     },
   })
 
-  return new MountedVoidIdeBridgeEntry(bridge, options.view)
+  return new MountedVoidIdeBridgeEntry(bridge)
 }

@@ -14,6 +14,7 @@ import { ServicesAccessor } from '../../../../../../../editor/browser/editorExte
 import { IExplorerService } from '../../../../../../../workbench/contrib/files/browser/files.js'
 import { IModelService } from '../../../../../../../editor/common/services/model.js';
 import { IClipboardService } from '../../../../../../../platform/clipboard/common/clipboardService.js';
+import { IMarkerService } from '../../../../../../../platform/markers/common/markers.js';
 import { IContextViewService, IContextMenuService } from '../../../../../../../platform/contextview/browser/contextView.js';
 import { IFileService } from '../../../../../../../platform/files/common/files.js';
 import { IHoverService } from '../../../../../../../platform/hover/browser/hover.js';
@@ -186,6 +187,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 	const reactAccessor = {
 		IModelService: accessor.get(IModelService),
 		IClipboardService: accessor.get(IClipboardService),
+		IMarkerService: accessor.get(IMarkerService),
 		IContextViewService: accessor.get(IContextViewService),
 		IContextMenuService: accessor.get(IContextMenuService),
 		IFileService: accessor.get(IFileService),
