@@ -207,6 +207,12 @@ export class BridgeSidebarController {
         sessionId: opts?.sessionId,
         policy: opts?.policy,
       })
+    } catch (error) {
+      this.state = {
+        ...this.state,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }
+      this.emit()
     } finally {
       this.state = {
         ...this.state,
@@ -223,17 +229,41 @@ export class BridgeSidebarController {
   async approvePendingCommand(reason?: string) {
     const commandId = this.state.approval.commandId
     if (!commandId) return
-    await this.bridgeController.approveCommand(commandId, reason)
+    try {
+      await this.bridgeController.approveCommand(commandId, reason)
+    } catch (error) {
+      this.state = {
+        ...this.state,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }
+      this.emit()
+    }
   }
 
   async rejectPendingCommand(reason?: string) {
     const commandId = this.state.approval.commandId
     if (!commandId) return
-    await this.bridgeController.rejectCommand(commandId, reason)
+    try {
+      await this.bridgeController.rejectCommand(commandId, reason)
+    } catch (error) {
+      this.state = {
+        ...this.state,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }
+      this.emit()
+    }
   }
 
   async cancelTask() {
-    await this.bridgeController.cancelTask()
+    try {
+      await this.bridgeController.cancelTask()
+    } catch (error) {
+      this.state = {
+        ...this.state,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }
+      this.emit()
+    }
   }
 
   reset() {

@@ -29,7 +29,7 @@ export class BridgeClient {
 
   constructor(options: BridgeClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? 'http://127.0.0.1:27182'
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init))
     this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url))
   }
 

@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { CancellationToken } from '../../../../../../../base/common/cancellation.js'
+import { asText } from '../../../../../../../platform/request/common/request.js'
 import {
   BridgeSidebarPanelState,
   PatchReviewModel,
@@ -7,6 +9,36 @@ import {
   emptyBridgeSidebarState,
 } from '../../../../../../../../ai-ide-bridge/frontend-bridge/src/index.js'
 import { useAccessor } from '../util/services.js'
+
+interface DesktopBridgeFetchResult {
+  ok: boolean
+  status: number
+  statusText: string
+  headers: Array<[string, string]>
+  bodyText: string
+}
+
+interface DesktopApi {
+  bridgeFetch?: (url: string, init?: RequestInit) => Promise<DesktopBridgeFetchResult>
+}
+
+interface NativeRequestServiceLike {
+  request(
+    options: {
+      type?: string
+      url?: string
+      headers?: Record<string, string>
+      data?: string
+    },
+    token: typeof CancellationToken.None,
+  ): Promise<unknown>
+}
+
+declare global {
+  interface Window {
+    aiIdeDesktop?: DesktopApi
+  }
+}
 
 export interface AiIdeBridgeUiState {
   panel: BridgeSidebarPanelState
@@ -24,16 +56,179 @@ export interface UseAiIdeBridgeOptions {
   branchProvider?: () => Promise<string | undefined> | string | undefined
 }
 
+const isNativeVoidHost = () =>
+  typeof window !== 'undefined' && window.location.protocol === 'vscode-file:'
+
+const defaultNativeBaseUrl = () =>
+  isNativeVoidHost() ? 'https://localhost:27183' : undefined
+
+const defaultNativeWebSocketFactory = (() => {
+  if (!isNativeVoidHost()) {
+    return undefined
+  }
+
+  return (url: string) => {
+    const wsUrl = new URL(url)
+    wsUrl.protocol = 'ws:'
+    wsUrl.hostname = '127.0.0.1'
+    wsUrl.port = '27182'
+    return new WebSocket(wsUrl.toString())
+  }
+})()
+
+const createDesktopFetch = (): typeof fetch | undefined => {
+  const bridgeFetch = window.aiIdeDesktop?.bridgeFetch
+  if (!bridgeFetch) {
+    return undefined
+  }
+
+  return async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    const method =
+      init?.method
+      ?? (typeof Request !== 'undefined' && input instanceof Request ? input.method : undefined)
+    const headers =
+      init?.headers
+      ?? (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined)
+    const body =
+      init?.body
+      ?? (typeof Request !== 'undefined' && input instanceof Request ? input.body : undefined)
+
+    const response = await bridgeFetch(url, {
+      ...init,
+      method,
+      headers: headers instanceof Headers ? Object.fromEntries(headers.entries()) : headers,
+      body: typeof body === 'string' ? body : undefined,
+    })
+
+    return new Response(response.bodyText, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    })
+  }
+}
+
+const toRequestUrl = (input: RequestInfo | URL): string =>
+  typeof input === 'string'
+    ? input
+    : input instanceof URL
+      ? input.toString()
+      : input.url
+
+const toRequestMethod = (input: RequestInfo | URL, init?: RequestInit): string =>
+  init?.method
+  ?? (typeof Request !== 'undefined' && input instanceof Request ? input.method : undefined)
+  ?? 'GET'
+
+const toRequestHeaders = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Record<string, string> => {
+  const source =
+    init?.headers
+    ?? (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined)
+
+  if (!source) {
+    return {}
+  }
+
+  if (source instanceof Headers) {
+    return Object.fromEntries(source.entries())
+  }
+
+  if (Array.isArray(source)) {
+    return Object.fromEntries(source)
+  }
+
+  return Object.fromEntries(
+    Object.entries(source).map(([key, value]) => [key, String(value)]),
+  )
+}
+
+const toRequestBody = async (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<string | undefined> => {
+  const body =
+    init?.body
+    ?? (typeof Request !== 'undefined' && input instanceof Request ? await input.clone().text() : undefined)
+
+  if (typeof body === 'string') {
+    return body
+  }
+
+  if (body instanceof URLSearchParams) {
+    return body.toString()
+  }
+
+  return undefined
+}
+
+const toResponseHeaders = (headers: Record<string, string | string[] | undefined>) =>
+  Object.entries(headers).flatMap(([key, value]) => {
+    if (typeof value === 'undefined') {
+      return []
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item) => [key, item] satisfies [string, string])
+    }
+
+    return [[key, value] satisfies [string, string]]
+  })
+
+const createNativeRequestFetch = (
+  requestService: NativeRequestServiceLike | undefined,
+): typeof fetch | undefined => {
+  if (!requestService) {
+    return undefined
+  }
+
+  return async (input, init) => {
+    const context = await requestService.request(
+      {
+        type: toRequestMethod(input, init),
+        url: toRequestUrl(input),
+        headers: toRequestHeaders(input, init),
+        data: await toRequestBody(input, init),
+      },
+      CancellationToken.None,
+    ) as Awaited<ReturnType<NativeRequestServiceLike['request']>>
+
+    const bodyText = await asText(context as never) ?? ''
+    const responseContext = context as {
+      res: {
+        statusCode?: number
+        headers: Record<string, string | string[] | undefined>
+      }
+    }
+
+    return new Response(bodyText, {
+      status: responseContext.res.statusCode ?? 200,
+      headers: toResponseHeaders(responseContext.res.headers),
+    })
+  }
+}
+
 export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
   const accessor = useAccessor()
+  const accessorRef = useRef(accessor)
+  accessorRef.current = accessor
+  const nativeRequestService =
+    ('get' in accessor
+      ? accessor.get('IRequestService' as never)
+      : undefined) as NativeRequestServiceLike | undefined
   const hostOptions =
     ('get' in accessor
       ? accessor.get('__bridgeHostBridgeOptions' as never) as {
-          baseUrl?: string
-          branchProvider?: () => Promise<string | undefined> | string | undefined
-          gitDiffProvider?: () => Promise<string> | string
-          testLogsProvider?: () => Promise<string> | string
-        }
+        baseUrl?: string
+        branchProvider?: () => Promise<string | undefined> | string | undefined
+        gitDiffProvider?: () => Promise<string> | string
+        testLogsProvider?: () => Promise<string> | string
+        fetchImpl?: typeof fetch
+        webSocketFactory?: (url: string) => WebSocket
+      }
       : {}) ?? {}
   const entryRef = useRef<ReturnType<typeof attachVoidRealIdeSidebarFromAccessor> | null>(null)
 
@@ -48,9 +243,14 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
 
   useEffect(() => {
     const entry = attachVoidRealIdeSidebarFromAccessor({
-      accessor,
+      accessor: accessorRef.current,
       bridgeClientOptions: {
-        baseUrl: options.baseUrl ?? hostOptions.baseUrl,
+        baseUrl: options.baseUrl ?? hostOptions.baseUrl ?? defaultNativeBaseUrl(),
+        fetchImpl:
+          hostOptions.fetchImpl
+          ?? createNativeRequestFetch(nativeRequestService)
+          ?? createDesktopFetch(),
+        webSocketFactory: hostOptions.webSocketFactory ?? defaultNativeWebSocketFactory,
       },
       branchProvider: options.branchProvider ?? hostOptions.branchProvider,
       gitDiffProvider: options.gitDiffProvider ?? hostOptions.gitDiffProvider,
@@ -87,7 +287,6 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       entryRef.current = null
     }
   }, [
-    accessor,
     hostOptions.baseUrl,
     hostOptions.branchProvider,
     hostOptions.gitDiffProvider,
@@ -96,6 +295,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     options.branchProvider,
     options.gitDiffProvider,
     options.testLogsProvider,
+    nativeRequestService,
   ])
 
   return useMemo(() => ({

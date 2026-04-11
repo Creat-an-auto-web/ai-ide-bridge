@@ -18,8 +18,18 @@ const statusTextOfConnection = (value: string) => {
 
 export const AiIdeBridgePanel = () => {
   const bridge = useAiIdeBridge()
-  const [prompt, setPrompt] = useState('')
+  const [draftPrompt, setDraftPrompt] = useState('')
+  const [isComposing, setIsComposing] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
   const { panel, latestNotification, finalSummary, errorMessage, latestPatchReview } = bridge.uiState
+
+  const promptValue = isEditing || isComposing ? draftPrompt : panel.composer.prompt
+
+  React.useEffect(() => {
+    if (!isEditing && !isComposing) {
+      setDraftPrompt(panel.composer.prompt)
+    }
+  }, [isComposing, isEditing, panel.composer.prompt])
 
   const approvalVisible = panel.approval.visible && panel.approval.commandId
 
@@ -51,11 +61,32 @@ export const AiIdeBridgePanel = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.8, color: 'var(--vscode-input-foreground)' }}>AI IDE Bridge</div>
           <textarea
-            value={prompt}
+            value={promptValue}
+            onFocus={() => {
+              setIsEditing(true)
+              setDraftPrompt(panel.composer.prompt)
+            }}
+            onBlur={(event) => {
+              const nextValue = event.currentTarget.value
+              setIsEditing(false)
+              setDraftPrompt(nextValue)
+              bridge.setPrompt(nextValue)
+            }}
             onChange={(event) => {
-              const value = event.target.value
-              setPrompt(value)
-              bridge.setPrompt(value)
+              const nextValue = event.target.value
+              setDraftPrompt(nextValue)
+              if (!isComposing) {
+                bridge.setPrompt(nextValue)
+              }
+            }}
+            onCompositionStart={() => {
+              setIsComposing(true)
+            }}
+            onCompositionEnd={(event) => {
+              const nextValue = event.currentTarget.value
+              setIsComposing(false)
+              setDraftPrompt(nextValue)
+              bridge.setPrompt(nextValue)
             }}
             placeholder='输入你的任务，例如：修复当前失败的测试'
             style={{

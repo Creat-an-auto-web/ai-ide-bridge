@@ -27,6 +27,13 @@ interface DesktopApi {
   getInitialState?: () => Promise<Partial<LocalHostState>>
   pickDirectory?: () => Promise<string | null>
   pickFile?: () => Promise<string | null>
+  bridgeFetch?: (url: string, init?: RequestInit) => Promise<{
+    ok: boolean
+    status: number
+    statusText: string
+    headers: Array<[string, string]>
+    bodyText: string
+  }>
 }
 
 declare global {

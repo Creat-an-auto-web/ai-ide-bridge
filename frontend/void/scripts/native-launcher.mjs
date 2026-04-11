@@ -1,4 +1,6 @@
 import fs from 'node:fs/promises'
+import http from 'node:http'
+import https from 'node:https'
 import path from 'node:path'
 import process from 'node:process'
 import { spawn } from 'node:child_process'
@@ -22,6 +24,7 @@ const runtimeUserDataDir = path.join(runtimeRoot, 'user-data')
 const runtimeExtensionsDir = path.join(runtimeRoot, 'extensions')
 
 const backendPort = Number(process.env.BRIDGE_BACKEND_PORT ?? 27182)
+const bridgeHttpsProxyPort = Number(process.env.BRIDGE_HTTPS_PROXY_PORT ?? 27183)
 const shouldAutoStartBackend = process.env.BRIDGE_BACKEND_AUTO_START !== '0'
 const shouldStartWatchProcesses = process.env.BRIDGE_START_WATCHERS === '1'
 const npmCommand = process.env.BRIDGE_NPM ?? 'npm'
@@ -85,6 +88,7 @@ const runtimeExtensionInstallDirs = [
 ]
 
 const childProcesses = new Set()
+let bridgeHttpsProxyServer = null
 
 const log = (...args) => {
   console.log('[void-native-launcher]', ...args)
@@ -352,6 +356,77 @@ const waitForHttpOk = async (url, label) => {
   throw new Error(`${label} 启动超时：${url}`)
 }
 
+const bridgeCorsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Access-Control-Expose-Headers': '*',
+}
+
+const ensureHttpsBridgeProxy = async () => {
+  if (bridgeHttpsProxyServer) {
+    return
+  }
+
+  const keyPath = path.join(voidPatchRoot, 'scripts', 'certs', 'bridge-dev.key')
+  const certPath = path.join(voidPatchRoot, 'scripts', 'certs', 'bridge-dev.crt')
+  const [key, cert] = await Promise.all([
+    fs.readFile(keyPath, 'utf8'),
+    fs.readFile(certPath, 'utf8'),
+  ])
+
+  bridgeHttpsProxyServer = https.createServer({ key, cert }, (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, bridgeCorsHeaders)
+      res.end()
+      return
+    }
+
+    const upstream = http.request(
+      {
+        host: '127.0.0.1',
+        port: backendPort,
+        method: req.method,
+        path: req.url,
+        headers: {
+          ...req.headers,
+          host: `127.0.0.1:${backendPort}`,
+        },
+      },
+      (upstreamRes) => {
+        res.writeHead(upstreamRes.statusCode ?? 502, {
+          ...upstreamRes.headers,
+          ...bridgeCorsHeaders,
+        })
+        upstreamRes.pipe(res)
+      },
+    )
+
+    upstream.on('error', (error) => {
+      res.writeHead(502, {
+        'Content-Type': 'application/json; charset=utf-8',
+        ...bridgeCorsHeaders,
+      })
+      res.end(JSON.stringify({
+        success: false,
+        error: {
+          code: 'bridge_proxy_error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }))
+    })
+
+    req.pipe(upstream)
+  })
+
+  await new Promise((resolve, reject) => {
+    bridgeHttpsProxyServer.once('error', reject)
+    bridgeHttpsProxyServer.listen(bridgeHttpsProxyPort, '127.0.0.1', resolve)
+  })
+
+  log(`本地 HTTPS bridge 代理已就绪：https://localhost:${bridgeHttpsProxyPort}`)
+}
+
 const isHttpOk = async (url) => {
   try {
     const response = await fetch(url)
@@ -598,6 +673,7 @@ const startVoidNative = async () => {
   await installRuntimeWorkspaceDependencies()
   await installRuntimeExtraPackages()
   await ensureBackend()
+  await ensureHttpsBridgeProxy()
   await buildRuntimeReact()
   await ensureRuntimeCompiled()
 
@@ -616,6 +692,7 @@ const startVoidNative = async () => {
   if (process.env.BRIDGE_ELECTRON_NO_SANDBOX === '1' || await isWslEnvironment()) {
     codeArgs.push('--no-sandbox')
   }
+  codeArgs.push('--ignore-certificate-errors')
 
   const codeChild = spawnLogged(
     scriptPath,
@@ -656,6 +733,11 @@ const startVoidNative = async () => {
 }
 
 const stopAllChildren = () => {
+  if (bridgeHttpsProxyServer) {
+    bridgeHttpsProxyServer.close()
+    bridgeHttpsProxyServer = null
+  }
+
   for (const child of childProcesses) {
     if (child.exitCode === null && !child.killed) {
       child.kill('SIGINT')

@@ -242,6 +242,24 @@ ipcMain.handle('ai-ide-desktop:pick-file', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
+ipcMain.handle('ai-ide-desktop:bridge-fetch', async (_event, url, init) => {
+  try {
+    const response = await fetch(url, init)
+    const bodyText = await response.text()
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      headers: [...response.headers.entries()],
+      bodyText,
+    }
+  } catch (error) {
+    log(`bridge-fetch 失败 url=${url} detail=${error instanceof Error ? error.message : String(error)}`)
+    throw error
+  }
+})
+
 app.whenReady().then(async () => {
   log('Electron 应用已 ready')
   try {

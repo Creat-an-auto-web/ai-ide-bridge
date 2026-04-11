@@ -239,15 +239,61 @@
 
 ## 前后端通信方式
 
-当前前后端通过桥接协议通信。
+当前前后端不是“直接把一段自然语言扔给后端然后等结果”，而是通过一套显式的桥接协议通信。
 
-前端发起：
+这套桥接协议由两部分组成：
+
+- 控制面
+  - 通过 HTTP 发起任务、审批命令、取消任务、查询任务
+
+- 事件面
+  - 通过 WebSocket 持续接收任务生命周期事件
+
+也就是说，桥接层的通信模型是：
+
+1. 前端先用 HTTP 创建任务
+2. 后端返回 `taskId`
+3. 前端再基于 `taskId` 建立 WebSocket 事件流
+4. 后端不断把该任务的状态变化推送回来
+5. 如果中途需要用户批准命令，前端再用 HTTP 把批准结果发回后端
+
+### 协议文件在哪里
+
+这套协议的前端定义在：
+
+- [protocol.ts](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/src/protocol.ts)
+
+前端客户端实现在：
+
+- [client.ts](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/src/client.ts)
+
+后端接口实现在：
+
+- [tasks.py](/home/ricebean/ai-agent/ai-ide-bridge/backend-bridge/app/api/tasks.py)
+
+后端任务管理与审批状态实现在：
+
+- [task_service.py](/home/ricebean/ai-agent/ai-ide-bridge/backend-bridge/app/services/task_service.py)
+
+后端事件总线实现在：
+
+- [event_bus.py](/home/ricebean/ai-agent/ai-ide-bridge/backend-bridge/app/services/event_bus.py)
+
+前端事件归约实现在：
+
+- [state.ts](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/src/state.ts)
+
+### 传输层是怎么分工的
+
+#### 1. HTTP 负责命令式操作
+
+前端通过 HTTP 执行这些一次性动作：
 
 - `POST /v1/tasks`
   - 创建任务
 
 - `GET /v1/tasks/{taskId}`
-  - 查询任务
+  - 查询任务当前快照
 
 - `POST /v1/tasks/{taskId}/cancel`
   - 取消任务
@@ -255,20 +301,259 @@
 - `POST /v1/tasks/{taskId}/commands/{commandId}/approval`
   - 提交命令审批结果
 
+这些动作都带有明确的请求体和响应体，适合“我要发起一个动作”的场景。
+
+#### 2. WebSocket 负责连续事件流
+
+前端通过：
+
 - `WS /v1/tasks/{taskId}/events`
-  - 订阅任务事件流
 
-后端返回事件包括：
+建立长连接，持续接收任务过程中的事件。
 
-- `task.status`
+这适合：
+
+- 状态变化
+- 日志流
+- 计划步骤
+- 审批请求
+- patch
+- 测试结果
+- 最终结果
+
+如果只用 HTTP 轮询，这些信息会变得很笨重；当前桥接层明确选择了“创建任务走 HTTP，过程事件走 WebSocket”的模型。
+
+### 前端到底发了什么
+
+当用户在 Void 侧栏里输入 prompt 并点击运行时，前端不会只发一段字符串，而是会组装一个 `CreateTaskRequest`。
+
+它包含几个核心部分：
+
+- `requestId`
+  - 前端生成的请求 ID
+  - 便于跟踪一次发起动作
+
+- `sessionId`
+  - 可选会话 ID
+
+- `protocolVersion`
+  - 当前为 `v1alpha1`
+
+- `mode`
+  - 任务模式
+  - 例如 `fix_test`、`edit_selection`、`repo_chat`
+
+- `userPrompt`
+  - 用户在 Void 中输入的自然语言任务
+
+- `repo`
+  - 仓库信息
+  - 包括：
+    - `rootPath`
+    - `branch`
+
+- `context`
+  - IDE 上下文
+  - 包括：
+    - `activeFile`
+    - `selection`
+    - `openFiles`
+    - `diagnostics`
+    - `gitDiff`
+    - `terminalTail`
+    - `testLogs`
+
+- `policy`
+  - 执行策略
+  - 包括：
+    - `workspaceMode`
+    - `network`
+    - `requireApprovalFor`
+    - `maxDurationSec`
+    - `maxOutputBytes`
+    - `writablePaths`
+    - `envAllowlist`
+
+这些字段不是后端自己猜的，而是由前端桥接层通过 `VoidBridgeContextSource` 主动采集，再调用 `buildVoidTaskRequest(...)` 组装出来。
+
+对应实现可看：
+
+- [void-adapter.ts](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/src/void-adapter.ts)
+- [void-source-skeleton.ts](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/src/examples/void-source-skeleton.ts)
+
+### 一次完整通信是怎么发生的
+
+当前桥接协议的一次完整交互，大致是下面这个顺序：
+
+1. 用户在 Void 面板输入 prompt
+2. `BridgeSidebarController` 调用 `VoidBridgeController.runTask(...)`
+3. 前端从 Void 宿主采集上下文
+4. 前端构造 `CreateTaskRequest`
+5. `BridgeClient.createTask(...)` 发送 `POST /v1/tasks`
+6. 后端创建 `taskId`，保存任务请求，并立即返回任务记录
+7. 前端拿到 `taskId` 后，马上连接 `WS /v1/tasks/{taskId}/events`
+8. 后端通过 `EventBus` 推送：
+   - `task.status`
+   - `task.plan`
+   - `task.log`
+   - `task.command.request`
+   - `task.command.result`
+   - `task.patch`
+   - `task.test.result`
+   - `task.error`
+   - `task.final`
+9. 前端每收到一个事件，就用 `applyBridgeEvent(...)` 归约到本地状态
+10. 侧栏 UI 根据归约后的状态刷新显示
+
+这就是 README 里说的“通过桥接协议通信”的具体含义。
+
+### 响应体和事件体长什么样
+
+#### 1. HTTP 响应统一包一层 `ResponseEnvelope`
+
+后端不会直接返回裸数据，而是统一返回：
+
+- `success`
+- `requestId`
+- `data`
+- `error`
+- `protocolVersion`
+
+这样前端可以统一处理成功与失败。
+
+#### 2. WebSocket 事件统一包一层 `EventEnvelope`
+
+每个事件都至少带这些字段：
+
+- `eventId`
+- `taskId`
+- `seq`
+- `type`
+- `timestamp`
+- `payload`
+
+这里最关键的是：
+
+- `taskId`
+  - 用来说明这个事件属于哪个任务
+
+- `seq`
+  - 用来保证同一任务事件的顺序
+
+- `type`
+  - 用来决定这是什么事件
+
+- `payload`
+  - 真正的业务内容
+
+### 事件顺序是怎么保证的
+
+后端不是随便往 WebSocket 里写消息，而是先经过 `EventBus`。
+
+`EventBus` 当前做了三件事：
+
+- 为每个 `taskId` 分配独立的订阅队列
+- 为每个 `taskId` 维护递增的 `seq`
+- 为每个 `taskId` 保存一份历史事件列表
+
+这意味着：
+
+- 每个任务的事件都有单独序号
+- WebSocket 新连接建立后，后端会先把该任务的历史事件补发一遍
+- 再继续推送新的实时事件
+
+这能解决两个问题：
+
+- 前端连接建立得稍晚，也不会错过前面的状态
+- 前端可以用 `seq` 避免重复处理旧事件
+
+对应实现见：
+
+- [event_bus.py](/home/ricebean/ai-agent/ai-ide-bridge/backend-bridge/app/services/event_bus.py)
+- [tasks.py](/home/ricebean/ai-agent/ai-ide-bridge/backend-bridge/app/api/tasks.py)
+
+前端在 `applyBridgeEvent(...)` 里也会检查：
+
+- 如果 `event.seq <= prev.highestSeq`
+  - 直接忽略
+
+这就是当前协议层的幂等保护。
+
+### 命令审批是怎么往返的
+
+命令审批是当前桥接协议里最重要的一条闭环。
+
+执行顺序如下：
+
+1. 后端在任务执行过程中发现某个命令需要审批
+2. 后端调用 `request_command_approval(...)`
+3. 后端：
+   - 把任务状态设为 `awaiting_approval`
+   - 发布 `task.command.request`
+   - 为该命令创建一个 `Future`
+4. 前端通过 WebSocket 收到 `task.command.request`
+5. 前端侧栏显示审批卡片
+6. 用户点击“批准”或“拒绝”
+7. 前端发送：
+   - `POST /v1/tasks/{taskId}/commands/{commandId}/approval`
+8. 后端收到 HTTP 请求后：
+   - 找到对应命令记录
+   - 更新命令状态
+   - 结束等待中的 `Future`
+9. 执行引擎继续向下运行
+
+也就是说：
+
+- 审批请求是事件流下发
+- 审批结果是 HTTP 回传
+
+这是一个典型的“异步请求 + 显式确认”的桥接协议回路。
+
+### 前端是怎么把事件变成 UI 的
+
+前端不会把 WebSocket 收到的 JSON 直接渲染。
+
+当前流程是：
+
+1. `BridgeClient` 收到原始事件
+2. 调用 `applyBridgeEvent(...)`
+3. 归约到 `BridgeState`
+4. `BridgeSidebarController` 再把 `BridgeState` 映射成面板状态
+5. `AiIdeBridgePanel` 用这个面板状态渲染 UI
+
+例如：
+
 - `task.plan`
-- `task.log`
+  - 会变成侧栏里的计划步骤列表
+
 - `task.command.request`
-- `task.command.result`
+  - 会变成审批卡片
+
 - `task.patch`
-- `task.test.result`
-- `task.error`
+  - 会变成 patch 摘要与文件列表
+
 - `task.final`
+  - 会变成最终结果摘要
+
+所以桥接协议不只是“传消息”，还负责把后端任务过程转换成前端可消费的状态机。
+
+### 这套协议目前的真实边界
+
+当前这套协议已经在“前端桥接到后端”的层面打通了，但还有两个边界要明确：
+
+- 第一，当前后端引擎仍是 mock
+  - 协议是通的
+  - 执行不是真的 OpenHands
+
+- 第二，当前协议是我们项目内部定义的桥接协议
+  - 不是 OpenHands 原生协议
+  - 如果后续接 OpenHands，需要再做一层后端适配
+
+所以当前 README 中说“通过桥接协议通信”，准确含义是：
+
+- Void 原生前端不直接对接 OpenHands
+- 而是先把用户输入和 IDE 上下文包装成我们定义的桥接协议
+- 再由 `backend-bridge` 根据这套协议接收、编排、回传事件
 
 ## 当前与 OpenHands 的关系
 

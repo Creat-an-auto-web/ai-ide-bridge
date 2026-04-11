@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld('aiIdeDesktop', {
   async pickFile() {
     return await ipcRenderer.invoke('ai-ide-desktop:pick-file')
   },
+  async bridgeFetch(url, init) {
+    return await ipcRenderer.invoke('ai-ide-desktop:bridge-fetch', url, init)
+  },
 })
