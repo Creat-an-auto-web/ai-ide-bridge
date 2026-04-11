@@ -30,6 +30,16 @@ class OpenHandsEngine:
         self.event_bus = event_bus
         self.openhands_url = openhands_url.rstrip("/")
 
+    @staticmethod
+    def _extract_prompt(req) -> str:
+        prompt = getattr(req, "userPrompt", None)
+        if isinstance(prompt, str) and prompt.strip():
+            return prompt
+        legacy_prompt = getattr(req, "prompt", None)
+        if isinstance(legacy_prompt, str):
+            return legacy_prompt
+        raise RuntimeError("Task request does not contain a valid user prompt")
+
     def _get_ws_url(self, conversation_id: str) -> str:
         base = self.openhands_url.replace("http://", "ws://").replace("https://", "wss://")
         # OpenHands V1 typically uses /sockets/events/{conversation_id}
@@ -50,7 +60,7 @@ class OpenHandsEngine:
                     # For now, we simulate the handshake or hit a known endpoint.
                     # We pass the repo path and prompt from our request.
                     init_payload = {
-                        "prompt": req.prompt,
+                        "prompt": self._extract_prompt(req),
                         "workspace_dir": req.repo.rootPath,
                         "mode": req.mode,
                     }
