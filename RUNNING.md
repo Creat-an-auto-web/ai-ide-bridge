@@ -48,6 +48,116 @@ http://127.0.0.1:27182/healthz
 {"ok": true}
 ```
 
+## 1.5 从零启动整条链路
+
+下面这组命令用于启动：
+
+- OpenHands 后端
+- `backend-bridge`
+- 基于 Void 原生前端的本地 IDE
+
+先说明一个容易混淆的点：
+
+- `make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000` 不会自动执行 `docker compose up`
+- 这条命令只会启动 OpenHands 后端进程
+- OpenHands 的 `Makefile` 中，显式走 Docker 的是单独的 `docker-run` 目标，不是 `start-backend`
+- 但 OpenHands 默认 runtime 仍是 `docker`
+- 这意味着：OpenHands 服务本身可以先起来，但真实任务执行阶段仍可能要求本机 Docker daemon 可用
+
+### 首次准备
+
+```bash
+cd /home/ricebean/ai-agent
+source .venv/bin/activate
+
+pip install -r ai-ide-bridge/backend-bridge/requirements.txt
+
+npm install --prefix ai-ide-bridge/frontend/void
+npm run install:native-deps --prefix ai-ide-bridge/frontend/void
+```
+
+如果你要跑真实 OpenHands 任务，建议先确认本机 Docker 可用：
+
+```bash
+docker ps
+```
+
+### 推荐启动方式：两个终端
+
+终端 1，启动 OpenHands 后端：
+
+```bash
+cd /home/ricebean/ai-agent/OpenHands
+source /home/ricebean/ai-agent/.venv/bin/activate
+unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
+export NO_PROXY=127.0.0.1,localhost
+make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000
+```
+
+终端 2，启动我们自己的前端入口。
+
+这条命令会自动拉起 `backend-bridge`，然后打开 Void 原生前端：
+
+```bash
+cd /home/ricebean/ai-agent
+source .venv/bin/activate
+unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
+export NO_PROXY=127.0.0.1,localhost
+export OPENHANDS_URL=http://127.0.0.1:3000
+npm run start:native --prefix ai-ide-bridge/frontend/void
+```
+
+### 手动启动方式：三个终端
+
+如果你想把 `backend-bridge` 单独起出来以便观察日志，可使用下面这组命令。
+
+终端 1，启动 OpenHands 后端：
+
+```bash
+cd /home/ricebean/ai-agent/OpenHands
+source /home/ricebean/ai-agent/.venv/bin/activate
+unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
+export NO_PROXY=127.0.0.1,localhost
+make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000
+```
+
+终端 2，启动 `backend-bridge`：
+
+```bash
+cd /home/ricebean/ai-agent/ai-ide-bridge/backend-bridge
+source /home/ricebean/ai-agent/.venv/bin/activate
+unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
+export NO_PROXY=127.0.0.1,localhost
+export OPENHANDS_URL=http://127.0.0.1:3000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 27182
+```
+
+终端 3，启动前端，并关闭自动拉起 `backend-bridge`：
+
+```bash
+cd /home/ricebean/ai-agent
+source .venv/bin/activate
+unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
+export NO_PROXY=127.0.0.1,localhost
+export OPENHANDS_URL=http://127.0.0.1:3000
+export BRIDGE_BACKEND_AUTO_START=0
+npm run start:native --prefix ai-ide-bridge/frontend/void
+```
+
+### 最小检查命令
+
+检查 `backend-bridge`：
+
+```bash
+curl http://127.0.0.1:27182/healthz
+```
+
+期望返回：
+
+```json
+{"ok":true}
+```
+
 ## 2. 启动前端 Demo
 
 在另一个终端执行：
