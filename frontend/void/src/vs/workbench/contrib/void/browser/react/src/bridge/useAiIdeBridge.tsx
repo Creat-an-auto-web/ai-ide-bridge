@@ -235,8 +235,6 @@ const createNativeRequestFetch = (
 
 const REQUIREMENT_ANALYSIS_SETTINGS_STORAGE_KEY = 'aiIdeBridge.requirementAnalysis.settings'
 const REQUIREMENT_ANALYSIS_SETTINGS_LOCAL_STORAGE_KEY = 'ai-ide-bridge.requirement-analysis.settings'
-const REQUIREMENT_ANALYSIS_SERVICE_URL = 'http://127.0.0.1:27184'
-
 const loadRequirementAnalysisSettingsFromStorage = (
   storageService: StorageServiceLike | undefined,
 ): RequirementAnalysisAgentSettings => {
@@ -511,7 +509,12 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
 
       try {
         const inputPayload = await toRequirementAnalysisInputPayload(accessorRef.current, nextPrompt)
-        const response = await fetchImpl(`${REQUIREMENT_ANALYSIS_SERVICE_URL}/v1/requirement-analysis/runs`, {
+        const requirementAnalysisBaseUrl =
+          options.baseUrl
+          ?? hostOptions.baseUrl
+          ?? defaultNativeBaseUrl()
+          ?? 'http://127.0.0.1:27182'
+        const response = await fetchImpl(`${requirementAnalysisBaseUrl}/v1/requirement-analysis/runs`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

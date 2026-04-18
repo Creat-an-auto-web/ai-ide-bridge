@@ -10,8 +10,8 @@ from typing import Any
 from tdd_agent_framework.agents.requirement_analysis import (
     RequirementAnalysisAgentSettings,
     RequirementAnalysisInput,
-    build_requirement_analysis_service,
 )
+from tdd_agent_framework.orchestrators import RequirementAnalysisOrchestrator
 
 
 def _json_response(
@@ -33,8 +33,8 @@ def _json_response(
 async def _run_requirement_analysis(payload: dict[str, Any]) -> dict[str, Any]:
     settings = RequirementAnalysisAgentSettings.from_dict(payload.get("settings"))
     analysis_input = RequirementAnalysisInput.from_dict(payload.get("input"))
-    service = build_requirement_analysis_service(settings)
-    result = await service.analyze(analysis_input)
+    orchestrator = RequirementAnalysisOrchestrator()
+    result = await orchestrator.run(settings, analysis_input)
     return asdict(result)
 
 

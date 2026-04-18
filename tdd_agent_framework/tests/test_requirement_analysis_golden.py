@@ -49,11 +49,13 @@ def load_expected_fixture(name: str) -> dict:
 
 
 class RequirementAnalysisGoldenTest(unittest.TestCase):
-    def test_bugfix_token_refresh_fixture(self) -> None:
-        self._assert_fixture_matches("bugfix_token_refresh")
-
-    def test_feature_export_csv_fixture(self) -> None:
-        self._assert_fixture_matches("feature_export_csv")
+    def test_all_fixture_pairs(self) -> None:
+        input_files = sorted(FIXTURES_DIR.glob("*_input.json"))
+        fixture_names = [file_path.name.removesuffix("_input.json") for file_path in input_files]
+        self.assertGreaterEqual(len(fixture_names), 6)
+        for fixture_name in fixture_names:
+            with self.subTest(fixture=fixture_name):
+                self._assert_fixture_matches(fixture_name)
 
     def _assert_fixture_matches(self, name: str) -> None:
         analysis_input = load_input_fixture(name)

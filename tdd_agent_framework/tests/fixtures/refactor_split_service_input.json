@@ -1,0 +1,22 @@
+{
+  "task_id": "task_refactor_split_service_001",
+  "mode": "refactor_scope",
+  "user_prompt": "把过大的 user service 按职责拆分，但保持当前接口和行为不变。",
+  "repo_root": "/workspace/project",
+  "workspace_summary": {
+    "languages": ["python"],
+    "frameworks": ["fastapi", "pytest"],
+    "key_modules": ["app/user", "tests/user"]
+  },
+  "active_file": "app/user/service.py",
+  "selection": null,
+  "open_files": ["app/user/service.py", "tests/test_user_service.py"],
+  "diagnostics": [],
+  "recent_test_failures": [],
+  "git_diff_summary": "",
+  "execution_constraints": {
+    "disallow_new_dependencies": true,
+    "preserve_public_api": true,
+    "max_story_units": 5
+  }
+}

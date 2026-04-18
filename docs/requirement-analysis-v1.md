@@ -561,6 +561,32 @@ backend/
 - 关键样例的拆解结果可回归测试
 - 前端或日志中能看到第一环阶段产物摘要
 
+## 16.1 系统级评估标准
+
+除了单次运行可用，还需要定义第一环的系统级评估标准。
+
+建议至少统计：
+
+- `title_recall`
+  - 预期 story 标题的召回率
+- `has_testable_ac`
+  - 是否持续产出可测试的验收标准
+- `dependency_graph_valid`
+  - 依赖关系是否稳定合法
+- `story_count_within_limit`
+  - story 数量是否持续受控
+- `pass_rate`
+  - 在整组样例上达到“可接受拆解质量”的比例
+
+当前建议阈值：
+
+- `pass_rate >= 0.8`
+- `title_recall >= 0.7`
+- `has_testable_ac == 1.0`
+- `dependency_graph_valid == 1.0`
+
+评估脚本可独立执行，不依赖 IDE UI。
+
 ## 17. 结论
 
 第一环现在完全可以开工，而且应该优先开工。

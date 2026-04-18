@@ -1,0 +1,22 @@
+{
+  "task_id": "task_feature_retry_failed_task_001",
+  "mode": "repo_chat",
+  "user_prompt": "支持用户在任务失败后点击重试，保留原有任务参数，不要重做任务列表 API。",
+  "repo_root": "/workspace/project",
+  "workspace_summary": {
+    "languages": ["python", "typescript"],
+    "frameworks": ["fastapi", "react", "pytest"],
+    "key_modules": ["app/tasks", "frontend/tasks", "tests/tasks"]
+  },
+  "active_file": "app/tasks/service.py",
+  "selection": null,
+  "open_files": ["app/tasks/service.py", "frontend/tasks/TaskList.tsx"],
+  "diagnostics": [],
+  "recent_test_failures": [],
+  "git_diff_summary": "",
+  "execution_constraints": {
+    "disallow_new_dependencies": true,
+    "preserve_public_api": true,
+    "max_story_units": 5
+  }
+}

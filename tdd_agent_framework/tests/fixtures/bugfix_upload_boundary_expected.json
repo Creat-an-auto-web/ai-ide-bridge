@@ -1,0 +1,59 @@
+{
+  "requirement_spec": {
+    "task_id": "task_bugfix_upload_boundary_001",
+    "version": 1,
+    "problem_statement": "文件上传在空文件和超长文件名场景下处理不稳定，导致上传流程报错。",
+    "product_goal": "修复上传边界条件处理，同时保持现有上传接口不变。",
+    "scope": ["empty file validation", "filename normalization", "upload error handling"],
+    "out_of_scope": ["上传页面 UI 改版"],
+    "constraints": ["保持现有上传接口不变", "不引入新的外部依赖"],
+    "assumptions": ["现有上传流程已有基础校验"],
+    "interfaces_or_contracts": ["upload_file(file, filename) -> UploadResult"],
+    "acceptance_criteria": [
+      "0 字节文件上传不会导致服务异常崩溃",
+      "超长文件名会被稳定处理或返回明确错误",
+      "现有上传接口契约保持不变"
+    ],
+    "decomposition_strategy": "按空文件和文件名边界条件拆分"
+  },
+  "story_units": [
+    {
+      "id": "story_upload_empty_file",
+      "title": "空文件上传边界处理",
+      "actor": "上传文件的用户",
+      "goal": "上传空文件时系统给出稳定处理结果",
+      "business_value": "避免边界输入导致服务报错",
+      "scope": ["empty file validation"],
+      "out_of_scope": ["上传页面 UI 改版"],
+      "acceptance_criteria": [
+        "0 字节文件上传不会导致未处理异常",
+        "系统会返回明确可预期的上传结果",
+        "现有接口返回结构保持兼容"
+      ],
+      "dependencies": [],
+      "priority": "high",
+      "risk": "medium",
+      "test_focus": ["空文件输入", "接口兼容", "错误处理"],
+      "implementation_hints": ["优先检查 app/upload/service.py 中的文件大小校验"]
+    },
+    {
+      "id": "story_upload_filename_boundary",
+      "title": "超长文件名稳定处理",
+      "actor": "上传文件的用户",
+      "goal": "超长文件名输入时系统行为稳定",
+      "business_value": "避免异常文件名破坏上传流程",
+      "scope": ["filename normalization", "upload error handling"],
+      "out_of_scope": ["文件管理页面改版"],
+      "acceptance_criteria": [
+        "超长文件名不会导致服务崩溃",
+        "文件名会被规范化处理或返回明确错误",
+        "上传失败时错误信息可被测试断言"
+      ],
+      "dependencies": ["story_upload_empty_file"],
+      "priority": "medium",
+      "risk": "medium",
+      "test_focus": ["超长文件名", "错误消息", "上传回退路径"],
+      "implementation_hints": ["检查文件名长度限制与异常转换逻辑"]
+    }
+  ]
+}

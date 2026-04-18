@@ -5,10 +5,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.requirement_analysis import router as requirement_analysis_router
 from app.api.tasks import router as task_router
 from app.services.event_bus import EventBus
 from app.services.mock_engine import MockEngine
 from app.services.openhands_engine import OpenHandsEngine
+from app.services.requirement_analysis_service import RequirementAnalysisBackendService
 from app.services.task_service import TaskService
 
 
@@ -28,6 +30,7 @@ async def lifespan(app: FastAPI):
 
     app.state.event_bus = event_bus
     app.state.task_service = task_service
+    app.state.requirement_analysis_service = RequirementAnalysisBackendService()
     yield
 
 
@@ -40,3 +43,4 @@ def healthz():
 
 
 app.include_router(task_router)
+app.include_router(requirement_analysis_router)

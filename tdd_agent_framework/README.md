@@ -36,6 +36,28 @@ python -m tdd_agent_framework.server --host 127.0.0.1 --port 27184
 
 前端 bridge 面板中的“运行第一环原型”按钮会调用这个服务。
 
+第一环系统级评估：
+
+```bash
+cd /home/ricebean/ai-agent/ai-ide-bridge
+python -m tdd_agent_framework.evals.requirement_analysis_eval --settings /path/to/requirement-analysis-settings.json
+```
+
+评估输出会给出：
+
+- `title_recall`
+- `has_testable_ac`
+- `dependency_graph_valid`
+- `story_count_within_limit`
+- `pass_rate`
+
+当前建议阈值：
+
+- `pass_rate >= 0.8`
+- `title_recall >= 0.7`
+- `has_testable_ac == 1.0`
+- `dependency_graph_valid == 1.0`
+
 这个原型层的设计原则是：
 
 - 每个环节是独立智能体

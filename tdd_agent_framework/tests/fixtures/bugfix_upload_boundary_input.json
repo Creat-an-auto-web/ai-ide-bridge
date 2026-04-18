@@ -1,0 +1,24 @@
+{
+  "task_id": "task_bugfix_upload_boundary_001",
+  "mode": "fix_test",
+  "user_prompt": "修复文件上传在 0 字节文件和超长文件名场景下报错的问题，保持现有上传接口不变。",
+  "repo_root": "/workspace/project",
+  "workspace_summary": {
+    "languages": ["python"],
+    "frameworks": ["fastapi", "pytest"],
+    "key_modules": ["app/upload", "tests/upload"]
+  },
+  "active_file": "app/upload/service.py",
+  "selection": null,
+  "open_files": ["app/upload/service.py", "tests/test_upload.py"],
+  "diagnostics": [],
+  "recent_test_failures": [
+    "test_upload_empty_file raised ValueError"
+  ],
+  "git_diff_summary": "",
+  "execution_constraints": {
+    "disallow_new_dependencies": true,
+    "preserve_public_api": true,
+    "max_story_units": 4
+  }
+}

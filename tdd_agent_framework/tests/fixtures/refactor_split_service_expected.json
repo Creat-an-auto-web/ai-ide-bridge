@@ -1,0 +1,59 @@
+{
+  "requirement_spec": {
+    "task_id": "task_refactor_split_service_001",
+    "version": 1,
+    "problem_statement": "当前 user service 职责过多，查询、写入和权限相关逻辑混在同一模块中，维护成本高。",
+    "product_goal": "按职责拆分 user service，同时保持现有接口和行为不变。",
+    "scope": ["service responsibility split", "module boundary cleanup", "regression safety"],
+    "out_of_scope": ["API 行为改版"],
+    "constraints": ["保持当前接口不变", "保持当前行为不变"],
+    "assumptions": ["现有测试能够覆盖关键用户流程"],
+    "interfaces_or_contracts": ["对外暴露的 user service 接口签名保持兼容"],
+    "acceptance_criteria": [
+      "user service 会按职责拆分",
+      "对外接口签名保持不变",
+      "关键回归测试继续通过"
+    ],
+    "decomposition_strategy": "按查询职责和写入职责拆分"
+  },
+  "story_units": [
+    {
+      "id": "story_split_user_query_logic",
+      "title": "拆分用户查询职责",
+      "actor": "后端维护者",
+      "goal": "将用户查询相关逻辑从大 service 中独立出来",
+      "business_value": "提升模块清晰度",
+      "scope": ["service responsibility split"],
+      "out_of_scope": ["API 改版"],
+      "acceptance_criteria": [
+        "查询逻辑会迁移到独立职责模块",
+        "现有对外查询接口签名保持兼容",
+        "查询相关回归测试继续通过"
+      ],
+      "dependencies": [],
+      "priority": "medium",
+      "risk": "medium",
+      "test_focus": ["接口兼容", "查询回归", "模块边界"],
+      "implementation_hints": ["先识别 app/user/service.py 中查询相关函数"]
+    },
+    {
+      "id": "story_split_user_write_logic",
+      "title": "拆分用户写入职责",
+      "actor": "后端维护者",
+      "goal": "将用户写入和状态更新逻辑独立出来",
+      "business_value": "降低修改风险",
+      "scope": ["module boundary cleanup", "regression safety"],
+      "out_of_scope": ["权限模型改版"],
+      "acceptance_criteria": [
+        "写入逻辑会迁移到独立职责模块",
+        "现有写入接口行为保持不变",
+        "写入与状态更新测试继续通过"
+      ],
+      "dependencies": ["story_split_user_query_logic"],
+      "priority": "medium",
+      "risk": "high",
+      "test_focus": ["写入回归", "状态更新", "模块边界"],
+      "implementation_hints": ["梳理写入路径与状态更新副作用"]
+    }
+  ]
+}

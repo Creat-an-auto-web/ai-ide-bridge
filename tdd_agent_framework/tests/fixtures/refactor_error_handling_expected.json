@@ -1,0 +1,59 @@
+{
+  "requirement_spec": {
+    "task_id": "task_refactor_error_handling_001",
+    "version": 1,
+    "problem_statement": "多个接口重复实现 try/except 和错误转换逻辑，增加维护成本且容易不一致。",
+    "product_goal": "统一错误处理实现，同时保持现有接口行为和错误码不变。",
+    "scope": ["shared error mapping", "route-level refactor", "regression safety"],
+    "out_of_scope": ["错误码体系改版"],
+    "constraints": ["保持现有接口行为不变", "保持现有错误码不变"],
+    "assumptions": ["项目已有公共错误类型定义"],
+    "interfaces_or_contracts": ["对外错误响应结构保持兼容"],
+    "acceptance_criteria": [
+      "重复错误处理逻辑会被收敛到共享实现",
+      "现有错误码不发生变化",
+      "对外接口行为保持一致"
+    ],
+    "decomposition_strategy": "按共享错误映射与路由侧替换拆分"
+  },
+  "story_units": [
+    {
+      "id": "story_shared_error_mapping",
+      "title": "抽取共享错误映射逻辑",
+      "actor": "后端维护者",
+      "goal": "将重复错误转换逻辑收敛为共享实现",
+      "business_value": "降低重复逻辑和维护成本",
+      "scope": ["shared error mapping"],
+      "out_of_scope": ["错误码体系改版"],
+      "acceptance_criteria": [
+        "共享错误映射逻辑可被多个接口复用",
+        "现有错误码映射保持一致",
+        "共享实现可被单独测试"
+      ],
+      "dependencies": [],
+      "priority": "high",
+      "risk": "medium",
+      "test_focus": ["错误码兼容", "共享逻辑复用", "单元测试覆盖"],
+      "implementation_hints": ["优先复用 app/common/errors.py 中已有错误定义"]
+    },
+    {
+      "id": "story_route_error_refactor",
+      "title": "替换路由层重复错误处理",
+      "actor": "后端维护者",
+      "goal": "让接口路由复用共享错误处理逻辑",
+      "business_value": "减少 route 层重复代码",
+      "scope": ["route-level refactor", "regression safety"],
+      "out_of_scope": ["接口行为改版"],
+      "acceptance_criteria": [
+        "目标路由不再保留重复 try/except 模板",
+        "对外响应结构保持不变",
+        "关键回归测试继续通过"
+      ],
+      "dependencies": ["story_shared_error_mapping"],
+      "priority": "medium",
+      "risk": "high",
+      "test_focus": ["回归响应结构", "异常路径", "路由层重复代码移除"],
+      "implementation_hints": ["检查 app/api/routes.py 中重复异常处理分支"]
+    }
+  ]
+}

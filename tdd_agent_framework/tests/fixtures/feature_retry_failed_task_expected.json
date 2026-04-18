@@ -1,0 +1,59 @@
+{
+  "requirement_spec": {
+    "task_id": "task_feature_retry_failed_task_001",
+    "version": 1,
+    "problem_statement": "任务失败后当前系统缺少重试能力，用户需要手动重新创建任务。",
+    "product_goal": "提供失败任务重试能力，并复用原有任务参数。",
+    "scope": ["retry entry", "parameter reuse", "retry execution flow"],
+    "out_of_scope": ["任务列表 API 重构"],
+    "constraints": ["不要重做任务列表 API", "不引入新的外部依赖"],
+    "assumptions": ["失败任务已有可读取的参数记录"],
+    "interfaces_or_contracts": ["重试能力应复用原始任务参数"],
+    "acceptance_criteria": [
+      "失败任务可被用户显式重试",
+      "重试时会复用原始任务参数",
+      "现有任务列表 API 保持不变"
+    ],
+    "decomposition_strategy": "按重试入口与重试执行链路拆分"
+  },
+  "story_units": [
+    {
+      "id": "story_retry_failed_task_entry",
+      "title": "失败任务提供重试入口",
+      "actor": "任务列表用户",
+      "goal": "在失败任务上显式触发重试操作",
+      "business_value": "降低重复提交成本",
+      "scope": ["retry entry"],
+      "out_of_scope": ["任务列表 API 重构"],
+      "acceptance_criteria": [
+        "失败任务会显示可用的重试入口",
+        "非失败任务不会误显示重试入口",
+        "点击重试入口会进入重试流程"
+      ],
+      "dependencies": [],
+      "priority": "high",
+      "risk": "medium",
+      "test_focus": ["入口显示条件", "点击行为", "状态过滤"],
+      "implementation_hints": ["先检查前端任务状态判断逻辑"]
+    },
+    {
+      "id": "story_retry_failed_task_execution",
+      "title": "重试时复用原始任务参数",
+      "actor": "任务列表用户",
+      "goal": "重新执行失败任务时复用之前的关键参数",
+      "business_value": "保证重试行为和原任务一致",
+      "scope": ["parameter reuse", "retry execution flow"],
+      "out_of_scope": ["列表 API 变更"],
+      "acceptance_criteria": [
+        "重试请求会复用原始任务参数",
+        "重试任务与原任务会被区分记录",
+        "参数缺失时会返回明确错误"
+      ],
+      "dependencies": ["story_retry_failed_task_entry"],
+      "priority": "high",
+      "risk": "high",
+      "test_focus": ["参数复用", "重试记录", "缺失参数错误"],
+      "implementation_hints": ["复用 app/tasks/service.py 中已有任务读取逻辑"]
+    }
+  ]
+}
