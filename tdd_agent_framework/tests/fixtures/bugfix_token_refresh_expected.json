@@ -1,0 +1,100 @@
+{
+  "requirement_spec": {
+    "task_id": "task_bugfix_refresh_001",
+    "version": 1,
+    "problem_statement": "access token 过期后当前登录态无法自动刷新，导致请求失败或会话异常中断。",
+    "product_goal": "恢复 token 自动刷新能力，并在刷新失败时执行安全登出。",
+    "scope": [
+      "token expiry detection",
+      "refresh token validation",
+      "refresh success persistence",
+      "refresh failure logout"
+    ],
+    "out_of_scope": [
+      "login ui redesign",
+      "permission system redesign"
+    ],
+    "constraints": [
+      "保持现有对外接口不变",
+      "不引入新的外部依赖"
+    ],
+    "assumptions": [
+      "项目已有 refresh token 机制",
+      "测试框架为 pytest"
+    ],
+    "interfaces_or_contracts": [
+      "refresh_session(user_id, refresh_token) -> SessionResult",
+      "刷新失败时必须清理本地 token 状态"
+    ],
+    "acceptance_criteria": [
+      "access token 过期时系统会自动触发刷新流程",
+      "刷新成功后新 token 会写回存储",
+      "刷新失败时用户会被安全登出"
+    ],
+    "decomposition_strategy": "按刷新成功与刷新失败两条路径拆分"
+  },
+  "story_units": [
+    {
+      "id": "story_refresh_success",
+      "title": "过期 token 自动刷新",
+      "actor": "已登录用户",
+      "goal": "在 access token 过期后自动获取并写回新 token",
+      "business_value": "减少用户登录中断",
+      "scope": [
+        "token expiry detection",
+        "refresh token validation",
+        "refresh success persistence"
+      ],
+      "out_of_scope": [
+        "login ui redesign"
+      ],
+      "acceptance_criteria": [
+        "当 access token 过期且 refresh token 有效时，系统会请求新 token",
+        "新 token 会写回本地存储",
+        "刷新后后续请求使用新 token"
+      ],
+      "dependencies": [],
+      "priority": "high",
+      "risk": "medium",
+      "test_focus": [
+        "刷新成功路径",
+        "token 持久化",
+        "刷新后请求状态"
+      ],
+      "implementation_hints": [
+        "优先检查 app/auth/service.py 中的 refresh_session 流程"
+      ]
+    },
+    {
+      "id": "story_refresh_failure",
+      "title": "刷新失败时安全登出",
+      "actor": "已登录用户",
+      "goal": "当 refresh token 无效或刷新失败时清理会话状态",
+      "business_value": "避免错误登录状态继续存在",
+      "scope": [
+        "refresh failure logout"
+      ],
+      "out_of_scope": [
+        "permission redesign"
+      ],
+      "acceptance_criteria": [
+        "当 refresh token 无效时系统会终止当前会话",
+        "本地 token 状态会被清理",
+        "失败后的后续请求不再携带旧 token"
+      ],
+      "dependencies": [
+        "story_refresh_success"
+      ],
+      "priority": "medium",
+      "risk": "high",
+      "test_focus": [
+        "刷新失败路径",
+        "状态清理",
+        "后续请求状态"
+      ],
+      "implementation_hints": [
+        "检查 logout fallback 与 token cleanup 逻辑"
+      ]
+    }
+  ]
+}

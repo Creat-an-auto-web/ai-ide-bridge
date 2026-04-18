@@ -1,12 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { CancellationToken } from '../../../../../../../base/common/cancellation.js'
 import { asText } from '../../../../../../../platform/request/common/request.js'
+import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js'
 import {
   BridgeSidebarPanelState,
   PatchReviewModel,
+  RequirementAnalysisAgentSettings,
+  RequirementAnalysisAgentSettingsPayload,
+  RequirementAnalysisAgentSettingsSummary,
   WorkspaceEditModel,
   attachVoidRealIdeSidebarFromAccessor,
+  createDefaultRequirementAnalysisSettings,
   emptyBridgeSidebarState,
+  normalizeRequirementAnalysisSettings,
+  summarizeRequirementAnalysisSettings,
+  toRequirementAnalysisAgentSettingsPayload,
 } from '../../../../../../../../ai-ide-bridge/frontend-bridge/src/index.js'
 import { useAccessor } from '../util/services.js'
 
@@ -34,6 +42,11 @@ interface NativeRequestServiceLike {
   ): Promise<unknown>
 }
 
+interface StorageServiceLike {
+  get(key: string, scope: StorageScope, fallbackValue?: string): string
+  store(key: string, value: string, scope: StorageScope, target: StorageTarget): void
+}
+
 declare global {
   interface Window {
     aiIdeDesktop?: DesktopApi
@@ -42,6 +55,9 @@ declare global {
 
 export interface AiIdeBridgeUiState {
   panel: BridgeSidebarPanelState
+  requirementAnalysisSettings: RequirementAnalysisAgentSettings
+  requirementAnalysisSettingsSummary: RequirementAnalysisAgentSettingsSummary
+  requirementAnalysisSettingsPayload: RequirementAnalysisAgentSettingsPayload
   latestNotification: { level: 'info' | 'warning' | 'error'; title: string; message: string } | null
   latestPatchReview: PatchReviewModel | null
   latestWorkspaceEdit: WorkspaceEditModel | null
@@ -211,6 +227,65 @@ const createNativeRequestFetch = (
   }
 }
 
+const REQUIREMENT_ANALYSIS_SETTINGS_STORAGE_KEY = 'aiIdeBridge.requirementAnalysis.settings'
+const REQUIREMENT_ANALYSIS_SETTINGS_LOCAL_STORAGE_KEY = 'ai-ide-bridge.requirement-analysis.settings'
+
+const loadRequirementAnalysisSettingsFromStorage = (
+  storageService: StorageServiceLike | undefined,
+): RequirementAnalysisAgentSettings => {
+  try {
+    const storedValue = storageService?.get(
+      REQUIREMENT_ANALYSIS_SETTINGS_STORAGE_KEY,
+      StorageScope.APPLICATION,
+      '',
+    )
+    if (storedValue) {
+      return normalizeRequirementAnalysisSettings(JSON.parse(storedValue))
+    }
+  } catch {
+    // ignore storage parse errors and fall back to localStorage/defaults
+  }
+
+  try {
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      const storedValue = window.localStorage.getItem(REQUIREMENT_ANALYSIS_SETTINGS_LOCAL_STORAGE_KEY)
+      if (storedValue) {
+        return normalizeRequirementAnalysisSettings(JSON.parse(storedValue))
+      }
+    }
+  } catch {
+    // ignore localStorage errors and fall back to defaults
+  }
+
+  return createDefaultRequirementAnalysisSettings()
+}
+
+const persistRequirementAnalysisSettings = (
+  settings: RequirementAnalysisAgentSettings,
+  storageService: StorageServiceLike | undefined,
+) => {
+  const serialized = JSON.stringify(settings)
+
+  try {
+    storageService?.store(
+      REQUIREMENT_ANALYSIS_SETTINGS_STORAGE_KEY,
+      serialized,
+      StorageScope.APPLICATION,
+      StorageTarget.MACHINE,
+    )
+  } catch {
+    // ignore storage errors and still attempt browser fallback
+  }
+
+  try {
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      window.localStorage.setItem(REQUIREMENT_ANALYSIS_SETTINGS_LOCAL_STORAGE_KEY, serialized)
+    }
+  } catch {
+    // ignore localStorage write failures
+  }
+}
+
 export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
   const accessor = useAccessor()
   const accessorRef = useRef(accessor)
@@ -219,6 +294,10 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     ('get' in accessor
       ? accessor.get('IRequestService' as never)
       : undefined) as NativeRequestServiceLike | undefined
+  const storageService =
+    ('get' in accessor
+      ? accessor.get('IStorageService' as never)
+      : undefined) as StorageServiceLike | undefined
   const hostOptions =
     ('get' in accessor
       ? accessor.get('__bridgeHostBridgeOptions' as never) as {
@@ -234,12 +313,29 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
 
   const [uiState, setUiState] = useState<AiIdeBridgeUiState>({
     panel: emptyBridgeSidebarState(),
+    requirementAnalysisSettings: createDefaultRequirementAnalysisSettings(),
+    requirementAnalysisSettingsSummary: summarizeRequirementAnalysisSettings(
+      createDefaultRequirementAnalysisSettings(),
+    ),
+    requirementAnalysisSettingsPayload: toRequirementAnalysisAgentSettingsPayload(
+      createDefaultRequirementAnalysisSettings(),
+    ),
     latestNotification: null,
     latestPatchReview: null,
     latestWorkspaceEdit: null,
     finalSummary: null,
     errorMessage: null,
   })
+
+  useEffect(() => {
+    const loadedSettings = loadRequirementAnalysisSettingsFromStorage(storageService)
+    setUiState((prev) => ({
+      ...prev,
+      requirementAnalysisSettings: loadedSettings,
+      requirementAnalysisSettingsSummary: summarizeRequirementAnalysisSettings(loadedSettings),
+      requirementAnalysisSettingsPayload: toRequirementAnalysisAgentSettingsPayload(loadedSettings),
+    }))
+  }, [storageService])
 
   useEffect(() => {
     const entry = attachVoidRealIdeSidebarFromAccessor({
@@ -320,6 +416,26 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     },
     reset() {
       entryRef.current?.reset()
+    },
+    saveRequirementAnalysisSettings(settings: RequirementAnalysisAgentSettings) {
+      const normalized = normalizeRequirementAnalysisSettings(settings)
+      persistRequirementAnalysisSettings(normalized, storageService)
+      setUiState((prev) => ({
+        ...prev,
+        requirementAnalysisSettings: normalized,
+        requirementAnalysisSettingsSummary: summarizeRequirementAnalysisSettings(normalized),
+        requirementAnalysisSettingsPayload: toRequirementAnalysisAgentSettingsPayload(normalized),
+      }))
+    },
+    resetRequirementAnalysisSettings() {
+      const defaults = createDefaultRequirementAnalysisSettings()
+      persistRequirementAnalysisSettings(defaults, storageService)
+      setUiState((prev) => ({
+        ...prev,
+        requirementAnalysisSettings: defaults,
+        requirementAnalysisSettingsSummary: summarizeRequirementAnalysisSettings(defaults),
+        requirementAnalysisSettingsPayload: toRequirementAnalysisAgentSettingsPayload(defaults),
+      }))
     },
   }), [uiState])
 }

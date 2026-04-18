@@ -1,0 +1,24 @@
+{
+  "task_id": "task_bugfix_refresh_001",
+  "mode": "fix_test",
+  "user_prompt": "修复 access token 过期后无法自动刷新的问题，并在刷新失败时安全退出。",
+  "repo_root": "/workspace/project",
+  "workspace_summary": {
+    "languages": ["python"],
+    "frameworks": ["fastapi", "pytest"],
+    "key_modules": ["app/auth", "app/api", "tests/auth"]
+  },
+  "active_file": "app/auth/service.py",
+  "selection": null,
+  "open_files": ["app/auth/service.py", "tests/test_auth_refresh.py"],
+  "diagnostics": [],
+  "recent_test_failures": [
+    "test_refresh_success expected new token but got None"
+  ],
+  "git_diff_summary": "",
+  "execution_constraints": {
+    "disallow_new_dependencies": true,
+    "preserve_public_api": true,
+    "max_story_units": 4
+  }
+}

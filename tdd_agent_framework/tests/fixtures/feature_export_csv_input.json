@@ -1,0 +1,22 @@
+{
+  "task_id": "task_feature_export_csv_001",
+  "mode": "repo_chat",
+  "user_prompt": "为任务列表增加导出 CSV 能力，支持当前筛选结果导出，不要改现有列表接口。",
+  "repo_root": "/workspace/project",
+  "workspace_summary": {
+    "languages": ["python", "typescript"],
+    "frameworks": ["fastapi", "react", "pytest"],
+    "key_modules": ["app/tasks", "frontend/tasks", "tests/tasks"]
+  },
+  "active_file": "app/tasks/service.py",
+  "selection": null,
+  "open_files": ["app/tasks/service.py", "frontend/tasks/ListPage.tsx"],
+  "diagnostics": [],
+  "recent_test_failures": [],
+  "git_diff_summary": "",
+  "execution_constraints": {
+    "disallow_new_dependencies": true,
+    "preserve_public_api": true,
+    "max_story_units": 5
+  }
+}

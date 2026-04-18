@@ -359,6 +359,36 @@ class RequirementAnalysisService:
 result = await requirement_analysis_service.analyze(analysis_input)
 ```
 
+### 11.2.1 第一环模型配置来源
+
+第一环不应把模型配置硬编码在后端代码里，而应允许 IDE 图形界面逐项配置。
+
+建议第一环最小配置项为：
+
+- `provider_kind`
+- `provider_name`
+- `model`
+- `api_base`
+- `api_key`
+- `temperature`
+- `max_tokens`
+- `timeout_seconds`
+
+其中：
+
+- `api_base`
+  - 由用户在 IDE 中填写，例如 OpenAI-compatible 网关地址
+- `api_key`
+  - 由用户在 IDE 中填写
+- `provider_name`
+  - 用于前端显示和后端路由
+- `model`
+  - 指定第一环实际使用的模型
+
+这样后续即使测试生成智能体或代码生成智能体使用不同模型，也不会和第一环耦合。
+
+建议前端对外展示时使用脱敏摘要对象，而不是直接回显完整 `api_key`。
+
 ### 11.3 阶段事件建议
 
 第一环至少发出下面几类事件：

@@ -1,0 +1,101 @@
+{
+  "requirement_spec": {
+    "task_id": "task_feature_export_csv_001",
+    "version": 1,
+    "problem_statement": "当前任务列表缺少导出能力，用户无法将当前筛选结果下载为 CSV。",
+    "product_goal": "为任务列表提供 CSV 导出能力，同时保持现有列表接口不变。",
+    "scope": [
+      "导出入口",
+      "筛选结果序列化",
+      "CSV 文件生成"
+    ],
+    "out_of_scope": [
+      "现有列表接口重构",
+      "导出 PDF 或 Excel"
+    ],
+    "constraints": [
+      "保持现有列表接口不变",
+      "不引入新的外部依赖"
+    ],
+    "assumptions": [
+      "当前列表页面已有筛选条件状态",
+      "后端可访问当前筛选结果"
+    ],
+    "interfaces_or_contracts": [
+      "新增独立导出接口或服务，不修改现有列表查询契约",
+      "导出内容只覆盖当前筛选结果"
+    ],
+    "acceptance_criteria": [
+      "用户可以触发当前筛选结果的 CSV 导出",
+      "导出文件字段顺序稳定",
+      "现有列表接口行为保持不变"
+    ],
+    "decomposition_strategy": "按前端导出入口与后端导出生成两部分拆分"
+  },
+  "story_units": [
+    {
+      "id": "story_export_entry",
+      "title": "任务列表提供 CSV 导出入口",
+      "actor": "任务列表用户",
+      "goal": "在当前筛选条件下触发导出操作",
+      "business_value": "让用户可以下载当前视图数据",
+      "scope": [
+        "export ui entry",
+        "filter state transfer"
+      ],
+      "out_of_scope": [
+        "列表接口改造"
+      ],
+      "acceptance_criteria": [
+        "用户可以在任务列表页面触发导出操作",
+        "导出操作会携带当前筛选条件",
+        "未修改现有列表查询接口行为"
+      ],
+      "dependencies": [],
+      "priority": "high",
+      "risk": "medium",
+      "test_focus": [
+        "导出入口可见性",
+        "筛选条件透传",
+        "现有列表行为不回归"
+      ],
+      "implementation_hints": [
+        "检查 frontend/tasks/ListPage.tsx 的筛选状态读取方式"
+      ]
+    },
+    {
+      "id": "story_export_csv_generation",
+      "title": "根据当前筛选结果生成 CSV 文件",
+      "actor": "任务列表用户",
+      "goal": "获取包含当前筛选结果的稳定 CSV 文件",
+      "business_value": "便于离线分析或共享任务数据",
+      "scope": [
+        "filtered data loading",
+        "csv serialization",
+        "download response"
+      ],
+      "out_of_scope": [
+        "pdf export",
+        "excel export"
+      ],
+      "acceptance_criteria": [
+        "导出内容只包含当前筛选结果",
+        "CSV 字段顺序稳定",
+        "空结果也会返回合法 CSV 结构"
+      ],
+      "dependencies": [
+        "story_export_entry"
+      ],
+      "priority": "high",
+      "risk": "medium",
+      "test_focus": [
+        "筛选数据范围",
+        "CSV 字段顺序",
+        "空结果导出"
+      ],
+      "implementation_hints": [
+        "优先复用 app/tasks/service.py 中的现有筛选逻辑"
+      ]
+    }
+  ]
+}

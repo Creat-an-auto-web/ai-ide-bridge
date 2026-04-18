@@ -10,6 +10,7 @@ from .core import (
     ProviderRequest,
     ProviderResponse,
 )
+from .providers import OpenAICompatibleProvider, ProviderConfig, ProviderError
 from .registry import AgentRegistry
 
 __all__ = [
@@ -22,4 +23,7 @@ __all__ = [
     "ProviderMessage",
     "ProviderRequest",
     "ProviderResponse",
+    "OpenAICompatibleProvider",
+    "ProviderConfig",
+    "ProviderError",
 ]

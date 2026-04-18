@@ -13,8 +13,12 @@
   - 通用 agent / provider 抽象
 - `registry.py`
   - 智能体注册表
+- `providers/`
+  - 可绑定不同模型 API 的 provider 适配层
+  - 当前先提供 OpenAI-compatible HTTP provider
 - `agents/requirement_analysis/`
   - 第一环智能体的输入输出模型、提示词构造、解析器、质量检查器和 agent 实现
+  - 已包含第一环专用的 GUI 配置对象与 service 工厂
 - `tests/`
   - 最小单元测试
 
@@ -23,3 +27,12 @@
 - 每个环节是独立智能体
 - 每个智能体可以绑定不同 provider / model
 - 编排器未来只做路由和状态流转，不吞并智能体内部逻辑
+
+第一环当前支持的配置思路：
+
+- IDE 图形界面逐项配置 `provider_name`
+- IDE 图形界面逐项配置 `model`
+- IDE 图形界面逐项配置 `api_base`
+- IDE 图形界面逐项配置 `api_key`
+
+当前原型先把这套配置能力落在第一环内部，不要求前端 UI 已经接通。

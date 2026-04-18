@@ -82,7 +82,7 @@
 
 - `tdd_agent_framework/`
   - 独立于 `backend-bridge` 的多智能体框架原型
-  - 当前已包含多智能体基础抽象与第一环 RequirementAnalysis 智能体骨架
+  - 当前已包含多智能体基础抽象、provider 适配层，以及支持 GUI 单独配置模型参数的第一环 RequirementAnalysis 智能体骨架
 
 ## 前端实现
 

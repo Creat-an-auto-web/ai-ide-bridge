@@ -11,6 +11,8 @@
 - `AiIdeBridgePanel.tsx`
   - 一个最小可运行的本地 IDE 面板骨架
   - 展示任务摘要、审批卡、计划、补丁预览、日志和最终结果
+  - 已包含第一环 RequirementAnalysis 智能体的本地配置表单
+    - 用户可在 IDE 图形界面中逐项填写 `provider`、`model`、`base_url`、`api_key`
 
 这两份文件的目标不是替代现有 `SidebarChat.tsx`，而是把：
 
