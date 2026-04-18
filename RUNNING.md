@@ -82,6 +82,26 @@ npm run install:native-deps --prefix ai-ide-bridge/frontend/void
 docker ps
 ```
 
+### 代理注意事项
+
+如果你要让第一环或后续智能体访问外部模型提供商，例如 `OpenAI-compatible` 中转站、OpenAI API、其他云端大模型：
+
+- 不要再执行 `unset ALL_PROXY/HTTP_PROXY/HTTPS_PROXY`
+- 只需要保留 `NO_PROXY=127.0.0.1,localhost`
+- 本地链路 `frontend -> backend-bridge -> OpenHands` 走 `127.0.0.1`，会被 `NO_PROXY` 排除，不会错误绕到代理
+- 外部模型请求则继续走你的代理
+
+如果你在 WSL 中依赖 Clash，常见做法如下：
+
+```bash
+export HTTP_PROXY=http://127.0.0.1:21596
+export HTTPS_PROXY=http://127.0.0.1:21596
+export ALL_PROXY=http://127.0.0.1:21596
+export NO_PROXY=127.0.0.1,localhost
+```
+
+如果你的 Clash `21596` 实际是 `socks5` 端口，请把上面的 `http://` 改成 `socks5://`。
+
 ### 推荐启动方式：两个终端
 
 终端 1，启动 OpenHands 后端：
@@ -89,7 +109,6 @@ docker ps
 ```bash
 cd /home/ricebean/ai-agent/OpenHands
 source /home/ricebean/ai-agent/.venv/bin/activate
-unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
 export NO_PROXY=127.0.0.1,localhost
 make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000
 ```
@@ -101,7 +120,6 @@ make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000
 ```bash
 cd /home/ricebean/ai-agent
 source .venv/bin/activate
-unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
 export NO_PROXY=127.0.0.1,localhost
 export OPENHANDS_URL=http://127.0.0.1:3000
 npm run start:native --prefix ai-ide-bridge/frontend/void
@@ -116,7 +134,6 @@ npm run start:native --prefix ai-ide-bridge/frontend/void
 ```bash
 cd /home/ricebean/ai-agent/OpenHands
 source /home/ricebean/ai-agent/.venv/bin/activate
-unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
 export NO_PROXY=127.0.0.1,localhost
 make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000
 ```
@@ -126,7 +143,6 @@ make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000
 ```bash
 cd /home/ricebean/ai-agent/ai-ide-bridge/backend-bridge
 source /home/ricebean/ai-agent/.venv/bin/activate
-unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
 export NO_PROXY=127.0.0.1,localhost
 export OPENHANDS_URL=http://127.0.0.1:3000
 python -m uvicorn app.main:app --host 127.0.0.1 --port 27182
@@ -137,7 +153,6 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 27182
 ```bash
 cd /home/ricebean/ai-agent
 source .venv/bin/activate
-unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
 export NO_PROXY=127.0.0.1,localhost
 export OPENHANDS_URL=http://127.0.0.1:3000
 export BRIDGE_BACKEND_AUTO_START=0
