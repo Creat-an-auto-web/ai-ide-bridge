@@ -72,6 +72,10 @@
 - `RUNNING.md`
   - 运行路径与排查说明
 
+- `docs/tdd-backend-framework.md`
+  - TDD 后端框架设计草案
+  - 说明后端如何从 OpenHands 适配层演进到自研状态机编排层
+
 ## 前端实现
 
 前端部分分为两层：
