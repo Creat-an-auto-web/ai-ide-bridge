@@ -37,6 +37,9 @@ export const AiIdeBridgePanel = () => {
     requirementAnalysisSettings,
     requirementAnalysisSettingsSummary,
     requirementAnalysisSettingsPayload,
+    requirementAnalysisResult,
+    requirementAnalysisError,
+    requirementAnalysisIsRunning,
   } = bridge.uiState
 
   const promptValue = isEditing || isComposing ? draftPrompt : panel.composer.prompt
@@ -106,7 +109,7 @@ export const AiIdeBridgePanel = () => {
             需求分析智能体状态：{settingsStatus}
           </div>
           <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', opacity: 0.78 }}>
-            这部分配置目前仅保存在本机 IDE，用于第一环 RequirementAnalysis 智能体，尚未接入当前 bridge 后端请求。
+            这部分配置会保存在本机 IDE，并用于调用独立的第一环 RequirementAnalysis 原型服务。
           </div>
           <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', opacity: 0.78 }}>
             下方 JSON 已对齐第一环 Python 服务工厂所需的 snake_case 配置格式。
@@ -236,6 +239,23 @@ export const AiIdeBridgePanel = () => {
             >
               复制配置 JSON
             </button>
+            <button
+              onClick={() => { void bridge.runRequirementAnalysis(promptValue) }}
+              disabled={requirementAnalysisIsRunning || !requirementAnalysisSettingsSummary.isConfigured}
+              style={{
+                ...buttonStyle,
+                background:
+                  requirementAnalysisIsRunning || !requirementAnalysisSettingsSummary.isConfigured
+                    ? 'rgba(255, 255, 255, 0.03)'
+                    : 'rgba(92, 196, 137, 0.18)',
+                opacity:
+                  requirementAnalysisIsRunning || !requirementAnalysisSettingsSummary.isConfigured
+                    ? 0.55
+                    : 1,
+              }}
+            >
+              {requirementAnalysisIsRunning ? '第一环运行中' : '运行第一环原型'}
+            </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', opacity: 0.86 }}>
@@ -260,6 +280,33 @@ export const AiIdeBridgePanel = () => {
           </div>
         </div>
       </details>
+
+      {requirementAnalysisResult && (
+        <div style={sectionStyle}>
+          <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
+            第一环结果
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            {requirementAnalysisResult.requirement_spec.problem_statement}
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+            Story 数量：{requirementAnalysisResult.analysis_summary.story_unit_count}
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+            {requirementAnalysisResult.story_units.map((storyUnit) => (
+              <li key={storyUnit.id}>
+                {storyUnit.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {requirementAnalysisError && (
+        <div style={{ ...sectionStyle, color: 'var(--vscode-errorForeground)', fontSize: 12 }}>
+          第一环错误：{requirementAnalysisError}
+        </div>
+      )}
 
       <div style={sectionStyle}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

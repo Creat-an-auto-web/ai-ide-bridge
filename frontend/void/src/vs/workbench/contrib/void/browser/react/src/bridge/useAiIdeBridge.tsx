@@ -6,11 +6,14 @@ import {
   BridgeSidebarPanelState,
   PatchReviewModel,
   RequirementAnalysisAgentSettings,
+  RequirementAnalysisResultPayload,
   RequirementAnalysisAgentSettingsPayload,
   RequirementAnalysisAgentSettingsSummary,
   WorkspaceEditModel,
   attachVoidRealIdeSidebarFromAccessor,
+  collectVoidContext,
   createDefaultRequirementAnalysisSettings,
+  createVoidRealContextSourceFromAccessor,
   emptyBridgeSidebarState,
   normalizeRequirementAnalysisSettings,
   summarizeRequirementAnalysisSettings,
@@ -58,6 +61,9 @@ export interface AiIdeBridgeUiState {
   requirementAnalysisSettings: RequirementAnalysisAgentSettings
   requirementAnalysisSettingsSummary: RequirementAnalysisAgentSettingsSummary
   requirementAnalysisSettingsPayload: RequirementAnalysisAgentSettingsPayload
+  requirementAnalysisResult: RequirementAnalysisResultPayload | null
+  requirementAnalysisError: string | null
+  requirementAnalysisIsRunning: boolean
   latestNotification: { level: 'info' | 'warning' | 'error'; title: string; message: string } | null
   latestPatchReview: PatchReviewModel | null
   latestWorkspaceEdit: WorkspaceEditModel | null
@@ -229,6 +235,7 @@ const createNativeRequestFetch = (
 
 const REQUIREMENT_ANALYSIS_SETTINGS_STORAGE_KEY = 'aiIdeBridge.requirementAnalysis.settings'
 const REQUIREMENT_ANALYSIS_SETTINGS_LOCAL_STORAGE_KEY = 'ai-ide-bridge.requirement-analysis.settings'
+const REQUIREMENT_ANALYSIS_SERVICE_URL = 'http://127.0.0.1:27184'
 
 const loadRequirementAnalysisSettingsFromStorage = (
   storageService: StorageServiceLike | undefined,
@@ -286,6 +293,78 @@ const persistRequirementAnalysisSettings = (
   }
 }
 
+const toSelectionText = (selection: BridgeSidebarPanelState['summary'] | { startLine?: number; startCol?: number; endLine?: number; endCol?: number } | null | undefined) => {
+  if (!selection || typeof selection !== 'object') {
+    return null
+  }
+  const range = selection as { startLine?: number; startCol?: number; endLine?: number; endCol?: number }
+  if (
+    typeof range.startLine !== 'number'
+    || typeof range.startCol !== 'number'
+    || typeof range.endLine !== 'number'
+    || typeof range.endCol !== 'number'
+  ) {
+    return null
+  }
+  return `${range.startLine}:${range.startCol}-${range.endLine}:${range.endCol}`
+}
+
+const toDiagnosticText = (diagnostic: unknown) => {
+  if (!diagnostic || typeof diagnostic !== 'object') {
+    return String(diagnostic)
+  }
+  const record = diagnostic as { message?: unknown; file?: unknown; source?: unknown; severity?: unknown }
+  const message = typeof record.message === 'string' ? record.message : String(record.message ?? '')
+  const file = typeof record.file === 'string' ? record.file : ''
+  const source = typeof record.source === 'string' ? record.source : ''
+  const severity = typeof record.severity === 'string' || typeof record.severity === 'number'
+    ? String(record.severity)
+    : ''
+  return [severity, source, file, message].filter(Boolean).join(' | ')
+}
+
+const toRecentTestFailures = (testLogs: string): string[] =>
+  testLogs
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(-10)
+
+const toRequirementAnalysisInputPayload = async (accessor: unknown, prompt: string) => {
+  const contextSource = createVoidRealContextSourceFromAccessor({
+    accessor: accessor as never,
+  })
+  const [repoRootPath, context] = await Promise.all([
+    contextSource.getRepoRootPath(),
+    collectVoidContext(contextSource),
+  ])
+
+  return {
+    task_id: typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `ra_${Math.random().toString(16).slice(2, 10)}`,
+    mode: 'repo_chat',
+    user_prompt: prompt,
+    repo_root: repoRootPath,
+    workspace_summary: {
+      languages: [],
+      frameworks: [],
+      key_modules: [],
+    },
+    active_file: context.activeFile ?? null,
+    selection: toSelectionText(context.selection),
+    open_files: context.openFiles,
+    diagnostics: context.diagnostics.map((diagnostic) => toDiagnosticText(diagnostic)),
+    recent_test_failures: toRecentTestFailures(context.testLogs),
+    git_diff_summary: context.gitDiff,
+    execution_constraints: {
+      disallow_new_dependencies: true,
+      preserve_public_api: true,
+      max_story_units: 8,
+    },
+  }
+}
+
 export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
   const accessor = useAccessor()
   const accessorRef = useRef(accessor)
@@ -320,6 +399,9 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     requirementAnalysisSettingsPayload: toRequirementAnalysisAgentSettingsPayload(
       createDefaultRequirementAnalysisSettings(),
     ),
+    requirementAnalysisResult: null,
+    requirementAnalysisError: null,
+    requirementAnalysisIsRunning: false,
     latestNotification: null,
     latestPatchReview: null,
     latestWorkspaceEdit: null,
@@ -404,6 +486,71 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     },
     async run(prompt?: string) {
       await entryRef.current?.run(prompt)
+    },
+    async runRequirementAnalysis(prompt?: string) {
+      const nextPrompt = (prompt ?? uiState.panel.composer.prompt).trim()
+      if (!nextPrompt) {
+        setUiState((prev) => ({
+          ...prev,
+          requirementAnalysisError: '请先输入需求，再运行第一环。',
+        }))
+        return
+      }
+
+      const fetchImpl =
+        hostOptions.fetchImpl
+        ?? createNativeRequestFetch(nativeRequestService)
+        ?? createDesktopFetch()
+        ?? fetch
+
+      setUiState((prev) => ({
+        ...prev,
+        requirementAnalysisError: null,
+        requirementAnalysisIsRunning: true,
+      }))
+
+      try {
+        const inputPayload = await toRequirementAnalysisInputPayload(accessorRef.current, nextPrompt)
+        const response = await fetchImpl(`${REQUIREMENT_ANALYSIS_SERVICE_URL}/v1/requirement-analysis/runs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            settings: uiState.requirementAnalysisSettingsPayload,
+            input: inputPayload,
+          }),
+        })
+
+        const payload = await response.json() as {
+          success?: boolean
+          data?: RequirementAnalysisResultPayload
+          error?: { message?: string }
+        }
+
+        if (!response.ok || !payload.success || !payload.data) {
+          throw new Error(payload.error?.message ?? '第一环服务调用失败')
+        }
+
+        setUiState((prev) => ({
+          ...prev,
+          requirementAnalysisResult: payload.data ?? null,
+          requirementAnalysisError: null,
+          latestNotification: {
+            level: 'info',
+            title: 'RequirementAnalysis',
+            message: `已生成 ${payload.data.analysis_summary.story_unit_count} 个 story unit`,
+          },
+        }))
+      } catch (error) {
+        setUiState((prev) => ({
+          ...prev,
+          requirementAnalysisError: error instanceof Error ? error.message : String(error),
+        }))
+      } finally {
+        setUiState((prev) => ({
+          ...prev,
+          requirementAnalysisIsRunning: false,
+        }))
+      }
     },
     async approve(reason?: string) {
       await entryRef.current?.approve(reason)

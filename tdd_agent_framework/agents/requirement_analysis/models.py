@@ -39,6 +39,22 @@ def _optional_list_of_str(value: Any, field_name: str) -> list[str]:
     return items
 
 
+def _optional_list_of_display_str(value: Any, field_name: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    items: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            stripped = item.strip()
+            if stripped:
+                items.append(stripped)
+            continue
+        items.append(str(item))
+    return items
+
+
 @dataclass(frozen=True)
 class WorkspaceSummary:
     languages: list[str] = field(default_factory=list)
@@ -100,6 +116,28 @@ class RequirementAnalysisInput:
     recent_test_failures: list[str] = field(default_factory=list)
     git_diff_summary: str | None = None
     execution_constraints: ExecutionConstraints = field(default_factory=ExecutionConstraints)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RequirementAnalysisInput":
+        if not isinstance(data, dict):
+            raise ValueError("requirement analysis input must be an object")
+        return cls(
+            task_id=_require_str(data.get("task_id"), "task_id"),
+            mode=_require_str(data.get("mode"), "mode"),
+            user_prompt=_require_str(data.get("user_prompt"), "user_prompt"),
+            repo_root=_require_str(data.get("repo_root"), "repo_root"),
+            workspace_summary=WorkspaceSummary.from_dict(data.get("workspace_summary")),
+            active_file=_optional_str(data.get("active_file"), "active_file"),
+            selection=_optional_str(data.get("selection"), "selection"),
+            open_files=_optional_list_of_str(data.get("open_files"), "open_files"),
+            diagnostics=_optional_list_of_display_str(data.get("diagnostics"), "diagnostics"),
+            recent_test_failures=_optional_list_of_display_str(
+                data.get("recent_test_failures"),
+                "recent_test_failures",
+            ),
+            git_diff_summary=_optional_str(data.get("git_diff_summary"), "git_diff_summary"),
+            execution_constraints=ExecutionConstraints.from_dict(data.get("execution_constraints")),
+        )
 
 
 @dataclass(frozen=True)

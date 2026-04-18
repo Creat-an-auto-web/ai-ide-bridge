@@ -13,6 +13,8 @@
   - 展示任务摘要、审批卡、计划、补丁预览、日志和最终结果
   - 已包含第一环 RequirementAnalysis 智能体的本地配置表单
     - 用户可在 IDE 图形界面中逐项填写 `provider`、`model`、`base_url`、`api_key`
+  - 已包含“运行第一环原型”入口
+    - 直接调用本地 `tdd_agent_framework.server` 原型服务
 
 这两份文件的目标不是替代现有 `SidebarChat.tsx`，而是把：
 

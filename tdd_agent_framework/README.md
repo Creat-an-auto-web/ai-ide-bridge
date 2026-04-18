@@ -22,6 +22,20 @@
 - `tests/`
   - 最小单元测试
 
+本地启动第一环原型服务：
+
+```bash
+cd /home/ricebean/ai-agent/ai-ide-bridge
+python -m tdd_agent_framework.server --host 127.0.0.1 --port 27184
+```
+
+启动后：
+
+- `GET /healthz`
+- `POST /v1/requirement-analysis/runs`
+
+前端 bridge 面板中的“运行第一环原型”按钮会调用这个服务。
+
 这个原型层的设计原则是：
 
 - 每个环节是独立智能体

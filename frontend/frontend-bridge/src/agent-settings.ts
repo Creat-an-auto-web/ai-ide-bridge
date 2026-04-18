@@ -34,6 +34,72 @@ export interface RequirementAnalysisAgentSettingsPayload {
   timeout_seconds: number
 }
 
+export interface RequirementAnalysisRunInputPayload {
+  task_id: string
+  mode: string
+  user_prompt: string
+  repo_root: string
+  workspace_summary: {
+    languages: string[]
+    frameworks: string[]
+    key_modules: string[]
+  }
+  active_file: string | null
+  selection: string | null
+  open_files: string[]
+  diagnostics: string[]
+  recent_test_failures: string[]
+  git_diff_summary: string
+  execution_constraints: {
+    disallow_new_dependencies: boolean
+    preserve_public_api: boolean
+    max_story_units: number
+  }
+}
+
+export interface RequirementAnalysisResultPayload {
+  requirement_spec: {
+    task_id: string
+    version: number
+    problem_statement: string
+    product_goal: string
+    scope: string[]
+    out_of_scope: string[]
+    constraints: string[]
+    assumptions: string[]
+    interfaces_or_contracts: string[]
+    acceptance_criteria: string[]
+    decomposition_strategy: string
+  }
+  story_units: Array<{
+    id: string
+    title: string
+    actor: string
+    goal: string
+    business_value: string | null
+    scope: string[]
+    out_of_scope: string[]
+    acceptance_criteria: string[]
+    dependencies: string[]
+    priority: string
+    risk: string
+    test_focus: string[]
+    implementation_hints: string[]
+  }>
+  analysis_summary: {
+    story_unit_count: number
+    high_priority_count: number
+    high_risk_count: number
+  }
+  warnings: string[]
+  quality_checks: {
+    has_clear_scope: boolean
+    has_testable_ac: boolean
+    dependency_graph_valid: boolean
+    story_count_within_limit: boolean
+  }
+}
+
 export const createDefaultRequirementAnalysisSettings = (): RequirementAnalysisAgentSettings => ({
   enabled: true,
   providerKind: 'openai_compatible',
