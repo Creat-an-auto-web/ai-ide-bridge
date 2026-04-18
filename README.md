@@ -76,6 +76,10 @@
   - TDD 后端框架设计草案
   - 说明后端如何从 OpenHands 适配层演进到自研状态机编排层
 
+- `docs/requirement-analysis-v1.md`
+  - 第一环 RequirementAnalysis 的 v1 设计草案
+  - 细化 schema、模块拆分、服务接口和测试策略
+
 ## 前端实现
 
 前端部分分为两层：
