@@ -162,6 +162,14 @@ class OpenHandsEngine:
         value = conversation.get("execution_status")
         return str(value).upper() if value else None
 
+    @staticmethod
+    def _is_terminal_success_status(status: str | None) -> bool:
+        return status in {"FINISHED", "STOPPED", "PAUSED"}
+
+    @staticmethod
+    def _is_terminal_error_status(status: str | None) -> bool:
+        return status in {"ERROR", "STUCK"}
+
     async def run_task(self, task_id: str) -> None:
         req = self.task_service.get_request(task_id)
         conversation_id: str | None = None
@@ -229,15 +237,23 @@ class OpenHandsEngine:
                             execution_status = await self._get_execution_status(
                                 client, conversation_id
                             )
-                            if execution_status in {"FINISHED", "STOPPED", "PAUSED"}:
+                            if self._is_terminal_success_status(execution_status):
                                 break
+                            if self._is_terminal_error_status(execution_status):
+                                raise RuntimeError(
+                                    f"OpenHands conversation failed with status: {execution_status}"
+                                )
                             continue
                         except websockets.exceptions.ConnectionClosed as exc:
                             execution_status = await self._get_execution_status(
                                 client, conversation_id
                             )
-                            if execution_status in {"FINISHED", "STOPPED", "PAUSED"}:
+                            if self._is_terminal_success_status(execution_status):
                                 break
+                            if self._is_terminal_error_status(execution_status):
+                                raise RuntimeError(
+                                    f"OpenHands conversation failed with status: {execution_status}"
+                                )
                             raise RuntimeError(
                                 f"OpenHands websocket closed before completion: {exc}"
                             ) from exc
