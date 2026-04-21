@@ -63,6 +63,9 @@ export interface RequirementAnalysisRunInputPayload {
 }
 
 export interface RequirementAnalysisResultPayload {
+  package_id: string
+  task_id: string
+  status: 'draft' | 'verified' | 'approved_for_test_generation' | 'blocked' | 'needs_human_review'
   requirement_spec: {
     task_id: string
     version: number
@@ -103,6 +106,33 @@ export interface RequirementAnalysisResultPayload {
     dependency_graph_valid: boolean
     story_count_within_limit: boolean
   }
+  verification: {
+    status: 'pass' | 'revise' | 'blocked'
+    summary: string
+    issues: Array<{
+      id: string
+      severity: 'low' | 'medium' | 'high'
+      issue_type?: string
+      type?: string
+      message: string
+      affected_story_ids: string[]
+    }>
+    revision_guidance: string[]
+    quality_score: {
+      scope_clarity: number
+      testability: number
+      dependency_sanity: number
+      story_granularity: number
+    }
+  }
+  iteration_count: number
+  history: Array<{
+    iteration: number
+    analysis_summary: string
+    verification_status: string
+    issue_count: number
+    revision_guidance: string[]
+  }>
 }
 
 export interface RequirementAnalysisStreamEvent {

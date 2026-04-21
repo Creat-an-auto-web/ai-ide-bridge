@@ -4,11 +4,20 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tdd_agent_framework.agents.requirement_analysis import (
+    AnalysisSummary,
     ExecutionConstraints,
     RequirementAnalysisAgent,
     RequirementAnalysisInput,
+    QualityChecks,
+    RequirementAnalysisResult,
+    RequirementSpec,
+    RequirementVerificationResult,
+    StoryUnit,
+    VerificationIssue,
+    VerificationQualityScore,
     WorkspaceSummary,
 )
 from tdd_agent_framework.core import ModelTarget, ProviderResponse
@@ -131,6 +140,283 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
             self.assertIn("pytest", enriched.frameworks)
             self.assertIn("app", enriched.key_modules)
             self.assertEqual(result.analysis_summary.story_unit_count, 1)
+
+    def test_orchestrator_revises_once_before_approval(self) -> None:
+        orchestrator = RequirementAnalysisOrchestrator()
+
+        analysis_result_first = self._make_analysis_result("初稿问题陈述", "story_draft")
+        analysis_result_second = self._make_analysis_result("修订后问题陈述", "story_final")
+        verification_revise = RequirementVerificationResult(
+            status="revise",
+            summary="初稿缺少可交付边界，需要收缩 story 范围。",
+            issues=[
+                VerificationIssue(
+                    id="issue_001",
+                    severity="high",
+                    issue_type="over_scoped",
+                    message="story 颗粒度过大，难以直接交给测试生成环节。",
+                    affected_story_ids=["story_draft"],
+                )
+            ],
+            revision_guidance=["将功能拆成单一可测试的最小 story 单元。"],
+            quality_score=VerificationQualityScore(
+                scope_clarity=62,
+                testability=58,
+                dependency_sanity=80,
+                story_granularity=40,
+            ),
+        )
+        verification_pass = RequirementVerificationResult(
+            status="pass",
+            summary="story 已收敛到可测试粒度，可以进入下一环。",
+            issues=[],
+            revision_guidance=[],
+            quality_score=VerificationQualityScore(
+                scope_clarity=90,
+                testability=92,
+                dependency_sanity=94,
+                story_granularity=88,
+            ),
+        )
+
+        class FakeAnalysisService:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def analyze(self, analysis_input, trace_id=None, metadata=None):
+                self.calls += 1
+                if self.calls == 1:
+                    return analysis_result_first
+                self.last_input = analysis_input
+                return analysis_result_second
+
+        class FakeVerificationService:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def verify(self, verification_input, trace_id=None, metadata=None):
+                self.calls += 1
+                if self.calls == 1:
+                    return verification_revise
+                return verification_pass
+
+        analysis_service = FakeAnalysisService()
+        verification_service = FakeVerificationService()
+
+        analysis_input = RequirementAnalysisInput(
+            task_id="task_001",
+            mode="repo_chat",
+            user_prompt="拆解 todo-list app 需求",
+            repo_root="/workspace/project",
+            workspace_summary=WorkspaceSummary(),
+            execution_constraints=ExecutionConstraints(),
+        )
+        settings = object()
+
+        with (
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_analysis_service",
+                return_value=analysis_service,
+            ),
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_verification_service",
+                return_value=verification_service,
+            ),
+        ):
+            package = asyncio.run(orchestrator.run(settings, analysis_input))
+
+        self.assertEqual(package.status, "approved_for_test_generation")
+        self.assertEqual(package.iteration_count, 2)
+        self.assertEqual(package.history[0].verification_status, "revise")
+        self.assertEqual(package.history[1].verification_status, "pass")
+        self.assertEqual(package.story_units[0].id, "story_final")
+        self.assertEqual(analysis_service.calls, 2)
+        self.assertEqual(verification_service.calls, 2)
+        self.assertEqual(
+            analysis_service.last_input.revision_focus,
+            ["将功能拆成单一可测试的最小 story 单元。"],
+        )
+        self.assertEqual(
+            analysis_service.last_input.previous_verification_summary,
+            "初稿缺少可交付边界，需要收缩 story 范围。",
+        )
+
+    def test_orchestrator_returns_needs_human_review_when_revision_never_converges(self) -> None:
+        orchestrator = RequirementAnalysisOrchestrator()
+        revise_result = RequirementVerificationResult(
+            status="revise",
+            summary="仍有中等严重度问题未收敛。",
+            issues=[
+                VerificationIssue(
+                    id="issue_retry",
+                    severity="medium",
+                    issue_type="untestable_ac",
+                    message="验收标准仍不够单义。",
+                    affected_story_ids=["story_draft"],
+                )
+            ],
+            revision_guidance=["进一步收敛 AC 语义，确保唯一预期结果。"],
+            quality_score=VerificationQualityScore(
+                scope_clarity=76,
+                testability=64,
+                dependency_sanity=90,
+                story_granularity=72,
+            ),
+        )
+
+        class FakeAnalysisService:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def analyze(self, analysis_input, trace_id=None, metadata=None):
+                self.calls += 1
+                return self._make_result()
+
+            def _make_result(self):
+                return RequirementAnalysisResult(
+                    requirement_spec=RequirementSpec(
+                        task_id="task_001",
+                        version=1,
+                        problem_statement="需要收敛 AC",
+                        product_goal="让 story 变得可测试",
+                        scope=["scope_a"],
+                        out_of_scope=[],
+                        constraints=[],
+                        assumptions=[],
+                        interfaces_or_contracts=[],
+                        acceptance_criteria=[
+                            "系统会完成行为",
+                            "测试可以验证行为结果",
+                            "失败路径有清晰输出",
+                        ],
+                        decomposition_strategy="按最小行为拆分",
+                    ),
+                    story_units=[
+                        StoryUnit(
+                            id="story_draft",
+                            title="Story",
+                            actor="用户",
+                            goal="完成目标",
+                            business_value="价值",
+                            scope=["scope_a"],
+                            out_of_scope=[],
+                            acceptance_criteria=[
+                                "行为会被执行",
+                                "结果会被验证",
+                                "失败会被观测",
+                            ],
+                            dependencies=[],
+                            priority="high",
+                            risk="medium",
+                            test_focus=["A", "B", "C"],
+                            implementation_hints=[],
+                        )
+                    ],
+                    analysis_summary=AnalysisSummary(
+                        story_unit_count=1,
+                        high_priority_count=1,
+                        high_risk_count=0,
+                    ),
+                    warnings=[],
+                    quality_checks=QualityChecks(
+                        has_clear_scope=True,
+                        has_testable_ac=True,
+                        dependency_graph_valid=True,
+                        story_count_within_limit=True,
+                    ),
+                )
+
+        class FakeVerificationService:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def verify(self, verification_input, trace_id=None, metadata=None):
+                self.calls += 1
+                return revise_result
+
+        analysis_service = FakeAnalysisService()
+        verification_service = FakeVerificationService()
+
+        analysis_input = RequirementAnalysisInput(
+            task_id="task_001",
+            mode="repo_chat",
+            user_prompt="拆解论坛系统需求",
+            repo_root="/workspace/project",
+            workspace_summary=WorkspaceSummary(),
+            execution_constraints=ExecutionConstraints(),
+        )
+
+        with (
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_analysis_service",
+                return_value=analysis_service,
+            ),
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_verification_service",
+                return_value=verification_service,
+            ),
+        ):
+            package = asyncio.run(orchestrator.run(object(), analysis_input))
+
+        self.assertEqual(package.status, "needs_human_review")
+        self.assertEqual(package.verification.status, "revise")
+        self.assertEqual(package.iteration_count, orchestrator.max_iterations)
+        self.assertEqual(analysis_service.calls, orchestrator.max_iterations)
+        self.assertEqual(verification_service.calls, orchestrator.max_iterations)
+
+    def _make_analysis_result(self, problem_statement: str, story_id: str) -> RequirementAnalysisResult:
+        return RequirementAnalysisResult(
+            requirement_spec=RequirementSpec(
+                task_id="task_001",
+                version=1,
+                problem_statement=problem_statement,
+                product_goal="产出可测试 story",
+                scope=["scope_a"],
+                out_of_scope=[],
+                constraints=[],
+                assumptions=[],
+                interfaces_or_contracts=[],
+                acceptance_criteria=[
+                    "系统会产出结构化 story",
+                    "story 可被测试环节消费",
+                    "范围边界明确可验证",
+                ],
+                decomposition_strategy="按最小可测试单元拆分",
+            ),
+            story_units=[
+                StoryUnit(
+                    id=story_id,
+                    title="Story",
+                    actor="用户",
+                    goal="完成目标",
+                    business_value="价值",
+                    scope=["scope_a"],
+                    out_of_scope=[],
+                    acceptance_criteria=[
+                        "行为会被执行",
+                        "结果会被验证",
+                        "失败会被观测",
+                    ],
+                    dependencies=[],
+                    priority="high",
+                    risk="medium",
+                    test_focus=["A", "B", "C"],
+                    implementation_hints=[],
+                )
+            ],
+            analysis_summary=AnalysisSummary(
+                story_unit_count=1,
+                high_priority_count=1,
+                high_risk_count=0,
+            ),
+            warnings=[],
+            quality_checks=QualityChecks(
+                has_clear_scope=True,
+                has_testable_ac=True,
+                dependency_graph_valid=True,
+                story_count_within_limit=True,
+            ),
+        )
 
 
 if __name__ == "__main__":

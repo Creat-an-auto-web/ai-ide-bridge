@@ -115,6 +115,9 @@ class RequirementAnalysisInput:
     diagnostics: list[str] = field(default_factory=list)
     recent_test_failures: list[str] = field(default_factory=list)
     git_diff_summary: str | None = None
+    revision_focus: list[str] = field(default_factory=list)
+    previous_verification_summary: str | None = None
+    iteration: int = 1
     execution_constraints: ExecutionConstraints = field(default_factory=ExecutionConstraints)
 
     @classmethod
@@ -136,6 +139,12 @@ class RequirementAnalysisInput:
                 "recent_test_failures",
             ),
             git_diff_summary=_optional_str(data.get("git_diff_summary"), "git_diff_summary"),
+            revision_focus=_optional_list_of_display_str(data.get("revision_focus"), "revision_focus"),
+            previous_verification_summary=_optional_str(
+                data.get("previous_verification_summary"),
+                "previous_verification_summary",
+            ),
+            iteration=max(1, int(data.get("iteration", 1))),
             execution_constraints=ExecutionConstraints.from_dict(data.get("execution_constraints")),
         )
 
@@ -262,6 +271,116 @@ class RequirementAnalysisResult:
     analysis_summary: AnalysisSummary
     warnings: list[str]
     quality_checks: QualityChecks
+
+
+@dataclass(frozen=True)
+class VerificationIssue:
+    id: str
+    severity: str
+    issue_type: str
+    message: str
+    affected_story_ids: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "VerificationIssue":
+        if not isinstance(data, dict):
+            raise ValueError("verification issue must be an object")
+        return cls(
+            id=_require_str(data.get("id"), "verification_issue.id"),
+            severity=_require_str(data.get("severity"), "verification_issue.severity").lower(),
+            issue_type=_require_str(data.get("type"), "verification_issue.type"),
+            message=_require_str(data.get("message"), "verification_issue.message"),
+            affected_story_ids=_optional_list_of_str(
+                data.get("affected_story_ids"),
+                "verification_issue.affected_story_ids",
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class VerificationQualityScore:
+    scope_clarity: int
+    testability: int
+    dependency_sanity: int
+    story_granularity: int
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "VerificationQualityScore":
+        if data is None:
+            return cls(scope_clarity=0, testability=0, dependency_sanity=0, story_granularity=0)
+        if not isinstance(data, dict):
+            raise ValueError("quality_score must be an object")
+        return cls(
+            scope_clarity=_score_value(data.get("scope_clarity"), "quality_score.scope_clarity"),
+            testability=_score_value(data.get("testability"), "quality_score.testability"),
+            dependency_sanity=_score_value(
+                data.get("dependency_sanity"),
+                "quality_score.dependency_sanity",
+            ),
+            story_granularity=_score_value(
+                data.get("story_granularity"),
+                "quality_score.story_granularity",
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class RequirementVerificationResult:
+    status: str
+    summary: str
+    issues: list[VerificationIssue]
+    revision_guidance: list[str]
+    quality_score: VerificationQualityScore
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RequirementVerificationResult":
+        if not isinstance(data, dict):
+            raise ValueError("requirement verification result must be an object")
+        raw_issues = data.get("issues", [])
+        if not isinstance(raw_issues, list):
+            raise ValueError("verification issues must be a list")
+        return cls(
+            status=_require_str(data.get("status"), "verification.status").lower(),
+            summary=_require_str(data.get("summary"), "verification.summary"),
+            issues=[VerificationIssue.from_dict(item) for item in raw_issues],
+            revision_guidance=_optional_list_of_display_str(
+                data.get("revision_guidance"),
+                "verification.revision_guidance",
+            ),
+            quality_score=VerificationQualityScore.from_dict(data.get("quality_score")),
+        )
+
+
+@dataclass(frozen=True)
+class RequirementAnalysisIteration:
+    iteration: int
+    analysis_summary: str
+    verification_status: str
+    issue_count: int
+    revision_guidance: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RequirementAnalysisPackage:
+    package_id: str
+    task_id: str
+    status: str
+    requirement_spec: RequirementSpec
+    story_units: list[StoryUnit]
+    analysis_summary: AnalysisSummary
+    warnings: list[str]
+    quality_checks: QualityChecks
+    verification: RequirementVerificationResult
+    iteration_count: int
+    history: list[RequirementAnalysisIteration] = field(default_factory=list)
+
+
+def _score_value(value: Any, field_name: str) -> int:
+    if not isinstance(value, int):
+        raise ValueError(f"{field_name} must be an integer")
+    if value < 0 or value > 100:
+        raise ValueError(f"{field_name} must be between 0 and 100")
+    return value
 
 
 def build_analysis_summary(story_units: list[StoryUnit]) -> AnalysisSummary:

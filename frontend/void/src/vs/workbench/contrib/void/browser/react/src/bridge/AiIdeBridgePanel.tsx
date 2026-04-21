@@ -21,6 +21,23 @@ const statusTextOfConnection = (value: string) => {
   }
 }
 
+const statusTextOfRequirementPackage = (value: string) => {
+  switch (value) {
+    case 'approved_for_test_generation':
+      return '已通过，可进入测试生成'
+    case 'needs_human_review':
+      return '未收敛，需人工复核'
+    case 'blocked':
+      return '阻塞'
+    case 'verified':
+      return '已验证'
+    case 'draft':
+      return '草稿'
+    default:
+      return value
+  }
+}
+
 export const AiIdeBridgePanel = () => {
   const bridge = useAiIdeBridge()
   const [draftPrompt, setDraftPrompt] = useState('')
@@ -375,7 +392,13 @@ export const AiIdeBridgePanel = () => {
             第一环结果
           </div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            包状态：{statusTextOfRequirementPackage(requirementAnalysisResult.status)} · 迭代轮次：{requirementAnalysisResult.iteration_count}
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
             {requirementAnalysisResult.requirement_spec.problem_statement}
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            验证结论：{requirementAnalysisResult.verification.status} · {requirementAnalysisResult.verification.summary}
           </div>
           <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
             Story 数量：{requirementAnalysisResult.analysis_summary.story_unit_count}
@@ -387,6 +410,34 @@ export const AiIdeBridgePanel = () => {
               </li>
             ))}
           </ul>
+          {requirementAnalysisResult.verification.issues.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                验证问题
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                {requirementAnalysisResult.verification.issues.map((issue) => (
+                  <li key={issue.id}>
+                    [{issue.severity}] {issue.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {requirementAnalysisResult.history.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                迭代历史
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                {requirementAnalysisResult.history.map((item) => (
+                  <li key={`iteration_${item.iteration}`}>
+                    第 {item.iteration} 轮 · {item.verification_status} · 问题数 {item.issue_count}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 

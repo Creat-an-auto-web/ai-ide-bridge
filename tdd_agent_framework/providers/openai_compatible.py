@@ -53,6 +53,7 @@ class OpenAICompatibleProvider:
                 stage="provider_request_started",
                 message=f"已向 {self.config.provider_name} 发起模型请求",
                 metadata={
+                    "agent_name": provider_request.agent_name,
                     "provider_name": self.config.provider_name,
                     "model": provider_request.model_target.model,
                     "api_base": api_base,
@@ -63,7 +64,10 @@ class OpenAICompatibleProvider:
         try:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 async with client.stream("POST", url, json=payload, headers=headers) as response:
-                    raw_json, content = await self._read_response(response)
+                    raw_json, content = await self._read_response(
+                        response,
+                        agent_name=provider_request.agent_name,
+                    )
         except httpx.HTTPStatusError as exc:
             response = exc.response
             body = response.text
@@ -82,7 +86,10 @@ class OpenAICompatibleProvider:
                 stage="provider_response_completed",
                 message="模型响应接收完成，准备解析结果",
                 raw_text_preview=self._preview_text(content),
-                metadata={"provider_name": self.config.provider_name},
+                metadata={
+                    "agent_name": provider_request.agent_name,
+                    "provider_name": self.config.provider_name,
+                },
             ),
         )
 
@@ -134,6 +141,7 @@ class OpenAICompatibleProvider:
     async def _read_response(
         self,
         response: httpx.Response,
+        agent_name: str,
     ) -> tuple[dict[str, Any], str]:
         try:
             response.raise_for_status()
@@ -186,6 +194,7 @@ class OpenAICompatibleProvider:
                         raw_text_delta=delta_text,
                         raw_text_preview=self._preview_text(current_text),
                         metadata={
+                            "agent_name": agent_name,
                             "provider_name": self.config.provider_name,
                             "delta_length": len(delta_text),
                             "accumulated_length": len(current_text),

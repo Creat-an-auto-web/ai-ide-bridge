@@ -17,6 +17,7 @@ class RequirementAnalysisPromptBuilder:
     def build_user_prompt(self, analysis_input: RequirementAnalysisInput) -> str:
         payload = {
             "task_id": analysis_input.task_id,
+            "iteration": analysis_input.iteration,
             "mode": analysis_input.mode,
             "user_prompt": analysis_input.user_prompt,
             "repo_root": analysis_input.repo_root,
@@ -31,6 +32,10 @@ class RequirementAnalysisPromptBuilder:
             "diagnostics": analysis_input.diagnostics,
             "recent_test_failures": analysis_input.recent_test_failures,
             "git_diff_summary": analysis_input.git_diff_summary,
+            "revision_context": {
+                "previous_verification_summary": analysis_input.previous_verification_summary,
+                "revision_focus": analysis_input.revision_focus,
+            },
             "execution_constraints": {
                 "disallow_new_dependencies": analysis_input.execution_constraints.disallow_new_dependencies,
                 "preserve_public_api": analysis_input.execution_constraints.preserve_public_api,
