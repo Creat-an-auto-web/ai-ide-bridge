@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Any, Awaitable, Callable, Generic, Protocol, TypeVar
 
 
 InputT = TypeVar("InputT")
 OutputT = TypeVar("OutputT")
+ProgressCallback = Callable[["RunProgressEvent"], Awaitable[None] | None]
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,16 @@ class ProviderResponse:
     raw_text: str
     parsed_json: dict[str, Any] | None = None
     model_target: ModelTarget | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RunProgressEvent:
+    type: str
+    stage: str
+    message: str
+    raw_text_delta: str | None = None
+    raw_text_preview: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -91,3 +102,15 @@ class BaseAgent(Generic[InputT, OutputT]):
         output: OutputT,
     ) -> OutputT:
         return output
+
+
+async def emit_progress(
+    callback: ProgressCallback | None,
+    event: RunProgressEvent,
+) -> None:
+    if callback is None:
+        return
+
+    maybe_awaitable = callback(event)
+    if maybe_awaitable is not None:
+        await maybe_awaitable

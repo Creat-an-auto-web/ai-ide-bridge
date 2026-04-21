@@ -9,6 +9,7 @@ import {
   RequirementAnalysisResultPayload,
   RequirementAnalysisAgentSettingsPayload,
   RequirementAnalysisAgentSettingsSummary,
+  RequirementAnalysisStreamEvent,
   WorkspaceEditModel,
   attachVoidRealIdeSidebarFromAccessor,
   collectVoidContext,
@@ -64,6 +65,9 @@ export interface AiIdeBridgeUiState {
   requirementAnalysisResult: RequirementAnalysisResultPayload | null
   requirementAnalysisError: string | null
   requirementAnalysisIsRunning: boolean
+  requirementAnalysisRunStage: string | null
+  requirementAnalysisPreviewText: string
+  requirementAnalysisEvents: RequirementAnalysisStreamEvent[]
   latestNotification: { level: 'info' | 'warning' | 'error'; title: string; message: string } | null
   latestPatchReview: PatchReviewModel | null
   latestWorkspaceEdit: WorkspaceEditModel | null
@@ -97,6 +101,20 @@ const defaultNativeWebSocketFactory = (() => {
     return new WebSocket(wsUrl.toString())
   }
 })()
+
+const toWebSocketUrl = (baseUrl: string, path: string) => {
+  const url = new URL(baseUrl)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  url.pathname = path
+  url.search = ''
+  url.hash = ''
+  return url.toString()
+}
+
+const appendRequirementAnalysisEvent = (
+  events: RequirementAnalysisStreamEvent[],
+  nextEvent: RequirementAnalysisStreamEvent,
+) => [...events, nextEvent].slice(-50)
 
 const createDesktopFetch = (): typeof fetch | undefined => {
   const bridgeFetch = window.aiIdeDesktop?.bridgeFetch
@@ -400,6 +418,9 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     requirementAnalysisResult: null,
     requirementAnalysisError: null,
     requirementAnalysisIsRunning: false,
+    requirementAnalysisRunStage: null,
+    requirementAnalysisPreviewText: '',
+    requirementAnalysisEvents: [],
     latestNotification: null,
     latestPatchReview: null,
     latestWorkspaceEdit: null,
@@ -495,16 +516,14 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         return
       }
 
-      const fetchImpl =
-        hostOptions.fetchImpl
-        ?? createNativeRequestFetch(nativeRequestService)
-        ?? createDesktopFetch()
-        ?? fetch
-
       setUiState((prev) => ({
         ...prev,
         requirementAnalysisError: null,
         requirementAnalysisIsRunning: true,
+        requirementAnalysisRunStage: 'starting',
+        requirementAnalysisPreviewText: '',
+        requirementAnalysisEvents: [],
+        requirementAnalysisResult: null,
       }))
 
       try {
@@ -514,35 +533,101 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           ?? hostOptions.baseUrl
           ?? defaultNativeBaseUrl()
           ?? 'http://127.0.0.1:27182'
-        const response = await fetchImpl(`${requirementAnalysisBaseUrl}/v1/requirement-analysis/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            settings: uiState.requirementAnalysisSettingsPayload,
-            input: inputPayload,
-          }),
+        const payload = {
+          settings: uiState.requirementAnalysisSettingsPayload,
+          input: inputPayload,
+        }
+        const webSocketFactory =
+          hostOptions.webSocketFactory
+          ?? defaultNativeWebSocketFactory
+          ?? ((url: string) => new WebSocket(url))
+
+        await new Promise<void>((resolve, reject) => {
+          let settled = false
+          const socket = webSocketFactory(
+            toWebSocketUrl(requirementAnalysisBaseUrl, '/v1/requirement-analysis/ws'),
+          )
+
+          const finishWithError = (error: Error) => {
+            if (settled) {
+              return
+            }
+            settled = true
+            try {
+              socket.close()
+            } catch {
+              // ignore close errors
+            }
+            reject(error)
+          }
+
+          socket.onopen = () => {
+            socket.send(JSON.stringify(payload))
+          }
+
+          socket.onmessage = (message) => {
+            try {
+              const event = JSON.parse(String(message.data)) as RequirementAnalysisStreamEvent
+              setUiState((prev) => ({
+                ...prev,
+                requirementAnalysisRunStage: event.stage ?? prev.requirementAnalysisRunStage,
+                requirementAnalysisPreviewText:
+                  typeof event.raw_text_preview === 'string'
+                    ? event.raw_text_preview
+                    : typeof event.raw_text_delta === 'string' && event.raw_text_delta.length > 0
+                      ? `${prev.requirementAnalysisPreviewText}${event.raw_text_delta}`.slice(-2000)
+                      : prev.requirementAnalysisPreviewText,
+                requirementAnalysisEvents: appendRequirementAnalysisEvent(
+                  prev.requirementAnalysisEvents,
+                  event,
+                ),
+                requirementAnalysisResult:
+                  event.type === 'result' && event.data
+                    ? event.data
+                    : prev.requirementAnalysisResult,
+                requirementAnalysisError:
+                  event.type === 'error'
+                    ? event.message
+                    : prev.requirementAnalysisError,
+                latestNotification:
+                  event.type === 'result' && event.data
+                    ? {
+                      level: 'info',
+                      title: 'RequirementAnalysis',
+                      message: `已生成 ${event.data.analysis_summary.story_unit_count} 个 story unit`,
+                    }
+                    : prev.latestNotification,
+              }))
+
+              if (event.type === 'result') {
+                if (!settled) {
+                  settled = true
+                  resolve()
+                }
+                socket.close()
+                return
+              }
+
+              if (event.type === 'error') {
+                finishWithError(new Error(event.message || '第一环服务调用失败'))
+              }
+            } catch (error) {
+              finishWithError(
+                error instanceof Error ? error : new Error(String(error)),
+              )
+            }
+          }
+
+          socket.onerror = () => {
+            finishWithError(new Error('第一环流式连接失败'))
+          }
+
+          socket.onclose = () => {
+            if (!settled) {
+              finishWithError(new Error('第一环流式连接已关闭'))
+            }
+          }
         })
-
-        const payload = await response.json() as {
-          success?: boolean
-          data?: RequirementAnalysisResultPayload
-          error?: { message?: string }
-        }
-
-        if (!response.ok || !payload.success || !payload.data) {
-          throw new Error(payload.error?.message ?? '第一环服务调用失败')
-        }
-
-        setUiState((prev) => ({
-          ...prev,
-          requirementAnalysisResult: payload.data ?? null,
-          requirementAnalysisError: null,
-          latestNotification: {
-            level: 'info',
-            title: 'RequirementAnalysis',
-            message: `已生成 ${payload.data.analysis_summary.story_unit_count} 个 story unit`,
-          },
-        }))
       } catch (error) {
         setUiState((prev) => ({
           ...prev,

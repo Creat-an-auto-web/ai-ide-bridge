@@ -34,6 +34,11 @@ export interface RequirementAnalysisAgentSettingsPayload {
   timeout_seconds: number
 }
 
+export interface RequirementAnalysisAgentSettingsDisplayPayload
+  extends Omit<RequirementAnalysisAgentSettingsPayload, 'api_key'> {
+  api_key: string
+}
+
 export interface RequirementAnalysisRunInputPayload {
   task_id: string
   mode: string
@@ -98,6 +103,17 @@ export interface RequirementAnalysisResultPayload {
     dependency_graph_valid: boolean
     story_count_within_limit: boolean
   }
+}
+
+export interface RequirementAnalysisStreamEvent {
+  type: 'status' | 'heartbeat' | 'model_output' | 'result' | 'error'
+  stage: string
+  message: string
+  raw_text_delta?: string | null
+  raw_text_preview?: string | null
+  metadata?: Record<string, unknown>
+  elapsed_ms?: number
+  data?: RequirementAnalysisResultPayload
 }
 
 export const createDefaultRequirementAnalysisSettings = (): RequirementAnalysisAgentSettings => ({
@@ -178,4 +194,11 @@ export const toRequirementAnalysisAgentSettingsPayload = (
   temperature: settings.temperature,
   max_tokens: settings.maxTokens,
   timeout_seconds: settings.timeoutSeconds,
+})
+
+export const toRequirementAnalysisAgentSettingsDisplayPayload = (
+  settings: RequirementAnalysisAgentSettings,
+): RequirementAnalysisAgentSettingsDisplayPayload => ({
+  ...toRequirementAnalysisAgentSettingsPayload(settings),
+  api_key: settings.apiKey.trim().length > 0 ? '<stored>' : '',
 })

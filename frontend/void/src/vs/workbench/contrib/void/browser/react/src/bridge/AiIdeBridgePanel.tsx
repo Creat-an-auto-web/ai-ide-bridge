@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import {
   RequirementAnalysisAgentSettings,
   createDefaultRequirementAnalysisSettings,
+  toRequirementAnalysisAgentSettingsDisplayPayload,
 } from '../../../../../../../../ai-ide-bridge/frontend-bridge/src/index.js'
 import { useAiIdeBridge } from './useAiIdeBridge.js'
 
@@ -26,6 +27,7 @@ export const AiIdeBridgePanel = () => {
   const [draftRequirementSettings, setDraftRequirementSettings] = useState<RequirementAnalysisAgentSettings>(
     createDefaultRequirementAnalysisSettings(),
   )
+  const [draftRequirementApiKey, setDraftRequirementApiKey] = useState('')
   const [isComposing, setIsComposing] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const {
@@ -36,10 +38,12 @@ export const AiIdeBridgePanel = () => {
     latestPatchReview,
     requirementAnalysisSettings,
     requirementAnalysisSettingsSummary,
-    requirementAnalysisSettingsPayload,
     requirementAnalysisResult,
     requirementAnalysisError,
     requirementAnalysisIsRunning,
+    requirementAnalysisRunStage,
+    requirementAnalysisPreviewText,
+    requirementAnalysisEvents,
   } = bridge.uiState
 
   const promptValue = isEditing || isComposing ? draftPrompt : panel.composer.prompt
@@ -51,7 +55,11 @@ export const AiIdeBridgePanel = () => {
   }, [isComposing, isEditing, panel.composer.prompt])
 
   React.useEffect(() => {
-    setDraftRequirementSettings(requirementAnalysisSettings)
+    setDraftRequirementSettings({
+      ...requirementAnalysisSettings,
+      apiKey: '',
+    })
+    setDraftRequirementApiKey('')
   }, [requirementAnalysisSettings])
 
   const approvalVisible = panel.approval.visible && panel.approval.commandId
@@ -90,6 +98,14 @@ export const AiIdeBridgePanel = () => {
   const settingsStatus = requirementAnalysisSettingsSummary.isConfigured
     ? '已配置'
     : '未完成'
+  const displayRequirementAnalysisSettingsPayload = useMemo(
+    () => toRequirementAnalysisAgentSettingsDisplayPayload(requirementAnalysisSettings),
+    [requirementAnalysisSettings],
+  )
+  const lastRequirementAnalysisEvent =
+    requirementAnalysisEvents.length > 0
+      ? requirementAnalysisEvents[requirementAnalysisEvents.length - 1]
+      : null
 
   const updateRequirementSetting = <K extends keyof RequirementAnalysisAgentSettings>(
     key: K,
@@ -154,11 +170,20 @@ export const AiIdeBridgePanel = () => {
               <span>API Key</span>
               <input
                 type='password'
-                value={draftRequirementSettings.apiKey}
-                onChange={(event) => updateRequirementSetting('apiKey', event.target.value)}
-                placeholder='输入第一环模型的 API Key'
+                value={draftRequirementApiKey}
+                onChange={(event) => setDraftRequirementApiKey(event.target.value)}
+                placeholder={
+                  requirementAnalysisSettingsSummary.hasApiKey
+                    ? '已保存，留空则保持不变'
+                    : '输入第一环模型的 API Key'
+                }
                 style={inputStyle}
               />
+              <span style={{ opacity: 0.72 }}>
+                {requirementAnalysisSettingsSummary.hasApiKey
+                  ? '当前已保存 API Key，界面不会回填明文。'
+                  : '当前尚未保存 API Key。'}
+              </span>
             </label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
@@ -210,7 +235,13 @@ export const AiIdeBridgePanel = () => {
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
-              onClick={() => bridge.saveRequirementAnalysisSettings(draftRequirementSettings)}
+              onClick={() => bridge.saveRequirementAnalysisSettings({
+                ...draftRequirementSettings,
+                apiKey:
+                  draftRequirementApiKey.trim().length > 0
+                    ? draftRequirementApiKey
+                    : requirementAnalysisSettings.apiKey,
+              })}
               style={{ ...buttonStyle, background: 'rgba(78, 161, 255, 0.18)' }}
             >
               保存第一环配置
@@ -218,6 +249,7 @@ export const AiIdeBridgePanel = () => {
             <button
               onClick={() => {
                 setDraftRequirementSettings(createDefaultRequirementAnalysisSettings())
+                setDraftRequirementApiKey('')
                 bridge.resetRequirementAnalysisSettings()
               }}
               style={buttonStyle}
@@ -226,7 +258,7 @@ export const AiIdeBridgePanel = () => {
             </button>
             <button
               onClick={async () => {
-                const payloadText = JSON.stringify(requirementAnalysisSettingsPayload, null, 2)
+                const payloadText = JSON.stringify(displayRequirementAnalysisSettingsPayload, null, 2)
                 try {
                   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
                     await navigator.clipboard.writeText(payloadText)
@@ -275,11 +307,67 @@ export const AiIdeBridgePanel = () => {
                 padding: '10px 12px',
               }}
             >
-              {JSON.stringify(requirementAnalysisSettingsPayload, null, 2)}
+              {JSON.stringify(displayRequirementAnalysisSettingsPayload, null, 2)}
             </pre>
           </div>
         </div>
       </details>
+
+      {(requirementAnalysisIsRunning || requirementAnalysisEvents.length > 0 || requirementAnalysisPreviewText) && (
+        <div style={sectionStyle}>
+          <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
+            第一环运行状态
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            当前阶段：{requirementAnalysisRunStage ?? 'unknown'}
+          </div>
+          {lastRequirementAnalysisEvent && (
+            <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+              最新事件：{lastRequirementAnalysisEvent.message}
+              {typeof lastRequirementAnalysisEvent.elapsed_ms === 'number'
+                ? ` (${Math.round(lastRequirementAnalysisEvent.elapsed_ms / 1000)}s)`
+                : ''}
+            </div>
+          )}
+          {requirementAnalysisPreviewText && (
+            <pre
+              style={{
+                margin: '0 0 10px',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: 'var(--vscode-input-foreground)',
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid var(--vscode-panel-border)',
+                borderRadius: 8,
+                padding: '10px 12px',
+                maxHeight: 180,
+                overflow: 'auto',
+              }}
+            >
+              {requirementAnalysisPreviewText}
+            </pre>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {requirementAnalysisEvents.slice(-6).map((event, index) => (
+              <div
+                key={`${event.stage}-${index}-${event.elapsed_ms ?? index}`}
+                style={{
+                  fontSize: 12,
+                  color: 'var(--vscode-input-foreground)',
+                  opacity: event.type === 'heartbeat' ? 0.72 : 0.92,
+                }}
+              >
+                [{event.stage}] {event.message}
+                {typeof event.elapsed_ms === 'number'
+                  ? ` · ${Math.round(event.elapsed_ms / 1000)}s`
+                  : ''}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {requirementAnalysisResult && (
         <div style={sectionStyle}>
