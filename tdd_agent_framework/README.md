@@ -33,6 +33,7 @@ python -m tdd_agent_framework.server --host 127.0.0.1 --port 27184
 
 - `GET /healthz`
 - `POST /v1/requirement-analysis/runs`
+- `POST /v1/test-case-generation/runs`
 
 前端 bridge 面板中的“运行需求分析”按钮会调用这个服务。
 

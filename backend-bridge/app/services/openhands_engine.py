@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 from urllib.parse import urlencode, urlparse
 
@@ -28,6 +29,10 @@ class OpenHandsEngine:
         self.event_bus = event_bus
         self.openhands_url = openhands_url.rstrip("/")
         self.request_timeout_sec = request_timeout_sec
+        self.debug_openhands_events = (
+            os.getenv("BRIDGE_DEBUG_OPENHANDS_EVENTS", "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
 
     @staticmethod
     def _extract_prompt(req: object) -> str:
@@ -170,6 +175,39 @@ class OpenHandsEngine:
     def _is_terminal_error_status(status: str | None) -> bool:
         return status in {"ERROR", "STUCK"}
 
+    @staticmethod
+    def _event_kind(event: dict) -> str:
+        value = event.get("type") or event.get("kind") or ""
+        return str(value)
+
+    @staticmethod
+    def _to_text(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            parts = [OpenHandsEngine._to_text(item) for item in value]
+            return "".join(part for part in parts if part)
+        if isinstance(value, dict):
+            if isinstance(value.get("text"), str):
+                return value["text"]
+            if "content" in value:
+                return OpenHandsEngine._to_text(value.get("content"))
+            if "message" in value:
+                return OpenHandsEngine._to_text(value.get("message"))
+            if "summary" in value:
+                return OpenHandsEngine._to_text(value.get("summary"))
+        return ""
+
+    @staticmethod
+    def _extract_user_text(event: dict) -> str:
+        for key in ("content", "message", "summary", "text", "detail"):
+            text = OpenHandsEngine._to_text(event.get(key)).strip()
+            if text:
+                return text
+        return ""
+
     async def run_task(self, task_id: str) -> None:
         req = self.task_service.get_request(task_id)
         conversation_id: str | None = None
@@ -259,7 +297,7 @@ class OpenHandsEngine:
                             ) from exc
                         event = json.loads(message)
                         await self._handle_openhands_event(task_id, event, ws)
-                        event_type = event.get("type") if isinstance(event, dict) else None
+                        event_type = self._event_kind(event) if isinstance(event, dict) else None
                         if event_type == "AgentStateChangedObservation":
                             state = str(event.get("agent_state", "")).upper()
                             if state in {"FINISHED", "STOPPED"}:
@@ -299,24 +337,32 @@ class OpenHandsEngine:
             )
 
     async def _handle_openhands_event(self, task_id: str, event: dict, ws) -> None:
-        event_type = event.get("type", "")
+        event_type = self._event_kind(event)
 
-        await self.event_bus.publish(
-            task_id,
-            "task.log",
-            {"stream": "stdout", "text": json.dumps(event, ensure_ascii=False) + "\n"},
-        )
+        if self.debug_openhands_events:
+            logger.debug(
+                "OpenHands raw event for task %s: %s",
+                task_id,
+                json.dumps(event, ensure_ascii=False),
+            )
 
         if event_type == "AgentStateChangedObservation":
-            state = event.get("agent_state")
-            if state == "running":
+            state = str(event.get("agent_state", "")).upper()
+            if state == "RUNNING":
                 await self.task_service.set_status(task_id, "running", "Agent is thinking...")
+            elif state in {"AWAITING_USER_CONFIRMATION", "AWAITING_USER_INPUT"}:
+                await self.task_service.set_status(task_id, "awaiting_approval", state)
+            elif state in {"FINISHED", "STOPPED", "PAUSED"}:
+                await self.task_service.set_status(task_id, "running", f"Agent state: {state}")
 
         elif event_type == "CmdOutputObservation":
+            text = self._to_text(event.get("content")).strip()
+            if not text:
+                return
             await self.event_bus.publish(
                 task_id,
                 "task.log",
-                {"stream": "stdout", "text": event.get("content", "")}
+                {"stream": "stdout", "text": text + ("\n" if not text.endswith("\n") else "")},
             )
 
         elif event_type == "ActionApprovalRequest":
@@ -353,3 +399,28 @@ class OpenHandsEngine:
                     "files": event.get("files", [])
                 }
             )
+        elif event_type == "ConversationErrorEvent" or "error" in event_type.lower():
+            message = self._extract_user_text(event) or "OpenHands reported an error event"
+            await self.event_bus.publish(
+                task_id,
+                "task.error",
+                {
+                    "code": "TOOL_ERROR",
+                    "message": message,
+                    "retryable": False,
+                },
+            )
+        elif event_type in {
+            "AssistantMessageEvent",
+            "PlanningUpdateEvent",
+            "ReasoningSummaryEvent",
+            "UserFacingNotificationEvent",
+            "MessageEvent",
+        }:
+            text = self._extract_user_text(event)
+            if text:
+                await self.event_bus.publish(
+                    task_id,
+                    "task.log",
+                    {"stream": "stdout", "text": text + ("\n" if not text.endswith("\n") else "")},
+                )

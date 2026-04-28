@@ -10,7 +10,7 @@ from .core import (
     ProviderRequest,
     ProviderResponse,
 )
-from .orchestrators import RequirementAnalysisOrchestrator
+from .orchestrators import RequirementAnalysisOrchestrator, TestCaseGenerationOrchestrator
 from .providers import OpenAICompatibleProvider, ProviderConfig, ProviderError
 from .registry import AgentRegistry
 
@@ -25,6 +25,7 @@ __all__ = [
     "ProviderRequest",
     "ProviderResponse",
     "RequirementAnalysisOrchestrator",
+    "TestCaseGenerationOrchestrator",
     "OpenAICompatibleProvider",
     "ProviderConfig",
     "ProviderError",

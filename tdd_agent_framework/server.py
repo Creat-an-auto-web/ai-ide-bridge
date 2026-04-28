@@ -11,7 +11,14 @@ from tdd_agent_framework.agents.requirement_analysis import (
     RequirementAnalysisAgentSettings,
     RequirementAnalysisInput,
 )
-from tdd_agent_framework.orchestrators import RequirementAnalysisOrchestrator
+from tdd_agent_framework.agents.test_case_generation import (
+    TestCaseGenerationAgentSettings,
+    TestCaseGenerationInput,
+)
+from tdd_agent_framework.orchestrators import (
+    RequirementAnalysisOrchestrator,
+    TestCaseGenerationOrchestrator,
+)
 
 
 def _json_response(
@@ -38,6 +45,14 @@ async def _run_requirement_analysis(payload: dict[str, Any]) -> dict[str, Any]:
     return asdict(result)
 
 
+async def _run_test_case_generation(payload: dict[str, Any]) -> dict[str, Any]:
+    settings = TestCaseGenerationAgentSettings.from_dict(payload.get("settings"))
+    generation_input = TestCaseGenerationInput.from_dict(payload.get("input"))
+    orchestrator = TestCaseGenerationOrchestrator()
+    result = await orchestrator.run(settings, generation_input)
+    return asdict(result)
+
+
 class RequirementAnalysisHttpHandler(BaseHTTPRequestHandler):
     server_version = "RequirementAnalysisHTTP/0.1"
 
@@ -55,7 +70,10 @@ class RequirementAnalysisHttpHandler(BaseHTTPRequestHandler):
         )
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/v1/requirement-analysis/runs":
+        if self.path not in {
+            "/v1/requirement-analysis/runs",
+            "/v1/test-case-generation/runs",
+        }:
             _json_response(
                 self,
                 404,
@@ -69,7 +87,10 @@ class RequirementAnalysisHttpHandler(BaseHTTPRequestHandler):
             payload = json.loads(raw_body.decode("utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("request body must be a JSON object")
-            result = asyncio.run(_run_requirement_analysis(payload))
+            if self.path == "/v1/requirement-analysis/runs":
+                result = asyncio.run(_run_requirement_analysis(payload))
+            else:
+                result = asyncio.run(_run_test_case_generation(payload))
         except Exception as exc:  # noqa: BLE001
             _json_response(
                 self,
