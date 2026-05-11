@@ -66,6 +66,8 @@ export interface AiIdeBridgeUiState {
   requirementAnalysisError: string | null
   requirementAnalysisIsRunning: boolean
   requirementAnalysisRunStage: string | null
+  requirementAnalysisLastPrompt: string | null
+  requirementAnalysisAutoRetryCount: number
   requirementAnalysisPreviewText: string
   requirementAnalysisEvents: RequirementAnalysisStreamEvent[]
   latestNotification: { level: 'info' | 'warning' | 'error'; title: string; message: string } | null
@@ -80,6 +82,10 @@ export interface UseAiIdeBridgeOptions {
   gitDiffProvider?: () => Promise<string> | string
   testLogsProvider?: () => Promise<string> | string
   branchProvider?: () => Promise<string | undefined> | string | undefined
+}
+
+interface RequirementAnalysisContinuationOptions {
+  previousResult?: RequirementAnalysisResultPayload | null
 }
 
 const isNativeVoidHost = () =>
@@ -346,7 +352,27 @@ const toRecentTestFailures = (testLogs: string): string[] =>
     .filter((line) => line.length > 0)
     .slice(-10)
 
-const toRequirementAnalysisInputPayload = async (accessor: unknown, prompt: string) => {
+const toContinuationRevisionFocus = (
+  previousResult: RequirementAnalysisResultPayload | null | undefined,
+): string[] => {
+  if (!previousResult) {
+    return []
+  }
+  if (previousResult.verification?.revision_guidance?.length) {
+    return previousResult.verification.revision_guidance
+  }
+  if (previousResult.verification?.issues?.length) {
+    return previousResult.verification.issues.map((issue) => issue.message)
+  }
+  return ['在保持当前质量的前提下继续提升需求拆解的一致性、边界清晰度和 user story 粒度。']
+}
+
+const toRequirementAnalysisInputPayload = async (
+  accessor: unknown,
+  prompt: string,
+  options: RequirementAnalysisContinuationOptions = {},
+) => {
+  const previousResult = options.previousResult ?? null
   const contextSource = createVoidRealContextSourceFromAccessor({
     accessor: accessor as never,
   })
@@ -373,10 +399,14 @@ const toRequirementAnalysisInputPayload = async (accessor: unknown, prompt: stri
     diagnostics: context.diagnostics.map((diagnostic) => toDiagnosticText(diagnostic)),
     recent_test_failures: toRecentTestFailures(context.testLogs),
     git_diff_summary: context.gitDiff,
+    revision_focus: toContinuationRevisionFocus(previousResult),
+    previous_verification_summary: previousResult?.verification?.summary ?? null,
+    iteration: previousResult ? Math.max(1, previousResult.iteration_count + 1) : 1,
     execution_constraints: {
       disallow_new_dependencies: true,
       preserve_public_api: true,
-      max_story_units: 8,
+      max_capability_groups: 6,
+      max_story_units: 24,
     },
   }
 }
@@ -405,6 +435,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       }
       : {}) ?? {}
   const entryRef = useRef<ReturnType<typeof attachVoidRealIdeSidebarFromAccessor> | null>(null)
+  const requirementAnalysisSocketRef = useRef<WebSocket | null>(null)
 
   const [uiState, setUiState] = useState<AiIdeBridgeUiState>({
     panel: emptyBridgeSidebarState(),
@@ -419,6 +450,8 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     requirementAnalysisError: null,
     requirementAnalysisIsRunning: false,
     requirementAnalysisRunStage: null,
+    requirementAnalysisLastPrompt: null,
+    requirementAnalysisAutoRetryCount: 0,
     requirementAnalysisPreviewText: '',
     requirementAnalysisEvents: [],
     latestNotification: null,
@@ -506,12 +539,15 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     async run(prompt?: string) {
       await entryRef.current?.run(prompt)
     },
-    async runRequirementAnalysis(prompt?: string) {
+    async runRequirementAnalysis(
+      prompt?: string,
+      continuationOptions: RequirementAnalysisContinuationOptions = {},
+    ) {
       const nextPrompt = (prompt ?? uiState.panel.composer.prompt).trim()
       if (!nextPrompt) {
         setUiState((prev) => ({
           ...prev,
-          requirementAnalysisError: '请先输入需求，再运行第一环。',
+          requirementAnalysisError: '请先输入需求，再运行需求分析。',
         }))
         return
       }
@@ -521,13 +557,19 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         requirementAnalysisError: null,
         requirementAnalysisIsRunning: true,
         requirementAnalysisRunStage: 'starting',
+        requirementAnalysisLastPrompt: nextPrompt,
+        requirementAnalysisAutoRetryCount: 0,
         requirementAnalysisPreviewText: '',
         requirementAnalysisEvents: [],
-        requirementAnalysisResult: null,
+        requirementAnalysisResult: continuationOptions.previousResult ?? null,
       }))
 
       try {
-        const inputPayload = await toRequirementAnalysisInputPayload(accessorRef.current, nextPrompt)
+        const inputPayload = await toRequirementAnalysisInputPayload(
+          accessorRef.current,
+          nextPrompt,
+          continuationOptions,
+        )
         const requirementAnalysisBaseUrl =
           options.baseUrl
           ?? hostOptions.baseUrl
@@ -547,6 +589,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           const socket = webSocketFactory(
             toWebSocketUrl(requirementAnalysisBaseUrl, '/v1/requirement-analysis/ws'),
           )
+          requirementAnalysisSocketRef.current = socket
 
           const finishWithError = (error: Error) => {
             if (settled) {
@@ -557,6 +600,9 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
               socket.close()
             } catch {
               // ignore close errors
+            }
+            if (requirementAnalysisSocketRef.current === socket) {
+              requirementAnalysisSocketRef.current = null
             }
             reject(error)
           }
@@ -571,6 +617,13 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
               setUiState((prev) => ({
                 ...prev,
                 requirementAnalysisRunStage: event.stage ?? prev.requirementAnalysisRunStage,
+                requirementAnalysisAutoRetryCount:
+                  event.stage === 'provider_request_retrying'
+                    ? Math.max(
+                      prev.requirementAnalysisAutoRetryCount,
+                      Number(event.metadata?.attempt ?? 0),
+                    )
+                    : prev.requirementAnalysisAutoRetryCount,
                 requirementAnalysisPreviewText:
                   typeof event.raw_text_preview === 'string'
                     ? event.raw_text_preview
@@ -594,7 +647,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
                     ? {
                       level: 'info',
                       title: 'RequirementAnalysis',
-                      message: `已生成 ${event.data.analysis_summary.story_unit_count} 个 story unit`,
+                      message: `已生成 ${event.data.analysis_summary.story_unit_count} 个用户故事`,
                     }
                     : prev.latestNotification,
               }))
@@ -604,12 +657,15 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
                   settled = true
                   resolve()
                 }
+                if (requirementAnalysisSocketRef.current === socket) {
+                  requirementAnalysisSocketRef.current = null
+                }
                 socket.close()
                 return
               }
 
               if (event.type === 'error') {
-                finishWithError(new Error(event.message || '第一环服务调用失败'))
+                finishWithError(new Error(event.message || '需求分析服务调用失败'))
               }
             } catch (error) {
               finishWithError(
@@ -619,18 +675,22 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           }
 
           socket.onerror = () => {
-            finishWithError(new Error('第一环流式连接失败'))
+            finishWithError(new Error('需求分析流式连接失败'))
           }
 
           socket.onclose = () => {
+            if (requirementAnalysisSocketRef.current === socket) {
+              requirementAnalysisSocketRef.current = null
+            }
             if (!settled) {
-              finishWithError(new Error('第一环流式连接已关闭'))
+              finishWithError(new Error('需求分析流式连接已关闭'))
             }
           }
         })
       } catch (error) {
         setUiState((prev) => ({
           ...prev,
+          requirementAnalysisRunStage: 'failed',
           requirementAnalysisError: error instanceof Error ? error.message : String(error),
         }))
       } finally {
@@ -639,6 +699,50 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           requirementAnalysisIsRunning: false,
         }))
       }
+    },
+    async continueRequirementAnalysis() {
+      await this.runRequirementAnalysis(uiState.panel.composer.prompt, {
+        previousResult: uiState.requirementAnalysisResult,
+      })
+    },
+    async retryRequirementAnalysis() {
+      await this.runRequirementAnalysis(
+        uiState.requirementAnalysisLastPrompt ?? uiState.panel.composer.prompt,
+        {
+          previousResult: uiState.requirementAnalysisResult,
+        },
+      )
+    },
+    acceptRequirementAnalysisResult() {
+      if (!uiState.requirementAnalysisResult) {
+        return
+      }
+      setUiState((prev) => ({
+        ...prev,
+        requirementAnalysisResult: {
+          ...prev.requirementAnalysisResult!,
+          status: 'accepted',
+        },
+        latestNotification: {
+          level: 'info',
+          title: 'RequirementAnalysis',
+          message: '已接受当前需求分析结果。',
+        },
+      }))
+    },
+    stopRequirementAnalysis() {
+      requirementAnalysisSocketRef.current?.close()
+      requirementAnalysisSocketRef.current = null
+      setUiState((prev) => ({
+        ...prev,
+        requirementAnalysisIsRunning: false,
+        requirementAnalysisRunStage: 'cancelled',
+        latestNotification: {
+          level: 'warning',
+          title: 'RequirementAnalysis',
+          message: '已手动停止需求分析任务。',
+        },
+      }))
     },
     async approve(reason?: string) {
       await entryRef.current?.approve(reason)

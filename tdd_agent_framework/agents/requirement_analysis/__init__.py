@@ -2,6 +2,7 @@ from .agent import RequirementAnalysisAgent
 from .factory import build_requirement_analysis_service
 from .models import (
     AnalysisSummary,
+    CapabilityGroup,
     ExecutionConstraints,
     QualityChecks,
     RequirementAnalysisInput,
@@ -23,6 +24,7 @@ from .settings import (
 
 __all__ = [
     "AnalysisSummary",
+    "CapabilityGroup",
     "ExecutionConstraints",
     "QualityChecks",
     "RequirementAnalysisAgent",

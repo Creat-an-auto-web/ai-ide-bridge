@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from time import monotonic
 from uuid import uuid4
 
 from tdd_agent_framework.core import ProgressCallback, RunProgressEvent, emit_progress
@@ -52,7 +53,8 @@ EXTENSION_LANGUAGES = {
 
 
 class RequirementAnalysisOrchestrator:
-    max_iterations = 4
+    stalled_repeat_threshold = 2
+    min_score_delta_for_improvement = 3
 
     def __init__(self) -> None:
         self.name = "requirement_analysis_orchestrator"
@@ -98,12 +100,20 @@ class RequirementAnalysisOrchestrator:
             progress_callback=progress_callback,
         )
 
+        started_at = monotonic()
+        configured_timeout_seconds = float(getattr(settings, "timeout_seconds", 60.0))
+        runtime_budget_seconds = max(180.0, configured_timeout_seconds * 4)
         history: list[RequirementAnalysisIteration] = []
         working_input = enriched_input
         latest_result: RequirementAnalysisResult | None = None
         latest_verification: RequirementVerificationResult | None = None
+        current_iteration = max(1, working_input.iteration)
+        repeat_stall_count = 0
+        last_signature: str | None = None
+        best_score: int | None = None
 
-        for iteration in range(1, self.max_iterations + 1):
+        while True:
+            iteration = current_iteration
             working_input = replace(working_input, iteration=iteration)
             await emit_progress(
                 progress_callback,
@@ -162,7 +172,7 @@ class RequirementAnalysisOrchestrator:
             if latest_verification.status == "pass":
                 return self._build_package(
                     task_id=working_input.task_id,
-                    status="approved_for_test_generation",
+                    status="paused_converged",
                     result=latest_result,
                     verification=latest_verification,
                     history=history,
@@ -171,57 +181,87 @@ class RequirementAnalysisOrchestrator:
             if latest_verification.status == "blocked":
                 return self._build_package(
                     task_id=working_input.task_id,
-                    status="blocked",
+                    status="paused_blocked",
                     result=latest_result,
                     verification=latest_verification,
                     history=history,
                 )
 
-            if iteration < self.max_iterations:
+            current_score = self._verification_score(latest_verification)
+            current_signature = self._verification_signature(latest_verification)
+            improved = best_score is None or current_score >= best_score + self.min_score_delta_for_improvement
+            if improved:
+                best_score = current_score
+                repeat_stall_count = 0
+            else:
+                repeat_stall_count = repeat_stall_count + 1 if current_signature == last_signature else 1
+            last_signature = current_signature
+
+            if monotonic() - started_at >= runtime_budget_seconds:
                 await emit_progress(
                     progress_callback,
                     RunProgressEvent(
                         type="status",
-                        stage="analysis_revision_requested",
-                        message=f"第 {iteration} 轮需要修订，准备进入下一轮",
+                        stage="analysis_runtime_budget_reached",
+                        message=(
+                            f"需求分析已达到运行预算 {int(runtime_budget_seconds)} 秒，"
+                            "进入暂停待人工决策状态"
+                        ),
                         metadata={
                             "iteration": iteration,
-                            "revision_guidance": latest_verification.revision_guidance,
+                            "runtime_budget_seconds": runtime_budget_seconds,
+                            "verification_status": latest_verification.status,
                         },
                     ),
                 )
-                working_input = replace(
-                    working_input,
-                    revision_focus=list(latest_verification.revision_guidance),
-                    previous_verification_summary=latest_verification.summary,
+                return self._build_package(
+                    task_id=working_input.task_id,
+                    status="paused_stalled",
+                    result=latest_result,
+                    verification=latest_verification,
+                    history=history,
                 )
-                continue
+
+            if repeat_stall_count >= self.stalled_repeat_threshold:
+                await emit_progress(
+                    progress_callback,
+                    RunProgressEvent(
+                        type="status",
+                        stage="analysis_stalled",
+                        message="连续多轮没有实质改进，需求分析已暂停，等待用户决定是否继续优化",
+                        metadata={
+                            "iteration": iteration,
+                            "repeat_stall_count": repeat_stall_count,
+                            "verification_status": latest_verification.status,
+                        },
+                    ),
+                )
+                return self._build_package(
+                    task_id=working_input.task_id,
+                    status="paused_stalled",
+                    result=latest_result,
+                    verification=latest_verification,
+                    history=history,
+                )
 
             await emit_progress(
                 progress_callback,
                 RunProgressEvent(
                     type="status",
-                    stage="analysis_iteration_exhausted",
-                    message=(
-                        f"达到最大修订轮次 {self.max_iterations}，"
-                        "第一环仍未完全收敛，转入人工复核状态"
-                    ),
+                    stage="analysis_revision_requested",
+                    message=f"第 {iteration} 轮需要修订，准备继续优化",
                     metadata={
                         "iteration": iteration,
-                        "verification_status": latest_verification.status,
-                        "issue_count": len(latest_verification.issues),
+                        "revision_guidance": latest_verification.revision_guidance,
                     },
                 ),
             )
-            return self._build_package(
-                task_id=working_input.task_id,
-                status="needs_human_review",
-                result=latest_result,
-                verification=latest_verification,
-                history=history,
+            working_input = replace(
+                working_input,
+                revision_focus=self._next_revision_focus(latest_verification),
+                previous_verification_summary=latest_verification.summary,
             )
-
-        raise RuntimeError("requirement analysis orchestrator exhausted iterations unexpectedly")
+            current_iteration += 1
 
     def _build_workspace_summary(
         self,
@@ -294,6 +334,37 @@ class RequirementAnalysisOrchestrator:
             warnings=result.warnings,
             quality_checks=result.quality_checks,
             verification=verification,
-            iteration_count=len(history),
+            iteration_count=history[-1].iteration if history else 0,
             history=list(history),
         )
+
+    def _verification_score(self, verification: RequirementVerificationResult) -> int:
+        score = verification.quality_score
+        issue_penalty = sum(
+            12 if item.severity == "high" else 6 if item.severity == "medium" else 2
+            for item in verification.issues
+        )
+        return (
+            score.scope_clarity
+            + score.testability
+            + score.dependency_sanity
+            + score.story_granularity
+            - issue_penalty
+        )
+
+    def _verification_signature(self, verification: RequirementVerificationResult) -> str:
+        issue_parts = [
+            f"{item.severity}:{item.issue_type}:{item.message.strip()}"
+            for item in verification.issues
+        ]
+        return "|".join([verification.status, verification.summary.strip(), *issue_parts])
+
+    def _next_revision_focus(
+        self,
+        verification: RequirementVerificationResult,
+    ) -> list[str]:
+        if verification.revision_guidance:
+            return list(verification.revision_guidance)
+        if verification.issues:
+            return [item.message for item in verification.issues]
+        return ["在保持当前质量的前提下继续提升需求拆解的精度与一致性。"]

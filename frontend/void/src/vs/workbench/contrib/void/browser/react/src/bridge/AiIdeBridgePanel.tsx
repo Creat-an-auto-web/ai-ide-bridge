@@ -23,10 +23,16 @@ const statusTextOfConnection = (value: string) => {
 
 const statusTextOfRequirementPackage = (value: string) => {
   switch (value) {
-    case 'approved_for_test_generation':
-      return '已通过，可进入测试生成'
-    case 'needs_human_review':
-      return '未收敛，需人工复核'
+    case 'paused_converged':
+      return '已收敛，等待用户决定'
+    case 'paused_stalled':
+      return '已暂停，需继续优化或人工介入'
+    case 'paused_blocked':
+      return '已阻塞，需人工介入'
+    case 'accepted':
+      return '已接受，准备进入下一环'
+    case 'cancelled':
+      return '已取消'
     case 'blocked':
       return '阻塞'
     case 'verified':
@@ -59,6 +65,8 @@ export const AiIdeBridgePanel = () => {
     requirementAnalysisError,
     requirementAnalysisIsRunning,
     requirementAnalysisRunStage,
+    requirementAnalysisLastPrompt,
+    requirementAnalysisAutoRetryCount,
     requirementAnalysisPreviewText,
     requirementAnalysisEvents,
   } = bridge.uiState
@@ -119,6 +127,36 @@ export const AiIdeBridgePanel = () => {
     () => toRequirementAnalysisAgentSettingsDisplayPayload(requirementAnalysisSettings),
     [requirementAnalysisSettings],
   )
+  const requirementCapabilityGroups = requirementAnalysisResult?.capability_groups ?? []
+  const requirementVerification = requirementAnalysisResult?.verification ?? {
+    status: 'unknown',
+    summary: '暂无验证结果',
+    issues: [],
+    revision_guidance: [],
+    quality_score: {
+      scope_clarity: 0,
+      testability: 0,
+      dependency_sanity: 0,
+      story_granularity: 0,
+    },
+  }
+  const requirementVerificationIssues = requirementVerification.issues ?? []
+  const requirementHistory = requirementAnalysisResult?.history ?? []
+  const requirementPackageStatus = requirementAnalysisResult?.status ?? 'draft'
+  const canAcceptRequirementResult = (
+    requirementPackageStatus === 'paused_converged'
+    || requirementPackageStatus === 'paused_stalled'
+    || requirementPackageStatus === 'paused_blocked'
+  )
+  const canContinueRequirementResult = (
+    requirementPackageStatus === 'paused_converged'
+    || requirementPackageStatus === 'paused_stalled'
+    || requirementPackageStatus === 'paused_blocked'
+  )
+  const canRetryRequirementAnalysis = (
+    !requirementAnalysisIsRunning
+    && Boolean(requirementAnalysisLastPrompt?.trim())
+  )
   const lastRequirementAnalysisEvent =
     requirementAnalysisEvents.length > 0
       ? requirementAnalysisEvents[requirementAnalysisEvents.length - 1]
@@ -135,17 +173,17 @@ export const AiIdeBridgePanel = () => {
     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12, color: 'var(--vscode-editor-foreground)' }}>
       <details style={sectionStyle}>
         <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
-          第一环模型配置
+          需求分析模型配置
         </summary>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
           <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', opacity: 0.86 }}>
             需求分析智能体状态：{settingsStatus}
           </div>
           <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', opacity: 0.78 }}>
-            这部分配置会保存在本机 IDE，并用于调用独立的第一环 RequirementAnalysis 原型服务。
+            这部分配置会保存在本机 IDE，并用于调用独立的需求分析 RequirementAnalysis 原型服务。
           </div>
           <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', opacity: 0.78 }}>
-            下方 JSON 已对齐第一环 Python 服务工厂所需的 snake_case 配置格式。
+            下方 JSON 已对齐需求分析 Python 服务工厂所需的 snake_case 配置格式。
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
             <input
@@ -153,7 +191,7 @@ export const AiIdeBridgePanel = () => {
               checked={draftRequirementSettings.enabled}
               onChange={(event) => updateRequirementSetting('enabled', event.target.checked)}
             />
-            启用第一环需求分析智能体
+            启用需求分析智能体
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
@@ -192,7 +230,7 @@ export const AiIdeBridgePanel = () => {
                 placeholder={
                   requirementAnalysisSettingsSummary.hasApiKey
                     ? '已保存，留空则保持不变'
-                    : '输入第一环模型的 API Key'
+                    : '输入需求分析模型的 API Key'
                 }
                 style={inputStyle}
               />
@@ -261,7 +299,7 @@ export const AiIdeBridgePanel = () => {
               })}
               style={{ ...buttonStyle, background: 'rgba(78, 161, 255, 0.18)' }}
             >
-              保存第一环配置
+              保存需求分析配置
             </button>
             <button
               onClick={() => {
@@ -303,12 +341,12 @@ export const AiIdeBridgePanel = () => {
                     : 1,
               }}
             >
-              {requirementAnalysisIsRunning ? '第一环运行中' : '运行第一环原型'}
+              {requirementAnalysisIsRunning ? '需求分析运行中' : '运行需求分析'}
             </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', opacity: 0.86 }}>
-              第一环运行配置预览
+              需求分析运行配置预览
             </div>
             <pre
               style={{
@@ -333,11 +371,16 @@ export const AiIdeBridgePanel = () => {
       {(requirementAnalysisIsRunning || requirementAnalysisEvents.length > 0 || requirementAnalysisPreviewText) && (
         <div style={sectionStyle}>
           <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
-            第一环运行状态
+            需求分析运行状态
           </div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
             当前阶段：{requirementAnalysisRunStage ?? 'unknown'}
           </div>
+          {requirementAnalysisAutoRetryCount > 0 && (
+            <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+              连接失败后已自动重试 {requirementAnalysisAutoRetryCount} 次。
+            </div>
+          )}
           {lastRequirementAnalysisEvent && (
             <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
               最新事件：{lastRequirementAnalysisEvent.message}
@@ -383,13 +426,20 @@ export const AiIdeBridgePanel = () => {
               </div>
             ))}
           </div>
+          {requirementAnalysisIsRunning && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+              <button onClick={() => bridge.stopRequirementAnalysis()} style={buttonStyle}>
+                停止任务
+              </button>
+            </div>
+          )}
         </div>
       )}
 
       {requirementAnalysisResult && (
         <div style={sectionStyle}>
           <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
-            第一环结果
+            需求分析结果
           </div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
             包状态：{statusTextOfRequirementPackage(requirementAnalysisResult.status)} · 迭代轮次：{requirementAnalysisResult.iteration_count}
@@ -398,25 +448,42 @@ export const AiIdeBridgePanel = () => {
             {requirementAnalysisResult.requirement_spec.problem_statement}
           </div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
-            验证结论：{requirementAnalysisResult.verification.status} · {requirementAnalysisResult.verification.summary}
+            验证结论：{requirementVerification.status} · {requirementVerification.summary}
           </div>
           <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
-            Story 数量：{requirementAnalysisResult.analysis_summary.story_unit_count}
+            Capability 组数量：{requirementAnalysisResult.analysis_summary.capability_group_count ?? requirementCapabilityGroups.length} · 用户故事数量：{requirementAnalysisResult.analysis_summary.story_unit_count}
           </div>
+          {requirementCapabilityGroups.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                Capability 分组
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                {requirementCapabilityGroups.map((group) => (
+                  <li key={group.id}>
+                    {group.title} · {(group.story_ids ?? []).length} 个用户故事
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
             {requirementAnalysisResult.story_units.map((storyUnit) => (
               <li key={storyUnit.id}>
-                {storyUnit.title}
+                <div style={{ fontWeight: 600 }}>{storyUnit.title}</div>
+                <div>
+                  {storyUnit.narrative || `As a ${storyUnit.as_a}, I want ${storyUnit.i_want}${storyUnit.so_that ? `, so that ${storyUnit.so_that}` : ''}.`}
+                </div>
               </li>
             ))}
           </ul>
-          {requirementAnalysisResult.verification.issues.length > 0 && (
+          {requirementVerificationIssues.length > 0 && (
             <div style={{ marginTop: 10 }}>
               <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
                 验证问题
               </div>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                {requirementAnalysisResult.verification.issues.map((issue) => (
+                {requirementVerificationIssues.map((issue) => (
                   <li key={issue.id}>
                     [{issue.severity}] {issue.message}
                   </li>
@@ -424,13 +491,13 @@ export const AiIdeBridgePanel = () => {
               </ul>
             </div>
           )}
-          {requirementAnalysisResult.history.length > 0 && (
+          {requirementHistory.length > 0 && (
             <div style={{ marginTop: 10 }}>
               <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
                 迭代历史
               </div>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                {requirementAnalysisResult.history.map((item) => (
+                {requirementHistory.map((item) => (
                   <li key={`iteration_${item.iteration}`}>
                     第 {item.iteration} 轮 · {item.verification_status} · 问题数 {item.issue_count}
                   </li>
@@ -438,12 +505,59 @@ export const AiIdeBridgePanel = () => {
               </ul>
             </div>
           )}
+          {!requirementAnalysisIsRunning && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+              <button
+                onClick={() => bridge.acceptRequirementAnalysisResult()}
+                disabled={!canAcceptRequirementResult}
+                style={{
+                  ...buttonStyle,
+                  opacity: canAcceptRequirementResult ? 1 : 0.55,
+                  background: canAcceptRequirementResult ? 'rgba(92, 196, 137, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                }}
+              >
+                接受当前结果
+              </button>
+              <button
+                onClick={() => { void bridge.continueRequirementAnalysis() }}
+                disabled={!canContinueRequirementResult}
+                style={{
+                  ...buttonStyle,
+                  opacity: canContinueRequirementResult ? 1 : 0.55,
+                  background: canContinueRequirementResult ? 'rgba(78, 161, 255, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                }}
+              >
+                继续优化
+              </button>
+              <button
+                onClick={() => { void bridge.retryRequirementAnalysis() }}
+                disabled={!canRetryRequirementAnalysis}
+                style={{
+                  ...buttonStyle,
+                  opacity: canRetryRequirementAnalysis ? 1 : 0.55,
+                  background: canRetryRequirementAnalysis ? 'rgba(255, 196, 92, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                }}
+              >
+                重试需求分析
+              </button>
+            </div>
+          )}
         </div>
       )}
 
       {requirementAnalysisError && (
         <div style={{ ...sectionStyle, color: 'var(--vscode-errorForeground)', fontSize: 12 }}>
-          第一环错误：{requirementAnalysisError}
+          需求分析错误：{requirementAnalysisError}
+          {canRetryRequirementAnalysis && (
+            <div style={{ marginTop: 10 }}>
+              <button
+                onClick={() => { void bridge.retryRequirementAnalysis() }}
+                style={{ ...buttonStyle, background: 'rgba(255, 196, 92, 0.18)' }}
+              >
+                重试需求分析
+              </button>
+            </div>
+          )}
         </div>
       )}
 

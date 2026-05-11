@@ -24,7 +24,8 @@ class RequirementAnalysisWorkspaceSummaryPayload(BaseModel):
 class RequirementAnalysisExecutionConstraintsPayload(BaseModel):
     disallow_new_dependencies: bool = False
     preserve_public_api: bool = False
-    max_story_units: int = 8
+    max_story_units: int = 24
+    max_capability_groups: int = 6
 
 
 class RequirementAnalysisInputPayload(BaseModel):
@@ -41,6 +42,9 @@ class RequirementAnalysisInputPayload(BaseModel):
     diagnostics: list[str] = Field(default_factory=list)
     recent_test_failures: list[str] = Field(default_factory=list)
     git_diff_summary: str = ""
+    revision_focus: list[str] = Field(default_factory=list)
+    previous_verification_summary: str | None = None
+    iteration: int = 1
     execution_constraints: RequirementAnalysisExecutionConstraintsPayload = Field(
         default_factory=RequirementAnalysisExecutionConstraintsPayload
     )

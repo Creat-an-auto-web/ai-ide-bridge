@@ -41,6 +41,7 @@ export interface RequirementAnalysisAgentSettingsDisplayPayload
 
 export interface RequirementAnalysisRunInputPayload {
   task_id: string
+  iteration: number
   mode: string
   user_prompt: string
   repo_root: string
@@ -55,9 +56,12 @@ export interface RequirementAnalysisRunInputPayload {
   diagnostics: string[]
   recent_test_failures: string[]
   git_diff_summary: string
+  revision_focus: string[]
+  previous_verification_summary: string | null
   execution_constraints: {
     disallow_new_dependencies: boolean
     preserve_public_api: boolean
+    max_capability_groups: number
     max_story_units: number
   }
 }
@@ -65,7 +69,15 @@ export interface RequirementAnalysisRunInputPayload {
 export interface RequirementAnalysisResultPayload {
   package_id: string
   task_id: string
-  status: 'draft' | 'verified' | 'approved_for_test_generation' | 'blocked' | 'needs_human_review'
+  status:
+    | 'draft'
+    | 'verified'
+    | 'blocked'
+    | 'paused_converged'
+    | 'paused_stalled'
+    | 'paused_blocked'
+    | 'accepted'
+    | 'cancelled'
   requirement_spec: {
     task_id: string
     version: number
@@ -82,6 +94,10 @@ export interface RequirementAnalysisResultPayload {
   story_units: Array<{
     id: string
     title: string
+    as_a: string
+    i_want: string
+    so_that: string | null
+    narrative: string
     actor: string
     goal: string
     business_value: string | null
@@ -98,7 +114,16 @@ export interface RequirementAnalysisResultPayload {
     story_unit_count: number
     high_priority_count: number
     high_risk_count: number
+    capability_group_count: number
   }
+  capability_groups: Array<{
+    id: string
+    title: string
+    goal: string
+    scope: string[]
+    story_ids: string[]
+    priority: string
+  }>
   warnings: string[]
   quality_checks: {
     has_clear_scope: boolean

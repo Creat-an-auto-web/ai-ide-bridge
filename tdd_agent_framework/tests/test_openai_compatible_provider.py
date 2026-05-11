@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+import httpx
 
 from tdd_agent_framework.core import (
     GenerationConfig,
@@ -55,6 +56,28 @@ class OpenAICompatibleProviderTest(unittest.TestCase):
         content = self.provider._extract_content(raw_json)
 
         self.assertEqual(json.loads(content), {"ok": True})
+
+    def test_format_timeout_error_keeps_useful_details_when_exception_message_is_empty(self) -> None:
+        provider_request = ProviderRequest(
+            agent_name="requirement_analysis",
+            task_id="task_001",
+            model_target=ModelTarget(provider="openrouter", model="qwen/qwen3"),
+            system_prompt="system prompt",
+            messages=(ProviderMessage(role="user", content="user prompt"),),
+            generation_config=GenerationConfig(temperature=0.1, max_tokens=1200),
+        )
+
+        message = self.provider._format_timeout_error(
+            httpx.ReadTimeout(""),
+            url="https://openrouter.ai/api/v1/chat/completions",
+            provider_request=provider_request,
+        )
+
+        self.assertIn("ReadTimeout", message)
+        self.assertIn("requirement_analysis", message)
+        self.assertIn("qwen/qwen3", message)
+        self.assertIn("openrouter.ai/api/v1/chat/completions", message)
+        self.assertIn("no additional detail", message)
 
 
 if __name__ == "__main__":

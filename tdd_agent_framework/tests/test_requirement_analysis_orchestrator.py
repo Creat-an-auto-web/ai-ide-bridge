@@ -225,7 +225,7 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
         ):
             package = asyncio.run(orchestrator.run(settings, analysis_input))
 
-        self.assertEqual(package.status, "approved_for_test_generation")
+        self.assertEqual(package.status, "paused_converged")
         self.assertEqual(package.iteration_count, 2)
         self.assertEqual(package.history[0].verification_status, "revise")
         self.assertEqual(package.history[1].verification_status, "pass")
@@ -241,7 +241,7 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
             "初稿缺少可交付边界，需要收缩 story 范围。",
         )
 
-    def test_orchestrator_returns_needs_human_review_when_revision_never_converges(self) -> None:
+    def test_orchestrator_returns_paused_stalled_when_revision_never_converges(self) -> None:
         orchestrator = RequirementAnalysisOrchestrator()
         revise_result = RequirementVerificationResult(
             status="revise",
@@ -295,6 +295,10 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                         StoryUnit(
                             id="story_draft",
                             title="Story",
+                            as_a="用户",
+                            i_want="完成目标",
+                            so_that="价值",
+                            narrative="As a 用户, I want 完成目标, so that 价值.",
                             actor="用户",
                             goal="完成目标",
                             business_value="价值",
@@ -358,11 +362,11 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
         ):
             package = asyncio.run(orchestrator.run(object(), analysis_input))
 
-        self.assertEqual(package.status, "needs_human_review")
+        self.assertEqual(package.status, "paused_stalled")
         self.assertEqual(package.verification.status, "revise")
-        self.assertEqual(package.iteration_count, orchestrator.max_iterations)
-        self.assertEqual(analysis_service.calls, orchestrator.max_iterations)
-        self.assertEqual(verification_service.calls, orchestrator.max_iterations)
+        self.assertGreaterEqual(package.iteration_count, 2)
+        self.assertEqual(analysis_service.calls, package.iteration_count)
+        self.assertEqual(verification_service.calls, package.iteration_count)
 
     def _make_analysis_result(self, problem_statement: str, story_id: str) -> RequirementAnalysisResult:
         return RequirementAnalysisResult(
@@ -387,6 +391,10 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                 StoryUnit(
                     id=story_id,
                     title="Story",
+                    as_a="用户",
+                    i_want="完成目标",
+                    so_that="价值",
+                    narrative="As a 用户, I want 完成目标, so that 价值.",
                     actor="用户",
                     goal="完成目标",
                     business_value="价值",

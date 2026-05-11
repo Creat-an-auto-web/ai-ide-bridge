@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 import httpx
@@ -22,6 +23,9 @@ class ProviderError(RuntimeError):
 
 
 class OpenAICompatibleProvider:
+    connect_retry_attempts = 3
+    connect_retry_backoff_seconds = 1.5
+
     def __init__(
         self,
         config: ProviderConfig,
@@ -40,10 +44,10 @@ class OpenAICompatibleProvider:
             **self.config.headers,
         }
         timeout = httpx.Timeout(
-            connect=min(self.config.timeout_seconds, 15.0),
-            write=min(self.config.timeout_seconds, 30.0),
+            connect=self.config.timeout_seconds,
+            write=self.config.timeout_seconds,
             read=None,
-            pool=None,
+            pool=self.config.timeout_seconds,
         )
 
         await emit_progress(
@@ -61,23 +65,83 @@ class OpenAICompatibleProvider:
             ),
         )
 
-        try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-                async with client.stream("POST", url, json=payload, headers=headers) as response:
-                    raw_json, content = await self._read_response(
-                        response,
-                        agent_name=provider_request.agent_name,
-                    )
-        except httpx.HTTPStatusError as exc:
-            response = exc.response
-            body = response.text
+        raw_json: dict[str, Any] | None = None
+        content = ""
+        last_connect_error: httpx.HTTPError | None = None
+
+        for attempt in range(1, self.connect_retry_attempts + 1):
+            try:
+                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                    async with client.stream("POST", url, json=payload, headers=headers) as response:
+                        raw_json, content = await self._read_response(
+                            response,
+                            agent_name=provider_request.agent_name,
+                        )
+                last_connect_error = None
+                break
+            except httpx.HTTPStatusError as exc:
+                response = exc.response
+                body = response.text
+                raise ProviderError(
+                    f"provider request failed with status {response.status_code}: {body}",
+                ) from exc
+            except (httpx.ConnectTimeout, httpx.ConnectError) as exc:
+                last_connect_error = exc
+                if attempt >= self.connect_retry_attempts:
+                    raise ProviderError(
+                        self._format_timeout_error(
+                            exc,
+                            url=url,
+                            provider_request=provider_request,
+                            attempt=attempt,
+                            phase="connect",
+                        ),
+                    ) from exc
+                await emit_progress(
+                    self.progress_callback,
+                    RunProgressEvent(
+                        type="status",
+                        stage="provider_request_retrying",
+                        message=(
+                            f"模型连接失败，准备进行第 {attempt + 1} 次尝试"
+                        ),
+                        metadata={
+                            "agent_name": provider_request.agent_name,
+                            "provider_name": self.config.provider_name,
+                            "model": provider_request.model_target.model,
+                            "attempt": attempt,
+                            "next_attempt": attempt + 1,
+                            "max_attempts": self.connect_retry_attempts,
+                            "retry_reason": type(exc).__name__,
+                        },
+                    ),
+                )
+                await asyncio.sleep(self.connect_retry_backoff_seconds * attempt)
+            except httpx.TimeoutException as exc:
+                raise ProviderError(
+                    self._format_timeout_error(
+                        exc,
+                        url=url,
+                        provider_request=provider_request,
+                        attempt=1,
+                        phase="response",
+                    ),
+                ) from exc
+            except httpx.HTTPError as exc:
+                raise ProviderError(
+                    self._format_http_error(exc, url=url, provider_request=provider_request),
+                ) from exc
+
+        if raw_json is None and last_connect_error is not None:
             raise ProviderError(
-                f"provider request failed with status {response.status_code}: {body}",
-            ) from exc
-        except httpx.TimeoutException as exc:
-            raise ProviderError(f"provider request failed: {exc}") from exc
-        except httpx.HTTPError as exc:
-            raise ProviderError(f"provider request failed: {exc}") from exc
+                self._format_timeout_error(
+                    last_connect_error,
+                    url=url,
+                    provider_request=provider_request,
+                    attempt=self.connect_retry_attempts,
+                    phase="connect",
+                ),
+            )
 
         await emit_progress(
             self.progress_callback,
@@ -243,6 +307,42 @@ class OpenAICompatibleProvider:
         if len(text) <= limit:
             return text
         return text[-limit:]
+
+    def _format_timeout_error(
+        self,
+        exc: httpx.HTTPError,
+        *,
+        url: str,
+        provider_request: ProviderRequest,
+        attempt: int = 1,
+        phase: str = "response",
+    ) -> str:
+        exc_name = type(exc).__name__
+        detail = str(exc).strip() or "no additional detail"
+        return (
+            "provider request failed: "
+            f"{exc_name} while calling {provider_request.agent_name} model "
+            f"{provider_request.model_target.model} at {url} "
+            f"(phase={phase}, connect_timeout={self.config.timeout_seconds}s, "
+            f"read_timeout=streaming_unbounded, attempt={attempt}/{self.connect_retry_attempts}, "
+            f"detail={detail})"
+        )
+
+    def _format_http_error(
+        self,
+        exc: httpx.HTTPError,
+        *,
+        url: str,
+        provider_request: ProviderRequest,
+    ) -> str:
+        exc_name = type(exc).__name__
+        detail = str(exc).strip() or "no additional detail"
+        return (
+            "provider request failed: "
+            f"{exc_name} while calling {provider_request.agent_name} model "
+            f"{provider_request.model_target.model} at {url} "
+            f"(detail={detail})"
+        )
 
     def _try_parse_json(self, text: str) -> dict[str, Any] | None:
         try:

@@ -84,7 +84,8 @@ class WorkspaceSummary:
 class ExecutionConstraints:
     disallow_new_dependencies: bool = False
     preserve_public_api: bool = False
-    max_story_units: int = 8
+    max_story_units: int = 24
+    max_capability_groups: int = 6
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "ExecutionConstraints":
@@ -92,13 +93,19 @@ class ExecutionConstraints:
             return cls()
         if not isinstance(data, dict):
             raise ValueError("execution_constraints must be an object")
-        max_story_units = data.get("max_story_units", 8)
+        max_story_units = data.get("max_story_units", 24)
         if not isinstance(max_story_units, int) or max_story_units <= 0:
             raise ValueError("execution_constraints.max_story_units must be a positive integer")
+        max_capability_groups = data.get("max_capability_groups", 6)
+        if not isinstance(max_capability_groups, int) or max_capability_groups <= 0:
+            raise ValueError(
+                "execution_constraints.max_capability_groups must be a positive integer"
+            )
         return cls(
             disallow_new_dependencies=bool(data.get("disallow_new_dependencies", False)),
             preserve_public_api=bool(data.get("preserve_public_api", False)),
             max_story_units=max_story_units,
+            max_capability_groups=max_capability_groups,
         )
 
 
@@ -210,6 +217,10 @@ class RequirementSpec:
 class StoryUnit:
     id: str
     title: str
+    as_a: str
+    i_want: str
+    so_that: str | None
+    narrative: str
     actor: str
     goal: str
     business_value: str | None
@@ -226,12 +237,34 @@ class StoryUnit:
     def from_dict(cls, data: dict[str, Any]) -> "StoryUnit":
         if not isinstance(data, dict):
             raise ValueError("story_unit must be an object")
+        title = _require_str(data.get("title"), "story_unit.title")
+        as_a = _optional_str(data.get("as_a"), "story_unit.as_a") or _require_str(
+            data.get("actor"),
+            "story_unit.actor",
+        )
+        i_want = _optional_str(data.get("i_want"), "story_unit.i_want") or _require_str(
+            data.get("goal"),
+            "story_unit.goal",
+        )
+        so_that = _optional_str(data.get("so_that"), "story_unit.so_that")
+        business_value = _optional_str(data.get("business_value"), "story_unit.business_value")
+        if so_that is None:
+            so_that = business_value
+        narrative = _optional_str(data.get("narrative"), "story_unit.narrative") or cls._build_narrative(
+            as_a=as_a,
+            i_want=i_want,
+            so_that=so_that,
+        )
         return cls(
             id=_require_str(data.get("id"), "story_unit.id"),
-            title=_require_str(data.get("title"), "story_unit.title"),
-            actor=_require_str(data.get("actor"), "story_unit.actor"),
-            goal=_require_str(data.get("goal"), "story_unit.goal"),
-            business_value=_optional_str(data.get("business_value"), "story_unit.business_value"),
+            title=title,
+            as_a=as_a,
+            i_want=i_want,
+            so_that=so_that,
+            narrative=narrative,
+            actor=as_a,
+            goal=i_want,
+            business_value=so_that,
             scope=_require_list_of_str(data.get("scope"), "story_unit.scope"),
             out_of_scope=_optional_list_of_str(data.get("out_of_scope"), "story_unit.out_of_scope"),
             acceptance_criteria=_require_list_of_str(
@@ -248,12 +281,42 @@ class StoryUnit:
             ),
         )
 
+    @staticmethod
+    def _build_narrative(as_a: str, i_want: str, so_that: str | None) -> str:
+        if so_that:
+            return f"As a {as_a}, I want {i_want}, so that {so_that}."
+        return f"As a {as_a}, I want {i_want}."
+
+
+@dataclass(frozen=True)
+class CapabilityGroup:
+    id: str
+    title: str
+    goal: str
+    scope: list[str]
+    story_ids: list[str]
+    priority: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CapabilityGroup":
+        if not isinstance(data, dict):
+            raise ValueError("capability_group must be an object")
+        return cls(
+            id=_require_str(data.get("id"), "capability_group.id"),
+            title=_require_str(data.get("title"), "capability_group.title"),
+            goal=_require_str(data.get("goal"), "capability_group.goal"),
+            scope=_require_list_of_str(data.get("scope"), "capability_group.scope"),
+            story_ids=_require_list_of_str(data.get("story_ids"), "capability_group.story_ids"),
+            priority=_require_str(data.get("priority"), "capability_group.priority").lower(),
+        )
+
 
 @dataclass(frozen=True)
 class AnalysisSummary:
     story_unit_count: int
     high_priority_count: int
     high_risk_count: int
+    capability_group_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -271,6 +334,7 @@ class RequirementAnalysisResult:
     analysis_summary: AnalysisSummary
     warnings: list[str]
     quality_checks: QualityChecks
+    capability_groups: list[CapabilityGroup] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -383,9 +447,13 @@ def _score_value(value: Any, field_name: str) -> int:
     return value
 
 
-def build_analysis_summary(story_units: list[StoryUnit]) -> AnalysisSummary:
+def build_analysis_summary(
+    story_units: list[StoryUnit],
+    capability_groups: list[CapabilityGroup] | None = None,
+) -> AnalysisSummary:
     return AnalysisSummary(
         story_unit_count=len(story_units),
         high_priority_count=sum(1 for item in story_units if item.priority == "high"),
         high_risk_count=sum(1 for item in story_units if item.risk == "high"),
+        capability_group_count=len(capability_groups or []),
     )

@@ -41,6 +41,9 @@ class RequirementAnalysisBackendService:
             diagnostics=list(payload.input.diagnostics),
             recent_test_failures=list(payload.input.recent_test_failures),
             git_diff_summary=payload.input.git_diff_summary,
+            revision_focus=list(payload.input.revision_focus),
+            previous_verification_summary=payload.input.previous_verification_summary,
+            iteration=payload.input.iteration,
             execution_constraints=ExecutionConstraints.from_dict(
                 payload.input.execution_constraints.model_dump()
             ),
@@ -78,7 +81,7 @@ class RequirementAnalysisBackendService:
                     {
                         "type": "heartbeat",
                         "stage": "waiting_model",
-                        "message": "第一环仍在运行，等待模型继续返回结果",
+                        "message": "需求分析仍在运行，等待模型继续返回结果",
                         "elapsed_ms": int((monotonic() - started_at) * 1000),
                     }
                 )
@@ -99,6 +102,9 @@ class RequirementAnalysisBackendService:
                 diagnostics=list(payload.input.diagnostics),
                 recent_test_failures=list(payload.input.recent_test_failures),
                 git_diff_summary=payload.input.git_diff_summary,
+                revision_focus=list(payload.input.revision_focus),
+                previous_verification_summary=payload.input.previous_verification_summary,
+                iteration=payload.input.iteration,
                 execution_constraints=ExecutionConstraints.from_dict(
                     payload.input.execution_constraints.model_dump()
                 ),
@@ -109,11 +115,16 @@ class RequirementAnalysisBackendService:
                 progress_callback=emit_progress,
             )
             result_payload = asdict(result)
+            result_message = {
+                "paused_converged": "需求分析已收敛，等待用户决定是否接受或继续优化",
+                "paused_stalled": "需求分析已暂停，等待用户决定是否继续优化",
+                "paused_blocked": "需求分析已阻塞，等待用户提供更多信息或人工介入",
+            }.get(result.status, "需求分析完成")
             await event_callback(
                 {
                     "type": "result",
-                    "stage": "completed",
-                    "message": "第一环完成",
+                    "stage": result.status,
+                    "message": result_message,
                     "data": result_payload,
                     "elapsed_ms": int((monotonic() - started_at) * 1000),
                 }

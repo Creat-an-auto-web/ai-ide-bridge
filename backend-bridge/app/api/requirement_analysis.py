@@ -58,7 +58,7 @@ async def stream_requirement_analysis(websocket: WebSocket) -> None:
             {
                 "type": "status",
                 "stage": "accepted",
-                "message": "已收到第一环运行请求",
+                "message": "已收到需求分析运行请求",
             }
         )
         await service.stream_run(payload, websocket.send_json)
