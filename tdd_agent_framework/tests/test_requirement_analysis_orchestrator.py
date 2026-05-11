@@ -283,7 +283,7 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
             "初稿缺少可交付边界，需要收缩 story 范围。",
         )
 
-    def test_orchestrator_returns_paused_stalled_when_revision_never_converges(self) -> None:
+    def test_orchestrator_keeps_iterating_when_revision_never_converges(self) -> None:
         orchestrator = RequirementAnalysisOrchestrator()
         revise_result = RequirementVerificationResult(
             status="revise",
@@ -307,11 +307,14 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
         )
 
         class FakeAnalysisService:
-            def __init__(self) -> None:
+            def __init__(self, stop_after_calls: int) -> None:
                 self.calls = 0
+                self.stop_after_calls = stop_after_calls
 
             async def analyze(self, analysis_input, trace_id=None, metadata=None):
                 self.calls += 1
+                if self.calls > self.stop_after_calls:
+                    raise RuntimeError("stop test loop")
                 return self._make_result()
 
             def _make_result(self):
@@ -391,7 +394,8 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                 self.calls += 1
                 raise AssertionError("composition verification should not run before requirement verification passes")
 
-        analysis_service = FakeAnalysisService()
+        stop_after_calls = 3
+        analysis_service = FakeAnalysisService(stop_after_calls=stop_after_calls)
         verification_service = FakeVerificationService()
         composition_verification_service = FakeCompositionVerificationService()
 
@@ -418,13 +422,11 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                 return_value=composition_verification_service,
             ),
         ):
-            package = asyncio.run(orchestrator.run(object(), analysis_input))
+            with self.assertRaisesRegex(RuntimeError, "stop test loop"):
+                asyncio.run(orchestrator.run(object(), analysis_input))
 
-        self.assertEqual(package.status, "paused_stalled")
-        self.assertEqual(package.verification.status, "revise")
-        self.assertGreaterEqual(package.iteration_count, 2)
-        self.assertEqual(analysis_service.calls, package.iteration_count)
-        self.assertEqual(verification_service.calls, package.iteration_count)
+        self.assertEqual(analysis_service.calls, stop_after_calls + 1)
+        self.assertEqual(verification_service.calls, stop_after_calls)
         self.assertEqual(composition_verification_service.calls, 0)
 
     def test_orchestrator_uses_composition_revision_guidance_after_requirement_verification_passes(self) -> None:

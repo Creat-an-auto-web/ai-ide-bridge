@@ -10,7 +10,7 @@ class RequirementVerificationPromptBuilder:
         return (
             "你是 RequirementVerificationAgent。"
             "你必须独立审查需求拆解结果，不要假设分析初稿一定正确。"
-            "输出必须是合法 JSON 对象，不要输出 markdown，不要解释。"
+            "输出必须是合法 json 对象，不要输出 markdown，不要解释。"
             "你要关注范围完整性、验收标准可测试性、story 颗粒度、user story 叙事质量和依赖合理性。"
         )
 
@@ -111,12 +111,13 @@ class RequirementVerificationPromptBuilder:
         return (
             "请作为独立验证者检查下面的需求拆解结果。\n"
             "要求：\n"
-            "1. 如果结果可以直接交给测试生成环节，status 设为 pass。\n"
-            "2. 如果存在可修复问题，status 设为 revise，并给出 revision_guidance。\n"
-            "3. 如果缺少关键前提、无法继续，status 设为 blocked。\n"
-            "4. 要同时检查 capability_groups 与 story_units 的边界是否一致。\n"
-            "5. 要检查每个 story_unit 是否真的是 user story，而不是模块名、页面名或纯技术任务名。\n"
-            "6. issues 要聚焦真正的问题，不要为了凑数量而制造问题。\n\n"
+            "1. 输出必须是 json 对象。\n"
+            "2. 如果结果可以直接交给测试生成环节，status 设为 pass。\n"
+            "3. 如果存在可修复问题，status 设为 revise，并给出 revision_guidance。\n"
+            "4. 如果缺少关键前提、无法继续，status 设为 blocked。\n"
+            "5. 要同时检查 capability_groups 与 story_units 的边界是否一致。\n"
+            "6. 要检查每个 story_unit 是否真的是 user story，而不是模块名、页面名或纯技术任务名。\n"
+            "7. issues 要聚焦真正的问题，不要为了凑数量而制造问题。\n\n"
             f"输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
             f"输出结构：\n{json.dumps(output_shape, ensure_ascii=False, indent=2)}"
         )

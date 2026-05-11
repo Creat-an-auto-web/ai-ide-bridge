@@ -62,6 +62,22 @@ def _optional_list_of_display_str(value: Any, field_name: str) -> list[str]:
     return items
 
 
+def _truncate_text(value: str | None, max_chars: int) -> str | None:
+    if value is None or len(value) <= max_chars:
+        return value
+    return value[-max_chars:]
+
+
+def _truncate_list(values: list[str], max_items: int, max_item_chars: int) -> list[str]:
+    truncated: list[str] = []
+    for item in values[:max_items]:
+        if len(item) <= max_item_chars:
+            truncated.append(item)
+        else:
+            truncated.append(item[:max_item_chars])
+    return truncated
+
+
 @dataclass(frozen=True)
 class WorkspaceSummary:
     languages: list[str] = field(default_factory=list)
@@ -118,6 +134,14 @@ class ExecutionConstraints:
 
 @dataclass(frozen=True)
 class RequirementAnalysisInput:
+    max_open_files = 8
+    max_diagnostics = 8
+    max_recent_test_failures = 8
+    max_revision_focus = 8
+    max_git_diff_summary_chars = 4000
+    max_previous_verification_summary_chars = 1200
+    max_display_item_chars = 500
+
     task_id: str
     mode: str
     user_prompt: str
@@ -148,13 +172,25 @@ class RequirementAnalysisInput:
             workspace_summary=WorkspaceSummary.from_dict(data.get("workspace_summary")),
             active_file=_optional_str(data.get("active_file"), "active_file"),
             selection=_optional_str(data.get("selection"), "selection"),
-            open_files=_optional_list_of_str(data.get("open_files"), "open_files"),
-            diagnostics=_optional_list_of_display_str(data.get("diagnostics"), "diagnostics"),
-            recent_test_failures=_optional_list_of_display_str(
-                data.get("recent_test_failures"),
-                "recent_test_failures",
+            open_files=_truncate_list(
+                _optional_list_of_str(data.get("open_files"), "open_files"),
+                cls.max_open_files,
+                cls.max_display_item_chars,
             ),
-            git_diff_summary=_optional_str(data.get("git_diff_summary"), "git_diff_summary"),
+            diagnostics=_truncate_list(
+                _optional_list_of_display_str(data.get("diagnostics"), "diagnostics"),
+                cls.max_diagnostics,
+                cls.max_display_item_chars,
+            ),
+            recent_test_failures=_truncate_list(
+                _optional_list_of_display_str(data.get("recent_test_failures"), "recent_test_failures"),
+                cls.max_recent_test_failures,
+                cls.max_display_item_chars,
+            ),
+            git_diff_summary=_truncate_text(
+                _optional_str(data.get("git_diff_summary"), "git_diff_summary"),
+                cls.max_git_diff_summary_chars,
+            ),
             global_feedback=(
                 GlobalFeedback.from_dict(data.get("global_feedback"))
                 if data.get("global_feedback") is not None
@@ -165,10 +201,14 @@ class RequirementAnalysisInput:
                 if data.get("story_feedback") is not None
                 else None
             ),
-            revision_focus=_optional_list_of_display_str(data.get("revision_focus"), "revision_focus"),
-            previous_verification_summary=_optional_str(
-                data.get("previous_verification_summary"),
-                "previous_verification_summary",
+            revision_focus=_truncate_list(
+                _optional_list_of_display_str(data.get("revision_focus"), "revision_focus"),
+                cls.max_revision_focus,
+                cls.max_display_item_chars,
+            ),
+            previous_verification_summary=_truncate_text(
+                _optional_str(data.get("previous_verification_summary"), "previous_verification_summary"),
+                cls.max_previous_verification_summary_chars,
             ),
             iteration=max(1, int(data.get("iteration", 1))),
             execution_constraints=ExecutionConstraints.from_dict(data.get("execution_constraints")),
@@ -281,7 +321,10 @@ class StoryUnit:
             data.get("business_outcome"),
             "story_unit.business_outcome",
         ) or (so_that or i_want)
-        narrative = _optional_str(data.get("narrative"), "story_unit.narrative") or cls._build_narrative(
+        # Structured story fields are the source of truth. We always rebuild the
+        # normalized narrative so lightweight provider paraphrasing does not
+        # break continuation rounds.
+        narrative = cls._build_narrative(
             as_a=as_a,
             when_context=when_context,
             i_want=i_want,

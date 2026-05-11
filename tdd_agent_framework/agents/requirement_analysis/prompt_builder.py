@@ -6,11 +6,16 @@ from .models import RequirementAnalysisInput
 
 
 class RequirementAnalysisPromptBuilder:
+    max_open_files = 8
+    max_diagnostics = 8
+    max_recent_test_failures = 8
+    max_revision_focus = 8
+
     def build_system_prompt(self) -> str:
         return (
             "你是 RequirementAnalysisAgent。"
             "你的任务是把原始需求整理成结构化 RequirementSpec 和 StoryUnit 列表。"
-            "输出必须是合法 JSON 对象，不要输出 markdown，不要解释。"
+            "输出必须是合法 json 对象，不要输出 markdown，不要解释。"
             "每个 StoryUnit 必须可测试、可排序、可实现，并且必须是完整的 user story。"
         )
 
@@ -20,7 +25,6 @@ class RequirementAnalysisPromptBuilder:
             "iteration": analysis_input.iteration,
             "mode": analysis_input.mode,
             "user_prompt": analysis_input.user_prompt,
-            "repo_root": analysis_input.repo_root,
             "workspace_summary": {
                 "languages": analysis_input.workspace_summary.languages,
                 "frameworks": analysis_input.workspace_summary.frameworks,
@@ -28,9 +32,9 @@ class RequirementAnalysisPromptBuilder:
             },
             "active_file": analysis_input.active_file,
             "selection": analysis_input.selection,
-            "open_files": analysis_input.open_files,
-            "diagnostics": analysis_input.diagnostics,
-            "recent_test_failures": analysis_input.recent_test_failures,
+            "open_files": analysis_input.open_files[: self.max_open_files],
+            "diagnostics": analysis_input.diagnostics[: self.max_diagnostics],
+            "recent_test_failures": analysis_input.recent_test_failures[: self.max_recent_test_failures],
             "git_diff_summary": analysis_input.git_diff_summary,
             "user_feedback": {
                 "global_feedback": (
@@ -63,7 +67,7 @@ class RequirementAnalysisPromptBuilder:
             },
             "revision_context": {
                 "previous_verification_summary": analysis_input.previous_verification_summary,
-                "revision_focus": analysis_input.revision_focus,
+                "revision_focus": analysis_input.revision_focus[: self.max_revision_focus],
             },
             "execution_constraints": {
                 "disallow_new_dependencies": analysis_input.execution_constraints.disallow_new_dependencies,
@@ -124,7 +128,7 @@ class RequirementAnalysisPromptBuilder:
         return (
             "请基于下面输入生成结果。\n"
             "要求：\n"
-            "1. 输出必须是 JSON 对象。\n"
+            "1. 输出必须是 json 对象。\n"
             "2. 必须先给出 capability_groups，再给出每个 group 内展开的 story_units。\n"
             "3. capability_groups 数量不能超过 max_capability_groups。\n"
             "4. story_units 总数量不能超过 max_story_units。\n"
@@ -139,5 +143,6 @@ class RequirementAnalysisPromptBuilder:
             "13. 如果输入里提供了 user_feedback，必须显式吸收这些反馈；对 story_feedback 要优先修订对应 story 或将其拆分/改写。\n"
             "14. 如果输入里提供了 global_feedback，必要时同步修正 requirement_spec 的 scope、out_of_scope、constraints 和 acceptance_criteria。\n\n"
             f"输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
-            f"输出结构：\n{json.dumps(output_shape, ensure_ascii=False, indent=2)}"
+            "输出结构示意：\n"
+            f"{json.dumps(output_shape, ensure_ascii=False, separators=(',', ':'))}"
         )

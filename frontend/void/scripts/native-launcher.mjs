@@ -238,11 +238,20 @@ const ensureRuntimeBinExecutables = async () => {
 const applyRuntimeFixes = async () => {
   await patchRuntimeFileText(
     path.join('build', 'lib', 'tsb', 'builder.js'),
-    (text) => text.replaceAll('.bgcyan(', '.bgCyan('),
+    (text) => text.replaceAll('.bgCyan(', '.bgcyan('),
   )
   await patchRuntimeFileText(
     path.join('build', 'lib', 'tsb', 'builder.ts'),
-    (text) => text.replaceAll('.bgcyan(', '.bgCyan('),
+    (text) => text.replaceAll('.bgCyan(', '.bgcyan('),
+  )
+  await patchRuntimeFileText(
+    path.join('build', 'node_modules', 'ansi-colors', 'index.js'),
+    (text) => {
+      if (text.includes('exports.bgCyan = exports.bgcyan;')) {
+        return text
+      }
+      return `${text}\nexports.bgCyan = exports.bgcyan;\n`
+    },
   )
   await ensureRuntimeExecutable(path.join('node_modules', 'tailwindcss', 'lib', 'cli.js'))
   await ensureRuntimeExecutable(path.join('node_modules', 'scope-tailwind', 'dist', 'main.js'))

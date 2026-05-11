@@ -279,8 +279,8 @@ export const createDefaultRequirementAnalysisSettings = (): RequirementAnalysisA
   apiBase: 'https://api.openai.com/v1',
   apiKey: '',
   temperature: 0.2,
-  maxTokens: 4000,
-  timeoutSeconds: 60,
+  maxTokens: 3200,
+  timeoutSeconds: 90,
 })
 
 const toFiniteNumber = (value: unknown, fallback: number) => {

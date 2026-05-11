@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from time import monotonic
 from uuid import uuid4
 
 from tdd_agent_framework.core import ProgressCallback, RunProgressEvent, emit_progress
@@ -58,9 +57,6 @@ EXTENSION_LANGUAGES = {
 
 
 class RequirementAnalysisOrchestrator:
-    stalled_repeat_threshold = 2
-    min_score_delta_for_improvement = 3
-
     def __init__(self) -> None:
         self.name = "requirement_analysis_orchestrator"
 
@@ -109,18 +105,12 @@ class RequirementAnalysisOrchestrator:
             progress_callback=progress_callback,
         )
 
-        started_at = monotonic()
-        configured_timeout_seconds = float(getattr(settings, "timeout_seconds", 60.0))
-        runtime_budget_seconds = max(180.0, configured_timeout_seconds * 4)
         history: list[RequirementAnalysisIteration] = []
         working_input = enriched_input
         latest_result: RequirementAnalysisResult | None = None
         latest_verification: RequirementVerificationResult | None = None
         latest_composition_verification: RequirementCompositionVerificationResult | None = None
         current_iteration = max(1, working_input.iteration)
-        repeat_stall_count = 0
-        last_signature: str | None = None
-        best_score: int | None = None
 
         while True:
             iteration = current_iteration
@@ -259,71 +249,6 @@ class RequirementAnalysisOrchestrator:
                     history=history,
                 )
 
-            current_score = self._overall_feedback_score(
-                latest_verification,
-                latest_composition_verification,
-            )
-            current_signature = self._overall_feedback_signature(
-                latest_verification,
-                latest_composition_verification,
-            )
-            improved = best_score is None or current_score >= best_score + self.min_score_delta_for_improvement
-            if improved:
-                best_score = current_score
-                repeat_stall_count = 0
-            else:
-                repeat_stall_count = repeat_stall_count + 1 if current_signature == last_signature else 1
-            last_signature = current_signature
-
-            if monotonic() - started_at >= runtime_budget_seconds:
-                await emit_progress(
-                    progress_callback,
-                    RunProgressEvent(
-                        type="status",
-                        stage="analysis_runtime_budget_reached",
-                        message=(
-                            f"需求分析已达到运行预算 {int(runtime_budget_seconds)} 秒，"
-                            "进入暂停待人工决策状态"
-                        ),
-                        metadata={
-                            "iteration": iteration,
-                            "runtime_budget_seconds": runtime_budget_seconds,
-                            "verification_status": latest_verification.status,
-                        },
-                    ),
-                )
-                return self._build_package(
-                    task_id=working_input.task_id,
-                    status="paused_stalled",
-                    result=latest_result,
-                    verification=latest_verification,
-                    composition_verification=latest_composition_verification,
-                    history=history,
-                )
-
-            if repeat_stall_count >= self.stalled_repeat_threshold:
-                await emit_progress(
-                    progress_callback,
-                    RunProgressEvent(
-                        type="status",
-                        stage="analysis_stalled",
-                        message="连续多轮没有实质改进，需求分析已暂停，等待用户决定是否继续优化",
-                        metadata={
-                            "iteration": iteration,
-                            "repeat_stall_count": repeat_stall_count,
-                            "verification_status": latest_verification.status,
-                        },
-                    ),
-                )
-                return self._build_package(
-                    task_id=working_input.task_id,
-                    status="paused_stalled",
-                    result=latest_result,
-                    verification=latest_verification,
-                    composition_verification=latest_composition_verification,
-                    history=history,
-                )
-
             await emit_progress(
                 progress_callback,
                 RunProgressEvent(
@@ -429,27 +354,6 @@ class RequirementAnalysisOrchestrator:
             history=list(history),
         )
 
-    def _verification_score(self, verification: RequirementVerificationResult) -> int:
-        score = verification.quality_score
-        issue_penalty = sum(
-            12 if item.severity == "high" else 6 if item.severity == "medium" else 2
-            for item in verification.issues
-        )
-        return (
-            score.scope_clarity
-            + score.testability
-            + score.dependency_sanity
-            + score.story_granularity
-            - issue_penalty
-        )
-
-    def _verification_signature(self, verification: RequirementVerificationResult) -> str:
-        issue_parts = [
-            f"{item.severity}:{item.issue_type}:{item.message.strip()}"
-            for item in verification.issues
-        ]
-        return "|".join([verification.status, verification.summary.strip(), *issue_parts])
-
     def _next_revision_focus(
         self,
         verification: RequirementVerificationResult,
@@ -467,48 +371,6 @@ class RequirementAnalysisOrchestrator:
         if verification.issues:
             return [item.message for item in verification.issues]
         return ["在保持当前质量的前提下继续提升需求拆解的精度与一致性。"]
-
-    def _overall_feedback_score(
-        self,
-        verification: RequirementVerificationResult,
-        composition_verification: RequirementCompositionVerificationResult | None = None,
-    ) -> int:
-        if verification.status != "pass" or composition_verification is None:
-            return self._verification_score(verification)
-
-        coverage = composition_verification.coverage_assessment
-        coverage_score = (
-            (30 if coverage.covers_primary_user_goal else 0)
-            + (20 if coverage.covers_permission_constraints else 0)
-            + (20 if coverage.covers_failure_handling else 0)
-            + (30 if coverage.covers_end_to_end_flow else 0)
-        )
-        issue_penalty = sum(
-            12 if item.severity == "high" else 6 if item.severity == "medium" else 2
-            for item in composition_verification.composition_issues
-        )
-        return coverage_score - issue_penalty
-
-    def _overall_feedback_signature(
-        self,
-        verification: RequirementVerificationResult,
-        composition_verification: RequirementCompositionVerificationResult | None = None,
-    ) -> str:
-        if verification.status != "pass" or composition_verification is None:
-            return self._verification_signature(verification)
-
-        issue_parts = [
-            f"{item.severity}:{item.issue_type}:{item.message.strip()}"
-            for item in composition_verification.composition_issues
-        ]
-        return "|".join(
-            [
-                "composition",
-                composition_verification.status,
-                composition_verification.summary.strip(),
-                *issue_parts,
-            ]
-        )
 
     def _overall_feedback_summary(
         self,

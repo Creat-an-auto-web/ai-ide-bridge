@@ -357,6 +357,18 @@ const toRecentTestFailures = (testLogs: string): string[] =>
     .filter((line) => line.length > 0)
     .slice(-10)
 
+const trimTextHead = (text: string, maxChars: number): string =>
+  text.length <= maxChars ? text : text.slice(0, maxChars)
+
+const trimTextTail = (text: string, maxChars: number): string =>
+  text.length <= maxChars ? text : text.slice(-maxChars)
+
+const REQUIREMENT_ANALYSIS_MAX_OPEN_FILES = 8
+const REQUIREMENT_ANALYSIS_MAX_DIAGNOSTICS = 8
+const REQUIREMENT_ANALYSIS_MAX_TEST_FAILURES = 8
+const REQUIREMENT_ANALYSIS_MAX_GIT_DIFF_CHARS = 4000
+const REQUIREMENT_ANALYSIS_MAX_PREVIOUS_SUMMARY_CHARS = 1200
+
 const toContinuationRevisionFocus = (
   previousResult: RequirementAnalysisResultPayload | null | undefined,
   globalFeedback?: GlobalFeedbackPayload | null,
@@ -419,10 +431,12 @@ const toRequirementAnalysisInputPayload = async (
     },
     active_file: context.activeFile ?? null,
     selection: toSelectionText(context.selection),
-    open_files: context.openFiles,
-    diagnostics: context.diagnostics.map((diagnostic) => toDiagnosticText(diagnostic)),
-    recent_test_failures: toRecentTestFailures(context.testLogs),
-    git_diff_summary: context.gitDiff,
+    open_files: context.openFiles.slice(0, REQUIREMENT_ANALYSIS_MAX_OPEN_FILES),
+    diagnostics: context.diagnostics
+      .map((diagnostic) => toDiagnosticText(diagnostic))
+      .slice(0, REQUIREMENT_ANALYSIS_MAX_DIAGNOSTICS),
+    recent_test_failures: toRecentTestFailures(context.testLogs).slice(0, REQUIREMENT_ANALYSIS_MAX_TEST_FAILURES),
+    git_diff_summary: trimTextTail(context.gitDiff, REQUIREMENT_ANALYSIS_MAX_GIT_DIFF_CHARS),
     global_feedback: options.globalFeedback ?? null,
     story_feedback: options.storyFeedback ?? null,
     revision_focus: toContinuationRevisionFocus(
@@ -431,9 +445,12 @@ const toRequirementAnalysisInputPayload = async (
       options.storyFeedback,
     ),
     previous_verification_summary:
-      previousResult?.composition_verification?.summary
-      ?? previousResult?.verification?.summary
-      ?? null,
+      trimTextHead(
+        previousResult?.composition_verification?.summary
+          ?? previousResult?.verification?.summary
+          ?? '',
+        REQUIREMENT_ANALYSIS_MAX_PREVIOUS_SUMMARY_CHARS,
+      ) || null,
     iteration: previousResult ? Math.max(1, previousResult.iteration_count + 1) : 1,
     execution_constraints: {
       disallow_new_dependencies: true,

@@ -139,6 +139,67 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
             "As a 已登录用户, when 我的 access token 已过期但 refresh token 仍有效, I want 系统自动获取并写回新的 access token, so that 我不需要重新登录也能继续完成当前操作.",
         )
 
+    def test_normalizes_narrative_from_structured_fields(self) -> None:
+        payload = {
+        "requirement_spec": {
+            "task_id": "task_001",
+            "version": 1,
+            "problem_statement": "任务拆解需要保持结构字段一致。",
+            "product_goal": "即使 narrative 被轻微改写，也能继续迭代。",
+            "scope": ["story normalization"],
+            "out_of_scope": [],
+            "constraints": [],
+            "assumptions": [],
+            "interfaces_or_contracts": [],
+            "acceptance_criteria": [
+                "story 字段完整",
+                "narrative 会被规范化重建",
+                "结果可继续进入后续验证",
+            ],
+            "decomposition_strategy": "按单一 story 输出",
+        },
+        "story_units": [
+            {
+                "id": "S1",
+                "story_kind": "user_outcome",
+                "title": "仓库管理员可以导出当前筛选后的任务记录",
+                "as_a": "仓库管理员",
+                "when_context": "我已经在任务记录列表中设置筛选条件",
+                "i_want": "导出当前筛选结果为 CSV 文件",
+                "so_that": "我可以将审计数据用于汇报和离线分析",
+                "narrative": "As a 仓库管理员, when 已设置筛选条件时, I want 把结果导出成 CSV, so that 后续方便分析。",
+                "actor": "仓库管理员",
+                "goal": "导出当前筛选结果为 CSV 文件",
+                "business_value": "我可以将审计数据用于汇报和离线分析",
+                "business_outcome": "管理员可以稳定导出当前筛选结果供后续分析",
+                "scope": ["story normalization"],
+                "out_of_scope": [],
+                "acceptance_criteria": [
+                    "可以导出当前筛选结果",
+                    "导出文件格式正确",
+                    "导出结果可被后续分析使用",
+                ],
+                "dependencies": [],
+                "priority": "high",
+                "risk": "medium",
+                "test_focus": ["导出主路径", "文件格式", "筛选条件保留"],
+                "implementation_hints": [],
+            }
+        ],
+        }
+        provider = FakeProvider(payload)
+        agent = RequirementAnalysisAgent(
+            provider=provider,
+            model_target=ModelTarget(provider="openai", model="gpt-5.4"),
+        )
+
+        result = asyncio.run(agent.run(make_input(), AgentRunContext(task_id="task_001")))
+
+        self.assertEqual(
+            result.story_units[0].narrative,
+            "As a 仓库管理员, when 我已经在任务记录列表中设置筛选条件, I want 导出当前筛选结果为 CSV 文件, so that 我可以将审计数据用于汇报和离线分析.",
+        )
+
     def test_rejects_cyclic_dependencies(self) -> None:
         payload = {
         "requirement_spec": {
