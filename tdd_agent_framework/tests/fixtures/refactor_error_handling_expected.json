@@ -19,10 +19,17 @@
   "story_units": [
     {
       "id": "story_shared_error_mapping",
-      "title": "抽取共享错误映射逻辑",
+      "story_kind": "operator_outcome",
+      "title": "后端维护者可以抽取共享错误映射逻辑以减少重复处理分支",
+      "as_a": "后端维护者",
+      "when_context": "我正在维护多个重复实现错误转换逻辑的接口",
+      "i_want": "将重复错误映射逻辑收敛为共享实现",
+      "so_that": "后续修改错误处理规则时不会在多个位置重复调整",
+      "narrative": "As a 后端维护者, when 我正在维护多个重复实现错误转换逻辑的接口, I want 将重复错误映射逻辑收敛为共享实现, so that 后续修改错误处理规则时不会在多个位置重复调整。",
       "actor": "后端维护者",
-      "goal": "将重复错误转换逻辑收敛为共享实现",
-      "business_value": "降低重复逻辑和维护成本",
+      "goal": "将重复错误映射逻辑收敛为共享实现",
+      "business_value": "后续修改错误处理规则时不会在多个位置重复调整",
+      "business_outcome": "多个接口可以复用同一套共享错误映射逻辑",
       "scope": ["shared error mapping"],
       "out_of_scope": ["错误码体系改版"],
       "acceptance_criteria": [
@@ -38,10 +45,17 @@
     },
     {
       "id": "story_route_error_refactor",
-      "title": "替换路由层重复错误处理",
+      "story_kind": "operator_outcome",
+      "title": "后端维护者可以让目标路由复用共享错误处理逻辑",
+      "as_a": "后端维护者",
+      "when_context": "共享错误映射逻辑已经可复用",
+      "i_want": "让目标路由替换掉重复的 try/except 模板",
+      "so_that": "路由层错误处理行为保持一致且更易维护",
+      "narrative": "As a 后端维护者, when 共享错误映射逻辑已经可复用, I want 让目标路由替换掉重复的 try/except 模板, so that 路由层错误处理行为保持一致且更易维护。",
       "actor": "后端维护者",
-      "goal": "让接口路由复用共享错误处理逻辑",
-      "business_value": "减少 route 层重复代码",
+      "goal": "让目标路由替换掉重复的 try/except 模板",
+      "business_value": "路由层错误处理行为保持一致且更易维护",
+      "business_outcome": "目标路由不再保留重复错误处理模板且对外响应保持兼容",
       "scope": ["route-level refactor", "regression safety"],
       "out_of_scope": ["接口行为改版"],
       "acceptance_criteria": [
@@ -54,6 +68,23 @@
       "risk": "high",
       "test_focus": ["回归响应结构", "异常路径", "路由层重复代码移除"],
       "implementation_hints": ["检查 app/api/routes.py 中重复异常处理分支"]
+    }
+  ],
+  "capability_groups": [
+    {
+      "id": "capability_error_handling_refactor",
+      "title": "统一错误处理实现",
+      "goal": "在保持外部行为不变的前提下收敛重复错误处理逻辑",
+      "scope": [
+        "shared error mapping",
+        "route-level refactor",
+        "regression safety"
+      ],
+      "story_ids": [
+        "story_shared_error_mapping",
+        "story_route_error_refactor"
+      ],
+      "priority": "high"
     }
   ]
 }

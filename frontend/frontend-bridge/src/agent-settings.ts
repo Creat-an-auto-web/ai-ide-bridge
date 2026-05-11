@@ -56,6 +56,8 @@ export interface RequirementAnalysisRunInputPayload {
   diagnostics: string[]
   recent_test_failures: string[]
   git_diff_summary: string
+  global_feedback?: GlobalFeedbackPayload | null
+  story_feedback?: StoryFeedbackPayload | null
   revision_focus: string[]
   previous_verification_summary: string | null
   execution_constraints: {
@@ -93,14 +95,17 @@ export interface RequirementAnalysisResultPayload {
   }
   story_units: Array<{
     id: string
+    story_kind: 'user_outcome' | 'admin_outcome' | 'operator_outcome' | 'compliance_guard' | 'system_feedback'
     title: string
     as_a: string
+    when_context: string
     i_want: string
     so_that: string | null
     narrative: string
     actor: string
     goal: string
     business_value: string | null
+    business_outcome: string
     scope: string[]
     out_of_scope: string[]
     acceptance_criteria: string[]
@@ -150,6 +155,35 @@ export interface RequirementAnalysisResultPayload {
       story_granularity: number
     }
   }
+  composition_verification?: {
+    status: 'pass' | 'revise' | 'blocked'
+    summary: string
+    coverage_assessment: {
+      covers_primary_user_goal: boolean
+      covers_permission_constraints: boolean
+      covers_failure_handling: boolean
+      covers_end_to_end_flow: boolean
+    }
+    composition_issues: Array<{
+      id: string
+      severity: 'low' | 'medium' | 'high'
+      issue_type: string
+      message: string
+      related_story_ids: string[]
+      related_capability_group_ids: string[]
+      suggested_action?: string | null
+    }>
+    integration_test_scenarios: Array<{
+      id: string
+      title: string
+      covers_story_ids: string[]
+      covers_capability_group_ids: string[]
+      expected_outcome: string
+    }>
+    redundant_story_ids: string[]
+    missing_story_topics: string[]
+    revision_guidance: string[]
+  } | null
   iteration_count: number
   history: Array<{
     iteration: number
@@ -157,6 +191,9 @@ export interface RequirementAnalysisResultPayload {
     verification_status: string
     issue_count: number
     revision_guidance: string[]
+    composition_verification_status?: string | null
+    composition_issue_count?: number
+    composition_revision_guidance?: string[]
   }>
 }
 
@@ -169,6 +206,69 @@ export interface RequirementAnalysisStreamEvent {
   metadata?: Record<string, unknown>
   elapsed_ms?: number
   data?: RequirementAnalysisResultPayload
+}
+
+export interface RequirementFeedbackAppliesToPayload {
+  capability_group_ids: string[]
+  story_ids: string[]
+}
+
+export interface GlobalFeedbackPayload {
+  feedback_id: string
+  package_id: string
+  task_id: string
+  kind: 'global_feedback'
+  author_role: string
+  feedback_type:
+    | 'scope_adjustment'
+    | 'missing_case'
+    | 'granularity_issue'
+    | 'priority_change'
+    | 'dependency_issue'
+    | 'acceptance_issue'
+    | 'wording_issue'
+    | 'business_rule_update'
+  feedback_text: string
+  applies_to?: RequirementFeedbackAppliesToPayload
+  expected_action?:
+    | 'refine_existing_stories'
+    | 'add_story'
+    | 'split_story'
+    | 'merge_story'
+    | 'adjust_dependency'
+    | 'rewrite_acceptance_criteria'
+    | 'clarify_scope'
+    | 'reprioritize'
+  created_at?: string | null
+}
+
+export interface StoryFeedbackPayload {
+  feedback_id: string
+  package_id: string
+  task_id: string
+  kind: 'story_feedback'
+  author_role: string
+  story_id: string
+  feedback_type:
+    | 'scope_adjustment'
+    | 'missing_case'
+    | 'granularity_issue'
+    | 'priority_change'
+    | 'dependency_issue'
+    | 'acceptance_issue'
+    | 'wording_issue'
+    | 'business_rule_update'
+  feedback_text: string
+  expected_action?:
+    | 'refine_existing_stories'
+    | 'add_story'
+    | 'split_story'
+    | 'merge_story'
+    | 'adjust_dependency'
+    | 'rewrite_acceptance_criteria'
+    | 'clarify_scope'
+    | 'reprioritize'
+  created_at?: string | null
 }
 
 export const createDefaultRequirementAnalysisSettings = (): RequirementAnalysisAgentSettings => ({

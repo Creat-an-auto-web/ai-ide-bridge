@@ -32,6 +32,35 @@ class RequirementAnalysisPromptBuilder:
             "diagnostics": analysis_input.diagnostics,
             "recent_test_failures": analysis_input.recent_test_failures,
             "git_diff_summary": analysis_input.git_diff_summary,
+            "user_feedback": {
+                "global_feedback": (
+                    {
+                        "feedback_id": analysis_input.global_feedback.feedback_id,
+                        "kind": analysis_input.global_feedback.kind,
+                        "feedback_type": analysis_input.global_feedback.feedback_type,
+                        "feedback_text": analysis_input.global_feedback.feedback_text,
+                        "expected_action": analysis_input.global_feedback.expected_action,
+                        "applies_to": {
+                            "capability_group_ids": analysis_input.global_feedback.applies_to.capability_group_ids,
+                            "story_ids": analysis_input.global_feedback.applies_to.story_ids,
+                        },
+                    }
+                    if analysis_input.global_feedback is not None
+                    else None
+                ),
+                "story_feedback": (
+                    {
+                        "feedback_id": analysis_input.story_feedback.feedback_id,
+                        "kind": analysis_input.story_feedback.kind,
+                        "story_id": analysis_input.story_feedback.story_id,
+                        "feedback_type": analysis_input.story_feedback.feedback_type,
+                        "feedback_text": analysis_input.story_feedback.feedback_text,
+                        "expected_action": analysis_input.story_feedback.expected_action,
+                    }
+                    if analysis_input.story_feedback is not None
+                    else None
+                ),
+            },
             "revision_context": {
                 "previous_verification_summary": analysis_input.previous_verification_summary,
                 "revision_focus": analysis_input.revision_focus,
@@ -70,14 +99,17 @@ class RequirementAnalysisPromptBuilder:
             "story_units": [
                 {
                     "id": "...",
+                    "story_kind": "user_outcome|admin_outcome|operator_outcome|compliance_guard|system_feedback",
                     "title": "...",
                     "as_a": "...",
+                    "when_context": "...",
                     "i_want": "...",
                     "so_that": "...",
-                    "narrative": "As a ..., I want ..., so that ...",
+                    "narrative": "As a ..., when ..., I want ..., so that ...",
                     "actor": "...",
                     "goal": "...",
                     "business_value": "...",
+                    "business_outcome": "...",
                     "scope": ["..."],
                     "out_of_scope": ["..."],
                     "acceptance_criteria": ["..."],
@@ -99,9 +131,13 @@ class RequirementAnalysisPromptBuilder:
             "5. capability_groups.story_ids 必须只引用已有 story id。\n"
             "6. dependencies 只能引用已有 story id。\n"
             "7. acceptance_criteria 必须可被测试验证。\n"
-            "8. 每个 story_unit 都必须显式提供 as_a、i_want、so_that、narrative，并保持四者语义一致。\n"
-            "9. title 必须是具体的用户能力或业务结果，不要只写模块名、页面名或技术组件名。\n"
-            "10. 对复杂需求优先做能力域分组，不要一次性平铺出无层次的大量 story。\n\n"
+            "8. 每个 story_unit 都必须显式提供 story_kind、as_a、when_context、i_want、so_that、narrative、business_outcome，并保持语义一致。\n"
+            "9. narrative 必须遵循 As a [role], when [context], I want [capability], so that [business outcome].\n"
+            "10. title 必须是具体的业务能力描述，不要只写功能名、模块名、页面名或技术组件名，例如不要写“用户登录”“导出 CSV”“需求分析页面”。\n"
+            "11. 一条 story 只能表达一个主要用户目标，不能把多个独立能力揉进同一条。\n"
+            "12. 对复杂需求优先做能力域分组，不要一次性平铺出无层次的大量 story。\n"
+            "13. 如果输入里提供了 user_feedback，必须显式吸收这些反馈；对 story_feedback 要优先修订对应 story 或将其拆分/改写。\n"
+            "14. 如果输入里提供了 global_feedback，必要时同步修正 requirement_spec 的 scope、out_of_scope、constraints 和 acceptance_criteria。\n\n"
             f"输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
             f"输出结构：\n{json.dumps(output_shape, ensure_ascii=False, indent=2)}"
         )

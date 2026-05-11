@@ -19,10 +19,17 @@
   "story_units": [
     {
       "id": "story_retry_failed_task_entry",
-      "title": "失败任务提供重试入口",
+      "story_kind": "user_outcome",
+      "title": "任务列表用户可以在失败任务上显式触发重试",
+      "as_a": "任务列表用户",
+      "when_context": "我正在查看一个执行失败的任务",
+      "i_want": "在该任务上看到并触发重试入口",
+      "so_that": "我不用重新填写参数就能再次发起任务",
+      "narrative": "As a 任务列表用户, when 我正在查看一个执行失败的任务, I want 在该任务上看到并触发重试入口, so that 我不用重新填写参数就能再次发起任务。",
       "actor": "任务列表用户",
-      "goal": "在失败任务上显式触发重试操作",
-      "business_value": "降低重复提交成本",
+      "goal": "在该任务上看到并触发重试入口",
+      "business_value": "我不用重新填写参数就能再次发起任务",
+      "business_outcome": "用户可以直接从失败任务进入重试流程",
       "scope": ["retry entry"],
       "out_of_scope": ["任务列表 API 重构"],
       "acceptance_criteria": [
@@ -38,10 +45,17 @@
     },
     {
       "id": "story_retry_failed_task_execution",
-      "title": "重试时复用原始任务参数",
+      "story_kind": "system_feedback",
+      "title": "任务列表用户可以在重试时复用原始任务参数",
+      "as_a": "任务列表用户",
+      "when_context": "我已经对失败任务发起重试操作",
+      "i_want": "系统复用原始任务参数重新执行任务",
+      "so_that": "重试行为与原任务保持一致且更省操作成本",
+      "narrative": "As a 任务列表用户, when 我已经对失败任务发起重试操作, I want 系统复用原始任务参数重新执行任务, so that 重试行为与原任务保持一致且更省操作成本。",
       "actor": "任务列表用户",
-      "goal": "重新执行失败任务时复用之前的关键参数",
-      "business_value": "保证重试行为和原任务一致",
+      "goal": "系统复用原始任务参数重新执行任务",
+      "business_value": "重试行为与原任务保持一致且更省操作成本",
+      "business_outcome": "重试任务会以原始关键参数重新启动并被独立记录",
       "scope": ["parameter reuse", "retry execution flow"],
       "out_of_scope": ["列表 API 变更"],
       "acceptance_criteria": [
@@ -54,6 +68,23 @@
       "risk": "high",
       "test_focus": ["参数复用", "重试记录", "缺失参数错误"],
       "implementation_hints": ["复用 app/tasks/service.py 中已有任务读取逻辑"]
+    }
+  ],
+  "capability_groups": [
+    {
+      "id": "capability_retry_failed_task",
+      "title": "失败任务重试闭环",
+      "goal": "让用户可以从失败任务直接发起参数一致的重试流程",
+      "scope": [
+        "retry entry",
+        "parameter reuse",
+        "retry execution flow"
+      ],
+      "story_ids": [
+        "story_retry_failed_task_entry",
+        "story_retry_failed_task_execution"
+      ],
+      "priority": "high"
     }
   ]
 }

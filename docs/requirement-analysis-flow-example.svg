@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1820" viewBox="0 0 1800 1820">
+  <defs>
+    <style>
+      .title { font: 700 34px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #1f2937; }
+      .subtitle { font: 500 18px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #4b5563; }
+      .node-title { font: 700 21px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #111827; }
+      .node-text { font: 500 17px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #374151; }
+      .edge { stroke: #334155; stroke-width: 4; fill: none; }
+      .label { font: 600 17px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #334155; }
+    </style>
+    <marker id="arrow2" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
+    </marker>
+  </defs>
+
+  <rect width="1800" height="1820" fill="#f8f7f2"/>
+  <text x="900" y="62" text-anchor="middle" class="title">Requirement Analysis 贯穿案例详细流程图</text>
+  <text x="900" y="94" text-anchor="middle" class="subtitle">案例：为任务列表增加 CSV 导出能力，并确保权限和失败反馈合理</text>
+
+  <rect x="90" y="140" rx="22" ry="22" width="480" height="132" fill="#ffffff" stroke="#1f2937" stroke-width="3"/>
+  <text x="330" y="188" text-anchor="middle" class="node-title">1. 原始需求</text>
+  <text x="330" y="220" text-anchor="middle" class="node-text">为任务列表增加 CSV 导出能力，</text>
+  <text x="330" y="248" text-anchor="middle" class="node-text">并确保权限和失败反馈合理。</text>
+
+  <rect x="90" y="334" rx="22" ry="22" width="480" height="148" fill="#ffffff" stroke="#1f2937" stroke-width="3"/>
+  <text x="330" y="382" text-anchor="middle" class="node-title">2. 工作区上下文整理</text>
+  <text x="330" y="414" text-anchor="middle" class="node-text">languages: typescript / python</text>
+  <text x="330" y="442" text-anchor="middle" class="node-text">frameworks: react / fastapi / pytest</text>
+  <text x="330" y="470" text-anchor="middle" class="node-text">key_modules: frontend/tasks / app/tasks / tests/tasks</text>
+
+  <rect x="90" y="546" rx="22" ry="22" width="480" height="184" fill="#ffffff" stroke="#1f2937" stroke-width="3"/>
+  <text x="330" y="594" text-anchor="middle" class="node-title">3. 首轮需求分析输出</text>
+  <text x="330" y="626" text-anchor="middle" class="node-text">capability_group A: 任务记录导出主流程</text>
+  <text x="330" y="654" text-anchor="middle" class="node-text">capability_group B: 导出权限与异常反馈</text>
+  <text x="330" y="694" text-anchor="middle" class="node-text">story 例 1: 仓库管理员可以按当前筛选条件导出任务记录 CSV</text>
+  <text x="330" y="720" text-anchor="middle" class="node-text">story 例 2: 普通成员在无导出权限时不能触发导出</text>
+
+  <polygon points="330,794 540,920 330,1046 120,920" fill="#fff7d6" stroke="#8a6d1d" stroke-width="3"/>
+  <text x="330" y="902" text-anchor="middle" class="node-title">4. User Story 标准化检查</text>
+  <text x="330" y="934" text-anchor="middle" class="node-text">拒绝 “导出 CSV” 这种伪 story</text>
+  <text x="330" y="960" text-anchor="middle" class="node-text">要求 narrative 四段式完整</text>
+
+  <rect x="630" y="846" rx="20" ry="20" width="480" height="148" fill="#fdecea" stroke="#a94442" stroke-width="3"/>
+  <text x="870" y="894" text-anchor="middle" class="node-title">不合格示例</text>
+  <text x="870" y="926" text-anchor="middle" class="node-text">title: 导出 CSV</text>
+  <text x="870" y="954" text-anchor="middle" class="node-text">问题：只是功能主题，不是贴近实际需求的 story</text>
+  <text x="870" y="982" text-anchor="middle" class="node-text">动作：退回修订并重写 story 内容</text>
+
+  <polygon points="330,1118 540,1244 330,1370 120,1244" fill="#e8f8ea" stroke="#2e7d32" stroke-width="3"/>
+  <text x="330" y="1226" text-anchor="middle" class="node-title">5. 单轮需求验证</text>
+  <text x="330" y="1258" text-anchor="middle" class="node-text">检查 AC 是否可测试、依赖是否合理</text>
+  <text x="330" y="1284" text-anchor="middle" class="node-text">story 粒度是否过粗或过细</text>
+
+  <polygon points="900,1118 1110,1244 900,1370 690,1244" fill="#e8f4ff" stroke="#1e5b8f" stroke-width="3"/>
+  <text x="900" y="1226" text-anchor="middle" class="node-title">6. 组合合理性验证</text>
+  <text x="900" y="1258" text-anchor="middle" class="node-text">从集成测试角度检查 story 集合</text>
+  <text x="900" y="1284" text-anchor="middle" class="node-text">是否能形成主路径 / 权限 / 失败闭环</text>
+
+  <rect x="1230" y="1096" rx="20" ry="20" width="470" height="196" fill="#fff7d6" stroke="#8a6d1d" stroke-width="3"/>
+  <text x="1465" y="1144" text-anchor="middle" class="node-title">组合验证发现的典型缺口</text>
+  <text x="1465" y="1178" text-anchor="middle" class="node-text">missing_story_topics:</text>
+  <text x="1465" y="1206" text-anchor="middle" class="node-text">1. 导出权限控制</text>
+  <text x="1465" y="1234" text-anchor="middle" class="node-text">2. 导出失败反馈</text>
+  <text x="1465" y="1274" text-anchor="middle" class="node-text">integration_test_scenario:</text>
+  <text x="1465" y="1302" text-anchor="middle" class="node-text">管理员成功导出 / 普通成员被拒绝 / 导出失败有提示</text>
+
+  <rect x="700" y="1460" rx="22" ry="22" width="520" height="126" fill="#ffffff" stroke="#1f2937" stroke-width="3"/>
+  <text x="960" y="1508" text-anchor="middle" class="node-title">7. 等待用户接受或继续优化</text>
+  <text x="960" y="1540" text-anchor="middle" class="node-text">当前包状态可以是 paused_converged / paused_stalled / paused_blocked</text>
+  <text x="960" y="1568" text-anchor="middle" class="node-text">用户可接受结果，也可追加全局反馈或单条 story 反馈</text>
+
+  <rect x="120" y="1638" rx="18" ry="18" width="470" height="126" fill="#e8f4ff" stroke="#1e5b8f" stroke-width="3"/>
+  <text x="355" y="1686" text-anchor="middle" class="node-title">8A. global_feedback 示例</text>
+  <text x="355" y="1718" text-anchor="middle" class="node-text">第一期只允许仓库管理员导出，普通成员暂不开放。</text>
+  <text x="355" y="1746" text-anchor="middle" class="node-text">动作：修订 scope / constraints / permission stories</text>
+
+  <rect x="665" y="1638" rx="18" ry="18" width="470" height="126" fill="#e8f4ff" stroke="#1e5b8f" stroke-width="3"/>
+  <text x="900" y="1686" text-anchor="middle" class="node-title">8B. story_feedback 示例</text>
+  <text x="900" y="1718" text-anchor="middle" class="node-text">这条 story 太大了，应拆分权限限制与导出成功路径。</text>
+  <text x="900" y="1746" text-anchor="middle" class="node-text">动作：针对指定 story 拆分并重写 AC</text>
+
+  <rect x="1210" y="1638" rx="18" ry="18" width="470" height="126" fill="#e8f8ea" stroke="#2e7d32" stroke-width="3"/>
+  <text x="1445" y="1686" text-anchor="middle" class="node-title">9. 下一轮需求分析或进入下一阶段</text>
+  <text x="1445" y="1718" text-anchor="middle" class="node-text">revision_focus 更明确，生成更完整的 story 组合</text>
+  <text x="1445" y="1746" text-anchor="middle" class="node-text">若用户接受当前结果，则直接进入后续测试生成阶段</text>
+
+  <path class="edge" marker-end="url(#arrow2)" d="M330 272 L330 334"/>
+  <path class="edge" marker-end="url(#arrow2)" d="M330 482 L330 546"/>
+  <path class="edge" marker-end="url(#arrow2)" d="M330 730 L330 794"/>
+  <path class="edge" marker-end="url(#arrow2)" d="M540 920 L630 920"/>
+  <text x="578" y="906" class="label">示例：不合格 story</text>
+  <path class="edge" marker-end="url(#arrow2)" d="M330 1046 L330 1118"/>
+  <text x="358" y="1086" class="label">合格</text>
+  <path class="edge" marker-end="url(#arrow2)" d="M540 1244 L690 1244"/>
+  <text x="598" y="1232" class="label">pass</text>
+  <path class="edge" marker-end="url(#arrow2)" d="M1110 1244 L1230 1244"/>
+  <text x="1154" y="1232" class="label">revise / 缺口分析</text>
+  <path class="edge" marker-end="url(#arrow2)" d="M900 1370 L960 1460"/>
+  <text x="954" y="1408" class="label">pass</text>
+  <path class="edge" marker-end="url(#arrow2)" d="M820 1586 L500 1638"/>
+  <text x="594" y="1604" class="label">追加全局说明</text>
+  <path class="edge" marker-end="url(#arrow2)" d="M960 1586 L900 1638"/>
+  <text x="1002" y="1604" class="label">对单条 story 提意见</text>
+  <path class="edge" marker-end="url(#arrow2)" d="M1100 1586 L1360 1638"/>
+  <text x="1208" y="1604" class="label">接受</text>
+  <path class="edge" marker-end="url(#arrow2)" d="M355 1638 L330 1370"/>
+  <path class="edge" marker-end="url(#arrow2)" d="M900 1638 L330 1370"/>
+  <text x="494" y="1494" class="label">映射回 revision_focus，再做下一轮分析</text>
+</svg>

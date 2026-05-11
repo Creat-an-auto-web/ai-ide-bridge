@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+from tdd_agent_framework.agents.requirement_feedback import GlobalFeedback, StoryFeedback
+
+if TYPE_CHECKING:
+    from tdd_agent_framework.agents.requirement_composition_verification.models import (
+        RequirementCompositionVerificationResult,
+    )
 
 
 def _require_str(value: Any, field_name: str) -> str:
@@ -122,6 +129,8 @@ class RequirementAnalysisInput:
     diagnostics: list[str] = field(default_factory=list)
     recent_test_failures: list[str] = field(default_factory=list)
     git_diff_summary: str | None = None
+    global_feedback: GlobalFeedback | None = None
+    story_feedback: StoryFeedback | None = None
     revision_focus: list[str] = field(default_factory=list)
     previous_verification_summary: str | None = None
     iteration: int = 1
@@ -146,6 +155,16 @@ class RequirementAnalysisInput:
                 "recent_test_failures",
             ),
             git_diff_summary=_optional_str(data.get("git_diff_summary"), "git_diff_summary"),
+            global_feedback=(
+                GlobalFeedback.from_dict(data.get("global_feedback"))
+                if data.get("global_feedback") is not None
+                else None
+            ),
+            story_feedback=(
+                StoryFeedback.from_dict(data.get("story_feedback"))
+                if data.get("story_feedback") is not None
+                else None
+            ),
             revision_focus=_optional_list_of_display_str(data.get("revision_focus"), "revision_focus"),
             previous_verification_summary=_optional_str(
                 data.get("previous_verification_summary"),
@@ -216,14 +235,17 @@ class RequirementSpec:
 @dataclass(frozen=True)
 class StoryUnit:
     id: str
+    story_kind: str
     title: str
     as_a: str
+    when_context: str
     i_want: str
     so_that: str | None
     narrative: str
     actor: str
     goal: str
     business_value: str | None
+    business_outcome: str
     scope: list[str]
     out_of_scope: list[str]
     acceptance_criteria: list[str]
@@ -237,10 +259,15 @@ class StoryUnit:
     def from_dict(cls, data: dict[str, Any]) -> "StoryUnit":
         if not isinstance(data, dict):
             raise ValueError("story_unit must be an object")
+        story_kind = _optional_str(data.get("story_kind"), "story_unit.story_kind") or "user_outcome"
         title = _require_str(data.get("title"), "story_unit.title")
         as_a = _optional_str(data.get("as_a"), "story_unit.as_a") or _require_str(
             data.get("actor"),
             "story_unit.actor",
+        )
+        when_context = _optional_str(data.get("when_context"), "story_unit.when_context") or _require_str(
+            data.get("context"),
+            "story_unit.context",
         )
         i_want = _optional_str(data.get("i_want"), "story_unit.i_want") or _require_str(
             data.get("goal"),
@@ -250,21 +277,29 @@ class StoryUnit:
         business_value = _optional_str(data.get("business_value"), "story_unit.business_value")
         if so_that is None:
             so_that = business_value
+        business_outcome = _optional_str(
+            data.get("business_outcome"),
+            "story_unit.business_outcome",
+        ) or (so_that or i_want)
         narrative = _optional_str(data.get("narrative"), "story_unit.narrative") or cls._build_narrative(
             as_a=as_a,
+            when_context=when_context,
             i_want=i_want,
             so_that=so_that,
         )
         return cls(
             id=_require_str(data.get("id"), "story_unit.id"),
+            story_kind=story_kind,
             title=title,
             as_a=as_a,
+            when_context=when_context,
             i_want=i_want,
             so_that=so_that,
             narrative=narrative,
             actor=as_a,
             goal=i_want,
             business_value=so_that,
+            business_outcome=business_outcome,
             scope=_require_list_of_str(data.get("scope"), "story_unit.scope"),
             out_of_scope=_optional_list_of_str(data.get("out_of_scope"), "story_unit.out_of_scope"),
             acceptance_criteria=_require_list_of_str(
@@ -282,10 +317,15 @@ class StoryUnit:
         )
 
     @staticmethod
-    def _build_narrative(as_a: str, i_want: str, so_that: str | None) -> str:
+    def _build_narrative(
+        as_a: str,
+        when_context: str,
+        i_want: str,
+        so_that: str | None,
+    ) -> str:
         if so_that:
-            return f"As a {as_a}, I want {i_want}, so that {so_that}."
-        return f"As a {as_a}, I want {i_want}."
+            return f"As a {as_a}, when {when_context}, I want {i_want}, so that {so_that}."
+        return f"As a {as_a}, when {when_context}, I want {i_want}."
 
 
 @dataclass(frozen=True)
@@ -422,6 +462,9 @@ class RequirementAnalysisIteration:
     verification_status: str
     issue_count: int
     revision_guidance: list[str] = field(default_factory=list)
+    composition_verification_status: str | None = None
+    composition_issue_count: int = 0
+    composition_revision_guidance: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -436,6 +479,7 @@ class RequirementAnalysisPackage:
     quality_checks: QualityChecks
     verification: RequirementVerificationResult
     iteration_count: int
+    composition_verification: RequirementCompositionVerificationResult | None = None
     history: list[RequirementAnalysisIteration] = field(default_factory=list)
 
 

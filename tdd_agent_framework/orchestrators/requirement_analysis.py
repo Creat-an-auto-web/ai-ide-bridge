@@ -15,6 +15,11 @@ from tdd_agent_framework.agents.requirement_analysis import (
     RequirementVerificationResult,
     build_requirement_analysis_service,
 )
+from tdd_agent_framework.agents.requirement_composition_verification import (
+    RequirementCompositionVerificationInput,
+    RequirementCompositionVerificationResult,
+    build_requirement_composition_verification_service,
+)
 from tdd_agent_framework.agents.requirement_verification import (
     RequirementVerificationInput,
     build_requirement_verification_service,
@@ -99,6 +104,10 @@ class RequirementAnalysisOrchestrator:
             settings,
             progress_callback=progress_callback,
         )
+        composition_verification_service = build_requirement_composition_verification_service(
+            settings,
+            progress_callback=progress_callback,
+        )
 
         started_at = monotonic()
         configured_timeout_seconds = float(getattr(settings, "timeout_seconds", 60.0))
@@ -107,6 +116,7 @@ class RequirementAnalysisOrchestrator:
         working_input = enriched_input
         latest_result: RequirementAnalysisResult | None = None
         latest_verification: RequirementVerificationResult | None = None
+        latest_composition_verification: RequirementCompositionVerificationResult | None = None
         current_iteration = max(1, working_input.iteration)
         repeat_stall_count = 0
         last_signature: str | None = None
@@ -146,15 +156,7 @@ class RequirementAnalysisOrchestrator:
                 metadata={"orchestrator": self.name, "iteration": str(iteration)},
             )
 
-            history.append(
-                RequirementAnalysisIteration(
-                    iteration=iteration,
-                    analysis_summary=latest_result.requirement_spec.problem_statement,
-                    verification_status=latest_verification.status,
-                    issue_count=len(latest_verification.issues),
-                    revision_guidance=list(latest_verification.revision_guidance),
-                )
-            )
+            latest_composition_verification = None
             await emit_progress(
                 progress_callback,
                 RunProgressEvent(
@@ -170,13 +172,82 @@ class RequirementAnalysisOrchestrator:
             )
 
             if latest_verification.status == "pass":
-                return self._build_package(
-                    task_id=working_input.task_id,
-                    status="paused_converged",
-                    result=latest_result,
-                    verification=latest_verification,
-                    history=history,
+                await emit_progress(
+                    progress_callback,
+                    RunProgressEvent(
+                        type="status",
+                        stage="composition_verification_started",
+                        message=f"开始第 {iteration} 轮组合合理性验证",
+                        metadata={"iteration": iteration, "story_unit_count": len(latest_result.story_units)},
+                    ),
                 )
+                latest_composition_verification = await composition_verification_service.verify(
+                    RequirementCompositionVerificationInput(
+                        analysis_input=working_input,
+                        analysis_result=latest_result,
+                        iteration=iteration,
+                        session_id=f"{working_input.task_id}_composition_{iteration}",
+                    ),
+                    metadata={"orchestrator": self.name, "iteration": str(iteration)},
+                )
+                await emit_progress(
+                    progress_callback,
+                    RunProgressEvent(
+                        type="status",
+                        stage="composition_verification_completed",
+                        message=f"第 {iteration} 轮组合验证结果：{latest_composition_verification.status}",
+                        metadata={
+                            "iteration": iteration,
+                            "composition_verification_status": latest_composition_verification.status,
+                            "composition_issue_count": len(latest_composition_verification.composition_issues),
+                        },
+                    ),
+                )
+
+            history.append(
+                RequirementAnalysisIteration(
+                    iteration=iteration,
+                    analysis_summary=latest_result.requirement_spec.problem_statement,
+                    verification_status=latest_verification.status,
+                    issue_count=len(latest_verification.issues),
+                    revision_guidance=list(latest_verification.revision_guidance),
+                    composition_verification_status=(
+                        latest_composition_verification.status
+                        if latest_composition_verification is not None
+                        else None
+                    ),
+                    composition_issue_count=(
+                        len(latest_composition_verification.composition_issues)
+                        if latest_composition_verification is not None
+                        else 0
+                    ),
+                    composition_revision_guidance=(
+                        list(latest_composition_verification.revision_guidance)
+                        if latest_composition_verification is not None
+                        else []
+                    ),
+                )
+            )
+
+            if latest_verification.status == "pass" and latest_composition_verification is not None:
+                if latest_composition_verification.status == "pass":
+                    return self._build_package(
+                        task_id=working_input.task_id,
+                        status="paused_converged",
+                        result=latest_result,
+                        verification=latest_verification,
+                        composition_verification=latest_composition_verification,
+                        history=history,
+                    )
+                if latest_composition_verification.status == "blocked":
+                    return self._build_package(
+                        task_id=working_input.task_id,
+                        status="paused_blocked",
+                        result=latest_result,
+                        verification=latest_verification,
+                        composition_verification=latest_composition_verification,
+                        history=history,
+                    )
 
             if latest_verification.status == "blocked":
                 return self._build_package(
@@ -184,11 +255,18 @@ class RequirementAnalysisOrchestrator:
                     status="paused_blocked",
                     result=latest_result,
                     verification=latest_verification,
+                    composition_verification=latest_composition_verification,
                     history=history,
                 )
 
-            current_score = self._verification_score(latest_verification)
-            current_signature = self._verification_signature(latest_verification)
+            current_score = self._overall_feedback_score(
+                latest_verification,
+                latest_composition_verification,
+            )
+            current_signature = self._overall_feedback_signature(
+                latest_verification,
+                latest_composition_verification,
+            )
             improved = best_score is None or current_score >= best_score + self.min_score_delta_for_improvement
             if improved:
                 best_score = current_score
@@ -219,6 +297,7 @@ class RequirementAnalysisOrchestrator:
                     status="paused_stalled",
                     result=latest_result,
                     verification=latest_verification,
+                    composition_verification=latest_composition_verification,
                     history=history,
                 )
 
@@ -241,6 +320,7 @@ class RequirementAnalysisOrchestrator:
                     status="paused_stalled",
                     result=latest_result,
                     verification=latest_verification,
+                    composition_verification=latest_composition_verification,
                     history=history,
                 )
 
@@ -252,14 +332,23 @@ class RequirementAnalysisOrchestrator:
                     message=f"第 {iteration} 轮需要修订，准备继续优化",
                     metadata={
                         "iteration": iteration,
-                        "revision_guidance": latest_verification.revision_guidance,
+                        "revision_guidance": self._next_revision_focus(
+                            latest_verification,
+                            latest_composition_verification,
+                        ),
                     },
                 ),
             )
             working_input = replace(
                 working_input,
-                revision_focus=self._next_revision_focus(latest_verification),
-                previous_verification_summary=latest_verification.summary,
+                revision_focus=self._next_revision_focus(
+                    latest_verification,
+                    latest_composition_verification,
+                ),
+                previous_verification_summary=self._overall_feedback_summary(
+                    latest_verification,
+                    latest_composition_verification,
+                ),
             )
             current_iteration += 1
 
@@ -322,6 +411,7 @@ class RequirementAnalysisOrchestrator:
         status: str,
         result: RequirementAnalysisResult,
         verification: RequirementVerificationResult,
+        composition_verification: RequirementCompositionVerificationResult | None,
         history: list[RequirementAnalysisIteration],
     ) -> RequirementAnalysisPackage:
         return RequirementAnalysisPackage(
@@ -334,6 +424,7 @@ class RequirementAnalysisOrchestrator:
             warnings=result.warnings,
             quality_checks=result.quality_checks,
             verification=verification,
+            composition_verification=composition_verification,
             iteration_count=history[-1].iteration if history else 0,
             history=list(history),
         )
@@ -362,9 +453,68 @@ class RequirementAnalysisOrchestrator:
     def _next_revision_focus(
         self,
         verification: RequirementVerificationResult,
+        composition_verification: RequirementCompositionVerificationResult | None = None,
     ) -> list[str]:
+        if composition_verification is not None and composition_verification.status == "revise":
+            if composition_verification.revision_guidance:
+                return list(composition_verification.revision_guidance)
+            if composition_verification.missing_story_topics:
+                return list(composition_verification.missing_story_topics)
+            if composition_verification.composition_issues:
+                return [item.message for item in composition_verification.composition_issues]
         if verification.revision_guidance:
             return list(verification.revision_guidance)
         if verification.issues:
             return [item.message for item in verification.issues]
         return ["在保持当前质量的前提下继续提升需求拆解的精度与一致性。"]
+
+    def _overall_feedback_score(
+        self,
+        verification: RequirementVerificationResult,
+        composition_verification: RequirementCompositionVerificationResult | None = None,
+    ) -> int:
+        if verification.status != "pass" or composition_verification is None:
+            return self._verification_score(verification)
+
+        coverage = composition_verification.coverage_assessment
+        coverage_score = (
+            (30 if coverage.covers_primary_user_goal else 0)
+            + (20 if coverage.covers_permission_constraints else 0)
+            + (20 if coverage.covers_failure_handling else 0)
+            + (30 if coverage.covers_end_to_end_flow else 0)
+        )
+        issue_penalty = sum(
+            12 if item.severity == "high" else 6 if item.severity == "medium" else 2
+            for item in composition_verification.composition_issues
+        )
+        return coverage_score - issue_penalty
+
+    def _overall_feedback_signature(
+        self,
+        verification: RequirementVerificationResult,
+        composition_verification: RequirementCompositionVerificationResult | None = None,
+    ) -> str:
+        if verification.status != "pass" or composition_verification is None:
+            return self._verification_signature(verification)
+
+        issue_parts = [
+            f"{item.severity}:{item.issue_type}:{item.message.strip()}"
+            for item in composition_verification.composition_issues
+        ]
+        return "|".join(
+            [
+                "composition",
+                composition_verification.status,
+                composition_verification.summary.strip(),
+                *issue_parts,
+            ]
+        )
+
+    def _overall_feedback_summary(
+        self,
+        verification: RequirementVerificationResult,
+        composition_verification: RequirementCompositionVerificationResult | None = None,
+    ) -> str:
+        if verification.status != "pass" or composition_verification is None:
+            return verification.summary
+        return composition_verification.summary

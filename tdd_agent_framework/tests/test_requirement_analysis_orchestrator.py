@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from tdd_agent_framework.agents.requirement_analysis import (
     AnalysisSummary,
+    CapabilityGroup,
     ExecutionConstraints,
     RequirementAnalysisAgent,
     RequirementAnalysisInput,
@@ -19,6 +20,10 @@ from tdd_agent_framework.agents.requirement_analysis import (
     VerificationIssue,
     VerificationQualityScore,
     WorkspaceSummary,
+)
+from tdd_agent_framework.agents.requirement_composition_verification import (
+    CompositionCoverageAssessment,
+    RequirementCompositionVerificationResult,
 )
 from tdd_agent_framework.core import ModelTarget, ProviderResponse
 from tdd_agent_framework.orchestrators import RequirementAnalysisOrchestrator
@@ -63,10 +68,17 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                 "story_units": [
                     {
                         "id": "story_a",
-                        "title": "Story A",
-                        "actor": "用户",
-                        "goal": "目标足够具体以便测试",
-                        "business_value": "价值",
+                        "story_kind": "user_outcome",
+                        "title": "注册用户可以完成需求拆解中的目标 A",
+                        "as_a": "注册用户",
+                        "when_context": "我正在执行与目标 A 相关的业务场景",
+                        "i_want": "完成目标 A 对应的单一业务能力",
+                        "so_that": "我可以推进当前业务流程",
+                        "narrative": "As a 注册用户, when 我正在执行与目标 A 相关的业务场景, I want 完成目标 A 对应的单一业务能力, so that 我可以推进当前业务流程。",
+                        "actor": "注册用户",
+                        "goal": "完成目标 A 对应的单一业务能力",
+                        "business_value": "我可以推进当前业务流程",
+                        "business_outcome": "用户可以稳定完成目标 A 对应的业务动作",
                         "scope": ["scope_a"],
                         "out_of_scope": [],
                         "acceptance_criteria": [
@@ -200,8 +212,31 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                     return verification_revise
                 return verification_pass
 
+        class FakeCompositionVerificationService:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def verify(self, verification_input, trace_id=None, metadata=None):
+                self.calls += 1
+                return RequirementCompositionVerificationResult(
+                    status="pass",
+                    summary="story 组合已形成完整闭环。",
+                    coverage_assessment=CompositionCoverageAssessment(
+                        covers_primary_user_goal=True,
+                        covers_permission_constraints=True,
+                        covers_failure_handling=True,
+                        covers_end_to_end_flow=True,
+                    ),
+                    composition_issues=[],
+                    integration_test_scenarios=[],
+                    redundant_story_ids=[],
+                    missing_story_topics=[],
+                    revision_guidance=[],
+                )
+
         analysis_service = FakeAnalysisService()
         verification_service = FakeVerificationService()
+        composition_verification_service = FakeCompositionVerificationService()
 
         analysis_input = RequirementAnalysisInput(
             task_id="task_001",
@@ -222,6 +257,10 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                 "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_verification_service",
                 return_value=verification_service,
             ),
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_composition_verification_service",
+                return_value=composition_verification_service,
+            ),
         ):
             package = asyncio.run(orchestrator.run(settings, analysis_input))
 
@@ -232,6 +271,9 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
         self.assertEqual(package.story_units[0].id, "story_final")
         self.assertEqual(analysis_service.calls, 2)
         self.assertEqual(verification_service.calls, 2)
+        self.assertEqual(composition_verification_service.calls, 1)
+        self.assertIsNotNone(package.composition_verification)
+        self.assertEqual(package.composition_verification.status, "pass")
         self.assertEqual(
             analysis_service.last_input.revision_focus,
             ["将功能拆成单一可测试的最小 story 单元。"],
@@ -294,14 +336,17 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                     story_units=[
                         StoryUnit(
                             id="story_draft",
-                            title="Story",
-                            as_a="用户",
-                            i_want="完成目标",
-                            so_that="价值",
-                            narrative="As a 用户, I want 完成目标, so that 价值.",
-                            actor="用户",
-                            goal="完成目标",
-                            business_value="价值",
+                            story_kind="user_outcome",
+                            title="注册用户可以完成当前收敛后的单一业务目标",
+                            as_a="注册用户",
+                            when_context="我正在执行需要收敛 AC 的业务流程",
+                            i_want="完成当前收敛后的单一业务目标",
+                            so_that="我可以继续推进当前流程",
+                            narrative="As a 注册用户, when 我正在执行需要收敛 AC 的业务流程, I want 完成当前收敛后的单一业务目标, so that 我可以继续推进当前流程。",
+                            actor="注册用户",
+                            goal="完成当前收敛后的单一业务目标",
+                            business_value="我可以继续推进当前流程",
+                            business_outcome="用户可以稳定完成当前单一业务目标",
                             scope=["scope_a"],
                             out_of_scope=[],
                             acceptance_criteria=[
@@ -338,8 +383,17 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                 self.calls += 1
                 return revise_result
 
+        class FakeCompositionVerificationService:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def verify(self, verification_input, trace_id=None, metadata=None):
+                self.calls += 1
+                raise AssertionError("composition verification should not run before requirement verification passes")
+
         analysis_service = FakeAnalysisService()
         verification_service = FakeVerificationService()
+        composition_verification_service = FakeCompositionVerificationService()
 
         analysis_input = RequirementAnalysisInput(
             task_id="task_001",
@@ -359,6 +413,10 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                 "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_verification_service",
                 return_value=verification_service,
             ),
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_composition_verification_service",
+                return_value=composition_verification_service,
+            ),
         ):
             package = asyncio.run(orchestrator.run(object(), analysis_input))
 
@@ -367,6 +425,129 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
         self.assertGreaterEqual(package.iteration_count, 2)
         self.assertEqual(analysis_service.calls, package.iteration_count)
         self.assertEqual(verification_service.calls, package.iteration_count)
+        self.assertEqual(composition_verification_service.calls, 0)
+
+    def test_orchestrator_uses_composition_revision_guidance_after_requirement_verification_passes(self) -> None:
+        orchestrator = RequirementAnalysisOrchestrator()
+
+        analysis_result_first = self._make_analysis_result("初稿问题陈述", "story_draft")
+        analysis_result_second = self._make_analysis_result("修订后问题陈述", "story_final")
+        verification_pass = RequirementVerificationResult(
+            status="pass",
+            summary="单条 story 质量已达标。",
+            issues=[],
+            revision_guidance=[],
+            quality_score=VerificationQualityScore(
+                scope_clarity=90,
+                testability=92,
+                dependency_sanity=94,
+                story_granularity=88,
+            ),
+        )
+        composition_revise = RequirementCompositionVerificationResult(
+            status="revise",
+            summary="主路径存在，但缺少权限与失败反馈 story。",
+            coverage_assessment=CompositionCoverageAssessment(
+                covers_primary_user_goal=True,
+                covers_permission_constraints=False,
+                covers_failure_handling=False,
+                covers_end_to_end_flow=False,
+            ),
+            composition_issues=[],
+            integration_test_scenarios=[],
+            redundant_story_ids=[],
+            missing_story_topics=["权限控制", "失败反馈"],
+            revision_guidance=["补充权限控制 story", "补充失败反馈 story"],
+        )
+        composition_pass = RequirementCompositionVerificationResult(
+            status="pass",
+            summary="story 组合已形成完整闭环。",
+            coverage_assessment=CompositionCoverageAssessment(
+                covers_primary_user_goal=True,
+                covers_permission_constraints=True,
+                covers_failure_handling=True,
+                covers_end_to_end_flow=True,
+            ),
+            composition_issues=[],
+            integration_test_scenarios=[],
+            redundant_story_ids=[],
+            missing_story_topics=[],
+            revision_guidance=[],
+        )
+
+        class FakeAnalysisService:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def analyze(self, analysis_input, trace_id=None, metadata=None):
+                self.calls += 1
+                if self.calls == 1:
+                    return analysis_result_first
+                self.last_input = analysis_input
+                return analysis_result_second
+
+        class FakeVerificationService:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def verify(self, verification_input, trace_id=None, metadata=None):
+                self.calls += 1
+                return verification_pass
+
+        class FakeCompositionVerificationService:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def verify(self, verification_input, trace_id=None, metadata=None):
+                self.calls += 1
+                if self.calls == 1:
+                    return composition_revise
+                return composition_pass
+
+        analysis_service = FakeAnalysisService()
+        verification_service = FakeVerificationService()
+        composition_verification_service = FakeCompositionVerificationService()
+
+        analysis_input = RequirementAnalysisInput(
+            task_id="task_001",
+            mode="repo_chat",
+            user_prompt="拆解任务导出需求",
+            repo_root="/workspace/project",
+            workspace_summary=WorkspaceSummary(),
+            execution_constraints=ExecutionConstraints(),
+        )
+
+        with (
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_analysis_service",
+                return_value=analysis_service,
+            ),
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_verification_service",
+                return_value=verification_service,
+            ),
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_composition_verification_service",
+                return_value=composition_verification_service,
+            ),
+        ):
+            package = asyncio.run(orchestrator.run(object(), analysis_input))
+
+        self.assertEqual(package.status, "paused_converged")
+        self.assertEqual(package.iteration_count, 2)
+        self.assertEqual(analysis_service.calls, 2)
+        self.assertEqual(verification_service.calls, 2)
+        self.assertEqual(composition_verification_service.calls, 2)
+        self.assertEqual(
+            analysis_service.last_input.revision_focus,
+            ["补充权限控制 story", "补充失败反馈 story"],
+        )
+        self.assertEqual(
+            analysis_service.last_input.previous_verification_summary,
+            "主路径存在，但缺少权限与失败反馈 story。",
+        )
+        self.assertIsNotNone(package.composition_verification)
+        self.assertEqual(package.composition_verification.status, "pass")
 
     def _make_analysis_result(self, problem_statement: str, story_id: str) -> RequirementAnalysisResult:
         return RequirementAnalysisResult(
@@ -390,14 +571,17 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
             story_units=[
                 StoryUnit(
                     id=story_id,
-                    title="Story",
-                    as_a="用户",
-                    i_want="完成目标",
-                    so_that="价值",
-                    narrative="As a 用户, I want 完成目标, so that 价值.",
-                    actor="用户",
-                    goal="完成目标",
-                    business_value="价值",
+                    story_kind="user_outcome",
+                    title="注册用户可以完成当前版本的单一业务目标",
+                    as_a="注册用户",
+                    when_context="我正在执行当前版本需要覆盖的业务流程",
+                    i_want="完成当前版本的单一业务目标",
+                    so_that="我可以继续推进当前业务流程",
+                    narrative="As a 注册用户, when 我正在执行当前版本需要覆盖的业务流程, I want 完成当前版本的单一业务目标, so that 我可以继续推进当前业务流程。",
+                    actor="注册用户",
+                    goal="完成当前版本的单一业务目标",
+                    business_value="我可以继续推进当前业务流程",
+                    business_outcome="用户可以稳定完成当前版本的单一业务动作",
                     scope=["scope_a"],
                     out_of_scope=[],
                     acceptance_criteria=[
@@ -424,6 +608,16 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
                 dependency_graph_valid=True,
                 story_count_within_limit=True,
             ),
+            capability_groups=[
+                CapabilityGroup(
+                    id="capability_group_1",
+                    title="整体需求分组",
+                    goal="保留最小能力分层结构",
+                    scope=["scope_a"],
+                    story_ids=[story_id],
+                    priority="high",
+                )
+            ],
         )
 
 

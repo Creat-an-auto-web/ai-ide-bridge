@@ -19,10 +19,17 @@
   "story_units": [
     {
       "id": "story_split_user_query_logic",
-      "title": "拆分用户查询职责",
+      "story_kind": "operator_outcome",
+      "title": "后端维护者可以拆分用户查询职责以提升 service 边界清晰度",
+      "as_a": "后端维护者",
+      "when_context": "我正在维护一个查询、写入和权限逻辑混杂的 user service",
+      "i_want": "将用户查询相关逻辑从大 service 中独立出来",
+      "so_that": "查询路径更清晰且后续修改影响面更可控",
+      "narrative": "As a 后端维护者, when 我正在维护一个查询、写入和权限逻辑混杂的 user service, I want 将用户查询相关逻辑从大 service 中独立出来, so that 查询路径更清晰且后续修改影响面更可控。",
       "actor": "后端维护者",
       "goal": "将用户查询相关逻辑从大 service 中独立出来",
-      "business_value": "提升模块清晰度",
+      "business_value": "查询路径更清晰且后续修改影响面更可控",
+      "business_outcome": "用户查询职责从大 service 中被独立成清晰模块边界",
       "scope": ["service responsibility split"],
       "out_of_scope": ["API 改版"],
       "acceptance_criteria": [
@@ -38,10 +45,17 @@
     },
     {
       "id": "story_split_user_write_logic",
-      "title": "拆分用户写入职责",
+      "story_kind": "operator_outcome",
+      "title": "后端维护者可以拆分用户写入职责以降低状态更新改动风险",
+      "as_a": "后端维护者",
+      "when_context": "用户查询职责已经从大 service 中拆出",
+      "i_want": "将用户写入和状态更新逻辑独立出来",
+      "so_that": "后续修改写入路径时不会牵连不相关职责",
+      "narrative": "As a 后端维护者, when 用户查询职责已经从大 service 中拆出, I want 将用户写入和状态更新逻辑独立出来, so that 后续修改写入路径时不会牵连不相关职责。",
       "actor": "后端维护者",
       "goal": "将用户写入和状态更新逻辑独立出来",
-      "business_value": "降低修改风险",
+      "business_value": "后续修改写入路径时不会牵连不相关职责",
+      "business_outcome": "用户写入职责会被独立拆分且现有接口行为保持兼容",
       "scope": ["module boundary cleanup", "regression safety"],
       "out_of_scope": ["权限模型改版"],
       "acceptance_criteria": [
@@ -54,6 +68,23 @@
       "risk": "high",
       "test_focus": ["写入回归", "状态更新", "模块边界"],
       "implementation_hints": ["梳理写入路径与状态更新副作用"]
+    }
+  ],
+  "capability_groups": [
+    {
+      "id": "capability_user_service_split",
+      "title": "User Service 职责拆分",
+      "goal": "在不改变现有接口行为的前提下拆分查询与写入职责",
+      "scope": [
+        "service responsibility split",
+        "module boundary cleanup",
+        "regression safety"
+      ],
+      "story_ids": [
+        "story_split_user_query_logic",
+        "story_split_user_write_logic"
+      ],
+      "priority": "medium"
     }
   ]
 }

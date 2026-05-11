@@ -3,6 +3,14 @@
 状态：草案  
 最后更新：`2026-04-18`
 
+补充参考：
+
+- `User Story` 内容与字段规范：`docs/requirement-analysis-user-story-standard.md`
+- 完整结果示例：`docs/requirement-analysis-result-example.json`
+- 组合合理性验证会话草案：`docs/requirement-composition-verification-v1.md`
+- 用户反馈协议草案：`docs/requirement-feedback-v1.md`
+- 流程图与贯穿示例：`docs/requirement-analysis-flow-v1.md`
+
 ## 1. 目标
 
 这份文档只讨论 TDD 智能体框架中的第一环：
@@ -171,6 +179,13 @@ v1 不要求做到：
 ## 7. StoryUnit
 
 `StoryUnit` 是后续测试生成阶段的最小消费单元。
+
+注意：
+
+- 这里的标准化不只指结构标准化
+- `StoryUnit` 的核心内容描述也必须标准化
+- 不能只写 `用户登录`、`导出 CSV` 这种功能主题
+- 更具体的字段约束、内容规范和拒绝规则见 `docs/requirement-analysis-user-story-standard.md`
 
 ```json
 {

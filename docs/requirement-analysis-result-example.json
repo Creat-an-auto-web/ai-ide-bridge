@@ -1,0 +1,257 @@
+{
+  "package_id": "reqpkg_export_csv_001",
+  "task_id": "task_export_csv_001",
+  "status": "paused_converged",
+  "iteration_count": 2,
+  "requirement_spec": {
+    "task_id": "task_export_csv_001",
+    "version": 2,
+    "problem_statement": "用户希望将任务执行记录导出为 CSV，以便做审计、汇报和离线分析。",
+    "product_goal": "提供按当前筛选条件导出任务记录的能力，并确保导出结果、权限控制和异常反馈行为可验证。",
+    "scope": [
+      "按当前筛选条件导出任务记录",
+      "导出权限控制",
+      "导出失败反馈",
+      "导出结果文件约定"
+    ],
+    "out_of_scope": [
+      "异步大文件导出",
+      "Excel 格式导出",
+      "自定义字段模板"
+    ],
+    "constraints": [
+      "第一期只允许仓库管理员执行导出",
+      "保持现有任务记录列表筛选逻辑不变",
+      "不新增外部依赖"
+    ],
+    "assumptions": [
+      "当前任务记录列表已支持筛选条件设置",
+      "CSV 是当前阶段唯一支持的导出格式"
+    ],
+    "interfaces_or_contracts": [
+      "导出请求必须显式携带当前筛选条件",
+      "无权限用户不可触发实际导出行为",
+      "导出失败时需要返回可展示的错误信息"
+    ],
+    "acceptance_criteria": [
+      "仓库管理员只能导出自己有权限查看的数据",
+      "导出结果必须与当前筛选条件一致",
+      "导出失败时用户可以得到明确原因"
+    ],
+    "decomposition_strategy": "先按能力域分组，再按独立业务结果拆分 user story"
+  },
+  "capability_groups": [
+    {
+      "id": "capability_export_flow",
+      "title": "任务记录导出主流程",
+      "goal": "让仓库管理员可以基于当前筛选条件导出任务记录 CSV",
+      "scope": [
+        "导出触发",
+        "筛选条件透传",
+        "文件生成"
+      ],
+      "story_ids": [
+        "story_export_selected_records"
+      ],
+      "priority": "high"
+    },
+    {
+      "id": "capability_export_guardrails",
+      "title": "导出权限与异常反馈",
+      "goal": "确保导出行为只对有权限用户开放，并在异常情况下有清晰反馈",
+      "scope": [
+        "权限校验",
+        "失败反馈",
+        "空结果处理"
+      ],
+      "story_ids": [
+        "story_export_permission_guard",
+        "story_export_failure_feedback"
+      ],
+      "priority": "high"
+    }
+  ],
+  "story_units": [
+    {
+      "id": "story_export_selected_records",
+      "story_kind": "admin_outcome",
+      "title": "仓库管理员可以按当前筛选条件导出任务记录 CSV",
+      "as_a": "仓库管理员",
+      "when_context": "我已经在任务记录列表中设置筛选条件",
+      "i_want": "导出当前筛选结果为 CSV 文件",
+      "so_that": "我可以将审计数据用于汇报和离线分析",
+      "narrative": "As a 仓库管理员, when 我已经在任务记录列表中设置筛选条件, I want 导出当前筛选结果为 CSV 文件, so that 我可以将审计数据用于汇报和离线分析。",
+      "actor": "仓库管理员",
+      "goal": "导出当前筛选结果为 CSV 文件",
+      "business_value": "我可以将审计数据用于汇报和离线分析",
+      "business_outcome": "用户得到与当前筛选结果一致的 CSV 文件",
+      "scope": [
+        "导出按钮触发",
+        "筛选条件透传",
+        "CSV 文件下载"
+      ],
+      "out_of_scope": [
+        "异步任务导出",
+        "Excel 格式导出"
+      ],
+      "acceptance_criteria": [
+        "Given 用户已筛选任务状态为已完成且时间范围为最近 30 天, When 用户点击导出, Then 下载的 CSV 仅包含满足当前筛选条件的记录",
+        "Given 当前列表为空, When 用户点击导出, Then 系统提示无可导出数据且不生成空文件",
+        "Given 导出成功, When 文件生成完成, Then 文件名中包含导出日期且表头字段顺序符合约定"
+      ],
+      "dependencies": [],
+      "priority": "high",
+      "risk": "medium",
+      "test_focus": [
+        "正常导出当前筛选结果",
+        "空结果导出提示",
+        "导出字段顺序校验"
+      ],
+      "test_scenarios": [
+        "管理员按筛选条件导出成功",
+        "空结果列表触发导出",
+        "导出文件头字段校验"
+      ],
+      "open_questions": [
+        "CSV 表头字段是否需要后续支持配置化"
+      ],
+      "implementation_hints": [
+        "导出接口应显式接收当前筛选参数，不应只依赖前端本地状态"
+      ]
+    },
+    {
+      "id": "story_export_permission_guard",
+      "story_kind": "compliance_guard",
+      "title": "普通成员在无导出权限时不能触发任务记录导出",
+      "as_a": "普通成员",
+      "when_context": "我正在查看任务记录列表但没有导出权限",
+      "i_want": "系统阻止我触发真实导出行为并给出明确提示",
+      "so_that": "导出能力不会暴露给无权限用户",
+      "narrative": "As a 普通成员, when 我正在查看任务记录列表但没有导出权限, I want 系统阻止我触发真实导出行为并给出明确提示, so that 导出能力不会暴露给无权限用户。",
+      "actor": "普通成员",
+      "goal": "系统阻止我触发真实导出行为并给出明确提示",
+      "business_value": "导出能力不会暴露给无权限用户",
+      "business_outcome": "无权限用户无法误触发接受操作或获得导出文件",
+      "scope": [
+        "导出入口权限控制",
+        "无权限提示"
+      ],
+      "out_of_scope": [
+        "角色系统重构",
+        "更细粒度的数据权限模型"
+      ],
+      "acceptance_criteria": [
+        "Given 当前用户不是仓库管理员, When 用户尝试点击导出入口, Then 系统阻止导出请求发起",
+        "Given 当前用户不是仓库管理员, When 用户尝试导出, Then 用户看到明确的无权限提示",
+        "Given 无权限用户刷新页面后再次操作, When 用户再次尝试导出, Then 仍然无法获得导出文件"
+      ],
+      "dependencies": [
+        "story_export_selected_records"
+      ],
+      "priority": "high",
+      "risk": "high",
+      "test_focus": [
+        "无权限导出阻断",
+        "提示信息可见性",
+        "重复操作一致性"
+      ],
+      "test_scenarios": [
+        "普通成员点击导出被阻止",
+        "无权限提示展示",
+        "刷新后再次导出仍被阻止"
+      ],
+      "open_questions": [],
+      "implementation_hints": [
+        "权限校验应同时覆盖前端入口态和后端请求态"
+      ]
+    },
+    {
+      "id": "story_export_failure_feedback",
+      "story_kind": "system_feedback",
+      "title": "仓库管理员在导出失败时可以得到明确的失败原因和下一步操作提示",
+      "as_a": "仓库管理员",
+      "when_context": "我发起了任务记录导出但导出过程失败",
+      "i_want": "看到明确的失败原因和下一步建议",
+      "so_that": "我可以判断是重试、调整筛选条件还是联系管理员",
+      "narrative": "As a 仓库管理员, when 我发起了任务记录导出但导出过程失败, I want 看到明确的失败原因和下一步建议, so that 我可以判断是重试、调整筛选条件还是联系管理员。",
+      "actor": "仓库管理员",
+      "goal": "看到明确的失败原因和下一步建议",
+      "business_value": "我可以判断是重试、调整筛选条件还是联系管理员",
+      "business_outcome": "用户在导出失败时不会停留在无反馈状态",
+      "scope": [
+        "导出失败提示",
+        "可理解错误信息",
+        "下一步操作建议"
+      ],
+      "out_of_scope": [
+        "自动失败恢复",
+        "失败任务后台重试"
+      ],
+      "acceptance_criteria": [
+        "Given 导出过程因网络或服务异常失败, When 导出结束, Then 用户可以看到明确失败原因",
+        "Given 导出失败, When 错误信息展示, Then 用户可以区分权限错误、无数据和服务异常",
+        "Given 导出失败, When 用户查看提示, Then 提示中包含下一步操作建议"
+      ],
+      "dependencies": [
+        "story_export_selected_records"
+      ],
+      "priority": "medium",
+      "risk": "medium",
+      "test_focus": [
+        "失败原因区分",
+        "反馈信息完整性",
+        "后续操作建议展示"
+      ],
+      "test_scenarios": [
+        "网络异常导致导出失败",
+        "服务异常导致导出失败",
+        "无数据与权限错误区分"
+      ],
+      "open_questions": [
+        "下一步操作建议是否需要按错误类型做差异化文案"
+      ],
+      "implementation_hints": [
+        "错误码到用户提示文案的映射应可维护，不要散落在多个组件中"
+      ]
+    }
+  ],
+  "analysis_summary": {
+    "story_unit_count": 3,
+    "high_priority_count": 2,
+    "high_risk_count": 1,
+    "capability_group_count": 2
+  },
+  "warnings": [
+    "当前方案尚未覆盖异步大文件导出，这属于明确的后续范围"
+  ],
+  "quality_checks": {
+    "has_clear_scope": true,
+    "has_testable_ac": true,
+    "dependency_graph_valid": true,
+    "story_count_within_limit": true
+  },
+  "verification": {
+    "status": "pass",
+    "summary": "当前 story 集合已覆盖导出主路径、权限控制和失败反馈，具备进入下一阶段的条件。",
+    "issues": [],
+    "revision_guidance": [],
+    "quality_score": {
+      "scope_clarity": 9,
+      "testability": 9,
+      "dependency_sanity": 8,
+      "story_granularity": 8
+    }
+  },
+  "history": [
+    {
+      "iteration": 1,
+      "verification_status": "revise",
+      "issue_count": 2
+    },
+    {
+      "iteration": 2,
+      "verification_status": "pass",
+      "issue_count": 0
+    }
+  ]
+}

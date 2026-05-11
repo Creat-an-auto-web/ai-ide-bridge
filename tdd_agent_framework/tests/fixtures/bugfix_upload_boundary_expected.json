@@ -19,10 +19,17 @@
   "story_units": [
     {
       "id": "story_upload_empty_file",
-      "title": "空文件上传边界处理",
+      "story_kind": "user_outcome",
+      "title": "上传文件的用户可以在提交空文件时得到稳定处理结果",
+      "as_a": "上传文件的用户",
+      "when_context": "我尝试上传 0 字节文件",
+      "i_want": "系统稳定处理这次上传请求并返回可预期结果",
+      "so_that": "边界输入不会导致上传流程崩溃",
+      "narrative": "As a 上传文件的用户, when 我尝试上传 0 字节文件, I want 系统稳定处理这次上传请求并返回可预期结果, so that 边界输入不会导致上传流程崩溃。",
       "actor": "上传文件的用户",
-      "goal": "上传空文件时系统给出稳定处理结果",
-      "business_value": "避免边界输入导致服务报错",
+      "goal": "系统稳定处理这次上传请求并返回可预期结果",
+      "business_value": "边界输入不会导致上传流程崩溃",
+      "business_outcome": "空文件上传不会再触发未处理异常",
       "scope": ["empty file validation"],
       "out_of_scope": ["上传页面 UI 改版"],
       "acceptance_criteria": [
@@ -38,10 +45,17 @@
     },
     {
       "id": "story_upload_filename_boundary",
-      "title": "超长文件名稳定处理",
+      "story_kind": "system_feedback",
+      "title": "上传文件的用户可以在超长文件名场景下得到稳定上传反馈",
+      "as_a": "上传文件的用户",
+      "when_context": "我提交了超长文件名的上传请求",
+      "i_want": "系统规范化处理文件名或返回明确错误",
+      "so_that": "异常文件名不会破坏整个上传流程",
+      "narrative": "As a 上传文件的用户, when 我提交了超长文件名的上传请求, I want 系统规范化处理文件名或返回明确错误, so that 异常文件名不会破坏整个上传流程。",
       "actor": "上传文件的用户",
-      "goal": "超长文件名输入时系统行为稳定",
-      "business_value": "避免异常文件名破坏上传流程",
+      "goal": "系统规范化处理文件名或返回明确错误",
+      "business_value": "异常文件名不会破坏整个上传流程",
+      "business_outcome": "超长文件名输入会被稳定处理且错误信息可预测",
       "scope": ["filename normalization", "upload error handling"],
       "out_of_scope": ["文件管理页面改版"],
       "acceptance_criteria": [
@@ -54,6 +68,23 @@
       "risk": "medium",
       "test_focus": ["超长文件名", "错误消息", "上传回退路径"],
       "implementation_hints": ["检查文件名长度限制与异常转换逻辑"]
+    }
+  ],
+  "capability_groups": [
+    {
+      "id": "capability_upload_boundary_handling",
+      "title": "上传边界条件稳定性",
+      "goal": "确保空文件和异常文件名都不会破坏上传流程",
+      "scope": [
+        "empty file validation",
+        "filename normalization",
+        "upload error handling"
+      ],
+      "story_ids": [
+        "story_upload_empty_file",
+        "story_upload_filename_boundary"
+      ],
+      "priority": "high"
     }
   ]
 }

@@ -36,10 +36,17 @@
   "story_units": [
     {
       "id": "story_refresh_success",
-      "title": "过期 token 自动刷新",
+      "story_kind": "user_outcome",
+      "title": "已登录用户可以在 access token 过期后自动恢复会话",
+      "as_a": "已登录用户",
+      "when_context": "我的 access token 已过期但 refresh token 仍然有效",
+      "i_want": "系统自动获取并写回新的 access token",
+      "so_that": "我不需要重新登录也能继续完成当前操作",
+      "narrative": "As a 已登录用户, when 我的 access token 已过期但 refresh token 仍然有效, I want 系统自动获取并写回新的 access token, so that 我不需要重新登录也能继续完成当前操作。",
       "actor": "已登录用户",
-      "goal": "在 access token 过期后自动获取并写回新 token",
-      "business_value": "减少用户登录中断",
+      "goal": "系统自动获取并写回新的 access token",
+      "business_value": "我不需要重新登录也能继续完成当前操作",
+      "business_outcome": "用户在 token 过期后仍能继续使用当前会话",
       "scope": [
         "token expiry detection",
         "refresh token validation",
@@ -67,10 +74,17 @@
     },
     {
       "id": "story_refresh_failure",
-      "title": "刷新失败时安全登出",
+      "story_kind": "system_feedback",
+      "title": "已登录用户在刷新失败时会被安全登出并清理会话状态",
+      "as_a": "已登录用户",
+      "when_context": "我的 refresh token 无效或刷新流程失败",
+      "i_want": "系统终止当前会话并清理本地 token 状态",
+      "so_that": "我不会继续停留在错误的登录状态中",
+      "narrative": "As a 已登录用户, when 我的 refresh token 无效或刷新流程失败, I want 系统终止当前会话并清理本地 token 状态, so that 我不会继续停留在错误的登录状态中。",
       "actor": "已登录用户",
-      "goal": "当 refresh token 无效或刷新失败时清理会话状态",
-      "business_value": "避免错误登录状态继续存在",
+      "goal": "系统终止当前会话并清理本地 token 状态",
+      "business_value": "我不会继续停留在错误的登录状态中",
+      "business_outcome": "刷新失败后旧会话会被清理且后续请求不再携带失效 token",
       "scope": [
         "refresh failure logout"
       ],
@@ -95,6 +109,24 @@
       "implementation_hints": [
         "检查 logout fallback 与 token cleanup 逻辑"
       ]
+    }
+  ],
+  "capability_groups": [
+    {
+      "id": "capability_refresh_recovery",
+      "title": "登录态恢复与失败回退",
+      "goal": "让已登录用户在 token 刷新成功时继续使用系统，在失败时安全退出",
+      "scope": [
+        "token expiry detection",
+        "refresh token validation",
+        "refresh success persistence",
+        "refresh failure logout"
+      ],
+      "story_ids": [
+        "story_refresh_success",
+        "story_refresh_failure"
+      ],
+      "priority": "high"
     }
   ]
 }

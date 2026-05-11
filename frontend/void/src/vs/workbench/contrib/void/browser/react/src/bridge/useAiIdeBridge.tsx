@@ -4,11 +4,13 @@ import { asText } from '../../../../../../../platform/request/common/request.js'
 import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js'
 import {
   BridgeSidebarPanelState,
+  GlobalFeedbackPayload,
   PatchReviewModel,
   RequirementAnalysisAgentSettings,
   RequirementAnalysisResultPayload,
   RequirementAnalysisAgentSettingsPayload,
   RequirementAnalysisAgentSettingsSummary,
+  StoryFeedbackPayload,
   RequirementAnalysisStreamEvent,
   WorkspaceEditModel,
   attachVoidRealIdeSidebarFromAccessor,
@@ -86,6 +88,9 @@ export interface UseAiIdeBridgeOptions {
 
 interface RequirementAnalysisContinuationOptions {
   previousResult?: RequirementAnalysisResultPayload | null
+  appendedPrompt?: string | null
+  globalFeedback?: GlobalFeedbackPayload | null
+  storyFeedback?: StoryFeedbackPayload | null
 }
 
 const isNativeVoidHost = () =>
@@ -354,7 +359,23 @@ const toRecentTestFailures = (testLogs: string): string[] =>
 
 const toContinuationRevisionFocus = (
   previousResult: RequirementAnalysisResultPayload | null | undefined,
+  globalFeedback?: GlobalFeedbackPayload | null,
+  storyFeedback?: StoryFeedbackPayload | null,
 ): string[] => {
+  const focus: string[] = []
+  const compositionGuidance = previousResult?.composition_verification?.revision_guidance ?? []
+  if (compositionGuidance.length > 0) {
+    focus.push(...compositionGuidance)
+  }
+  if (globalFeedback?.feedback_text?.trim()) {
+    focus.push(globalFeedback.feedback_text.trim())
+  }
+  if (storyFeedback?.feedback_text?.trim() && storyFeedback.story_id?.trim()) {
+    focus.push(`针对 ${storyFeedback.story_id.trim()}：${storyFeedback.feedback_text.trim()}`)
+  }
+  if (focus.length > 0) {
+    return focus
+  }
   if (!previousResult) {
     return []
   }
@@ -373,6 +394,7 @@ const toRequirementAnalysisInputPayload = async (
   options: RequirementAnalysisContinuationOptions = {},
 ) => {
   const previousResult = options.previousResult ?? null
+  const appendedPrompt = options.appendedPrompt?.trim() ?? ''
   const contextSource = createVoidRealContextSourceFromAccessor({
     accessor: accessor as never,
   })
@@ -386,7 +408,9 @@ const toRequirementAnalysisInputPayload = async (
       ? crypto.randomUUID()
       : `ra_${Math.random().toString(16).slice(2, 10)}`,
     mode: 'repo_chat',
-    user_prompt: prompt,
+    user_prompt: appendedPrompt
+      ? `${prompt}\n\n[用户追加说明]\n${appendedPrompt}`
+      : prompt,
     repo_root: repoRootPath,
     workspace_summary: {
       languages: [],
@@ -399,8 +423,17 @@ const toRequirementAnalysisInputPayload = async (
     diagnostics: context.diagnostics.map((diagnostic) => toDiagnosticText(diagnostic)),
     recent_test_failures: toRecentTestFailures(context.testLogs),
     git_diff_summary: context.gitDiff,
-    revision_focus: toContinuationRevisionFocus(previousResult),
-    previous_verification_summary: previousResult?.verification?.summary ?? null,
+    global_feedback: options.globalFeedback ?? null,
+    story_feedback: options.storyFeedback ?? null,
+    revision_focus: toContinuationRevisionFocus(
+      previousResult,
+      options.globalFeedback,
+      options.storyFeedback,
+    ),
+    previous_verification_summary:
+      previousResult?.composition_verification?.summary
+      ?? previousResult?.verification?.summary
+      ?? null,
     iteration: previousResult ? Math.max(1, previousResult.iteration_count + 1) : 1,
     execution_constraints: {
       disallow_new_dependencies: true,
@@ -703,6 +736,14 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     async continueRequirementAnalysis() {
       await this.runRequirementAnalysis(uiState.panel.composer.prompt, {
         previousResult: uiState.requirementAnalysisResult,
+      })
+    },
+    async continueRequirementAnalysisWithFeedback(
+      continuationOptions: RequirementAnalysisContinuationOptions = {},
+    ) {
+      await this.runRequirementAnalysis(uiState.panel.composer.prompt, {
+        previousResult: uiState.requirementAnalysisResult,
+        ...continuationOptions,
       })
     },
     async retryRequirementAnalysis() {

@@ -66,10 +66,17 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
         "story_units": [
             {
                 "id": "story_refresh_success",
-                "title": "过期 token 自动刷新",
+                "story_kind": "user_outcome",
+                "title": "已登录用户可以在 access token 过期后自动恢复会话",
+                "as_a": "已登录用户",
+                "when_context": "我的 access token 已过期但 refresh token 仍有效",
+                "i_want": "系统自动获取并写回新的 access token",
+                "so_that": "我不需要重新登录也能继续完成当前操作",
+                "narrative": "As a 已登录用户, when 我的 access token 已过期但 refresh token 仍有效, I want 系统自动获取并写回新的 access token, so that 我不需要重新登录也能继续完成当前操作。",
                 "actor": "已登录用户",
-                "goal": "在 token 过期后自动获取新 token",
-                "business_value": "减少登录中断",
+                "goal": "系统自动获取并写回新的 access token",
+                "business_value": "我不需要重新登录也能继续完成当前操作",
+                "business_outcome": "用户在 token 过期后仍能继续使用当前会话",
                 "scope": ["token expiry detection", "refresh session update"],
                 "out_of_scope": ["login ui redesign"],
                 "acceptance_criteria": [
@@ -85,10 +92,17 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
             },
             {
                 "id": "story_refresh_failure",
-                "title": "刷新失败时安全登出",
+                "story_kind": "system_feedback",
+                "title": "已登录用户在刷新失败时会被安全登出并清理会话状态",
+                "as_a": "已登录用户",
+                "when_context": "我的 token 刷新流程失败或 refresh token 无效",
+                "i_want": "系统终止当前会话并清理本地登录状态",
+                "so_that": "我不会继续停留在错误的登录状态中",
+                "narrative": "As a 已登录用户, when 我的 token 刷新流程失败或 refresh token 无效, I want 系统终止当前会话并清理本地登录状态, so that 我不会继续停留在错误的登录状态中。",
                 "actor": "已登录用户",
-                "goal": "刷新失败时清理会话状态",
-                "business_value": "避免错误状态持续存在",
+                "goal": "系统终止当前会话并清理本地登录状态",
+                "business_value": "我不会继续停留在错误的登录状态中",
+                "business_outcome": "刷新失败后旧会话被清理且后续请求不再沿用失效 token",
                 "scope": ["logout fallback"],
                 "out_of_scope": ["permission redesign"],
                 "acceptance_criteria": [
@@ -120,6 +134,10 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
         self.assertTrue(result.quality_checks.has_testable_ac)
         self.assertTrue(result.quality_checks.dependency_graph_valid)
         self.assertTrue(result.quality_checks.story_count_within_limit)
+        self.assertEqual(
+            result.story_units[0].narrative,
+            "As a 已登录用户, when 我的 access token 已过期但 refresh token 仍有效, I want 系统自动获取并写回新的 access token, so that 我不需要重新登录也能继续完成当前操作.",
+        )
 
     def test_rejects_cyclic_dependencies(self) -> None:
         payload = {
@@ -143,10 +161,17 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
         "story_units": [
             {
                 "id": "story_a",
-                "title": "A",
-                "actor": "用户",
-                "goal": "目标 A 足够具体",
-                "business_value": "价值 A",
+                "story_kind": "user_outcome",
+                "title": "注册用户可以在有效登录态下完成目标 A",
+                "as_a": "注册用户",
+                "when_context": "我已经处于需要执行目标 A 的业务场景中",
+                "i_want": "完成目标 A 对应的单一业务能力",
+                "so_that": "我可以完成当前业务流程中的关键一步",
+                "narrative": "As a 注册用户, when 我已经处于需要执行目标 A 的业务场景中, I want 完成目标 A 对应的单一业务能力, so that 我可以完成当前业务流程中的关键一步。",
+                "actor": "注册用户",
+                "goal": "完成目标 A 对应的单一业务能力",
+                "business_value": "我可以完成当前业务流程中的关键一步",
+                "business_outcome": "用户可以稳定完成目标 A 对应的业务动作",
                 "scope": ["scope_a"],
                 "out_of_scope": [],
                 "acceptance_criteria": [
@@ -162,10 +187,17 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
             },
             {
                 "id": "story_b",
-                "title": "B",
-                "actor": "用户",
-                "goal": "目标 B 足够具体",
-                "business_value": "价值 B",
+                "story_kind": "user_outcome",
+                "title": "注册用户可以在有效登录态下完成目标 B",
+                "as_a": "注册用户",
+                "when_context": "我已经处于需要执行目标 B 的业务场景中",
+                "i_want": "完成目标 B 对应的单一业务能力",
+                "so_that": "我可以推进当前业务流程的后续步骤",
+                "narrative": "As a 注册用户, when 我已经处于需要执行目标 B 的业务场景中, I want 完成目标 B 对应的单一业务能力, so that 我可以推进当前业务流程的后续步骤。",
+                "actor": "注册用户",
+                "goal": "完成目标 B 对应的单一业务能力",
+                "business_value": "我可以推进当前业务流程的后续步骤",
+                "business_outcome": "用户可以稳定完成目标 B 对应的业务动作",
                 "scope": ["scope_b"],
                 "out_of_scope": [],
                 "acceptance_criteria": [
@@ -212,10 +244,17 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
         "story_units": [
             {
                 "id": "story_1",
-                "title": "Story 1",
-                "actor": "用户",
-                "goal": "目标 1 足够具体",
-                "business_value": "价值 1",
+                "story_kind": "user_outcome",
+                "title": "注册用户可以完成目标 1 对应的业务动作",
+                "as_a": "注册用户",
+                "when_context": "我正在执行需要目标 1 的业务流程",
+                "i_want": "完成目标 1 对应的业务能力",
+                "so_that": "我可以推进当前流程",
+                "narrative": "As a 注册用户, when 我正在执行需要目标 1 的业务流程, I want 完成目标 1 对应的业务能力, so that 我可以推进当前流程。",
+                "actor": "注册用户",
+                "goal": "完成目标 1 对应的业务能力",
+                "business_value": "我可以推进当前流程",
+                "business_outcome": "用户可以稳定完成目标 1",
                 "scope": ["scope_1"],
                 "out_of_scope": [],
                 "acceptance_criteria": [
@@ -231,10 +270,17 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
             },
             {
                 "id": "story_2",
-                "title": "Story 2",
-                "actor": "用户",
-                "goal": "目标 2 足够具体",
-                "business_value": "价值 2",
+                "story_kind": "user_outcome",
+                "title": "注册用户可以完成目标 2 对应的业务动作",
+                "as_a": "注册用户",
+                "when_context": "我正在执行需要目标 2 的业务流程",
+                "i_want": "完成目标 2 对应的业务能力",
+                "so_that": "我可以推进当前流程的下一步",
+                "narrative": "As a 注册用户, when 我正在执行需要目标 2 的业务流程, I want 完成目标 2 对应的业务能力, so that 我可以推进当前流程的下一步。",
+                "actor": "注册用户",
+                "goal": "完成目标 2 对应的业务能力",
+                "business_value": "我可以推进当前流程的下一步",
+                "business_outcome": "用户可以稳定完成目标 2",
                 "scope": ["scope_2"],
                 "out_of_scope": [],
                 "acceptance_criteria": [
