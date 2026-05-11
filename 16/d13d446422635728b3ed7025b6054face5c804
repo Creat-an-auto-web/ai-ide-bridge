@@ -1,0 +1,12 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "16d13d446422635728b3ed7025b6054face5c804",
+  "prompts": {},
+  "humans": {
+    "h_5ad3b0b3a1d0cf": {
+      "author": "Rcb725"
+    }
+  }
+}
