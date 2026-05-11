@@ -1,15 +1,39 @@
 from __future__ import annotations
+import os
+import re
 
 from pydantic import BaseModel, Field
+
+
+def _env_str(name: str, default: str) -> str:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip()
+
+
+def _normalize_api_base(value: str) -> str:
+    cleaned = value.strip().replace(" ", "")
+    match = re.search(r"https?://[^\s\"'`）)]+", cleaned)
+    if match:
+        cleaned = match.group(0)
+    cleaned = cleaned.strip("\"'`")
+    while cleaned.endswith("/"):
+        cleaned = cleaned[:-1]
+    return cleaned
 
 
 class TestCaseGenerationSettingsPayload(BaseModel):
     enabled: bool = True
     provider_kind: str = "openai_compatible"
-    provider_name: str
-    model: str
-    api_base: str
-    api_key: str
+    provider_name: str = "zhipu"
+    model: str = Field(default_factory=lambda: _env_str("GLM_MODEL", "GLM-4.7-Flash"))
+    api_base: str = Field(
+        default_factory=lambda: _normalize_api_base(
+            _env_str("GLM_API_BASE", "https://api.z.ai/api/paas/v4"),
+        ),
+    )
+    api_key: str = Field(default_factory=lambda: _env_str("GLM_API_KEY", ""))
     temperature: float = 0.2
     max_tokens: int = 4000
     timeout_seconds: float = 60.0
