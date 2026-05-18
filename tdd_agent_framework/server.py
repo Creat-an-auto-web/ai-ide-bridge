@@ -15,9 +15,14 @@ from tdd_agent_framework.agents.test_case_generation import (
     TestCaseGenerationAgentSettings,
     TestCaseGenerationInput,
 )
+from tdd_agent_framework.agents.test_code_generation import (
+    TestCodeGenerationAgentSettings,
+    TestCodeGenerationInput,
+)
 from tdd_agent_framework.orchestrators import (
     RequirementAnalysisOrchestrator,
     TestCaseGenerationOrchestrator,
+    TestCodeGenerationOrchestrator,
 )
 
 
@@ -53,6 +58,14 @@ async def _run_test_case_generation(payload: dict[str, Any]) -> dict[str, Any]:
     return asdict(result)
 
 
+async def _run_test_code_generation(payload: dict[str, Any]) -> dict[str, Any]:
+    settings = TestCodeGenerationAgentSettings.from_dict(payload.get("settings"))
+    generation_input = TestCodeGenerationInput.from_dict(payload.get("input"))
+    orchestrator = TestCodeGenerationOrchestrator()
+    result = await orchestrator.run(settings, generation_input)
+    return asdict(result)
+
+
 class RequirementAnalysisHttpHandler(BaseHTTPRequestHandler):
     server_version = "RequirementAnalysisHTTP/0.1"
 
@@ -73,6 +86,7 @@ class RequirementAnalysisHttpHandler(BaseHTTPRequestHandler):
         if self.path not in {
             "/v1/requirement-analysis/runs",
             "/v1/test-case-generation/runs",
+            "/v1/test-code-generation/runs",
         }:
             _json_response(
                 self,
@@ -89,8 +103,10 @@ class RequirementAnalysisHttpHandler(BaseHTTPRequestHandler):
                 raise ValueError("request body must be a JSON object")
             if self.path == "/v1/requirement-analysis/runs":
                 result = asyncio.run(_run_requirement_analysis(payload))
-            else:
+            elif self.path == "/v1/test-case-generation/runs":
                 result = asyncio.run(_run_test_case_generation(payload))
+            else:
+                result = asyncio.run(_run_test_code_generation(payload))
         except Exception as exc:  # noqa: BLE001
             _json_response(
                 self,

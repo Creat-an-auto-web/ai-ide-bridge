@@ -5,6 +5,7 @@ import { StorageScope, StorageTarget } from '../../../../../../../platform/stora
 import {
   BridgeSidebarPanelState,
   buildTestCaseGenerationWorkflowDraft,
+  buildTestCodeGenerationWorkflowDraft,
   GlobalFeedbackPayload,
   PatchReviewModel,
   RequirementAnalysisAgentSettings,
@@ -13,6 +14,7 @@ import {
   RequirementAnalysisAgentSettingsSummary,
   StoryFeedbackPayload,
   TestCaseGenerationResultPayload,
+  TestCodeGenerationResultPayload,
   RequirementAnalysisStreamEvent,
   WorkspaceEditModel,
   attachVoidRealIdeSidebarFromAccessor,
@@ -24,6 +26,8 @@ import {
   summarizeRequirementAnalysisSettings,
   toTestCaseGenerationInputPayload,
   toTestCaseGenerationSettingsPayload,
+  toTestCodeGenerationInputPayload,
+  toTestCodeGenerationSettingsPayload,
   toRequirementAnalysisAgentSettingsPayload,
 } from '../../../../../../../../ai-ide-bridge/frontend-bridge/src/index.js'
 import { useAccessor } from '../util/services.js'
@@ -80,6 +84,10 @@ export interface AiIdeBridgeUiState {
   testCaseGenerationResult: TestCaseGenerationResultPayload | null
   testCaseGenerationError: string | null
   testCaseGenerationIsRunning: boolean
+  testCodeGenerationPlanDraft: string
+  testCodeGenerationResult: TestCodeGenerationResultPayload | null
+  testCodeGenerationError: string | null
+  testCodeGenerationIsRunning: boolean
   latestNotification: { level: 'info' | 'warning' | 'error'; title: string; message: string } | null
   latestPatchReview: PatchReviewModel | null
   latestWorkspaceEdit: WorkspaceEditModel | null
@@ -653,6 +661,10 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     testCaseGenerationResult: null,
     testCaseGenerationError: null,
     testCaseGenerationIsRunning: false,
+    testCodeGenerationPlanDraft: '',
+    testCodeGenerationResult: null,
+    testCodeGenerationError: null,
+    testCodeGenerationIsRunning: false,
     latestNotification: null,
     latestPatchReview: null,
     latestWorkspaceEdit: null,
@@ -763,6 +775,8 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         requirementAnalysisResult: continuationOptions.previousResult ?? null,
           testCaseGenerationResult: null,
           testCaseGenerationError: null,
+          testCodeGenerationResult: null,
+          testCodeGenerationError: null,
       }))
 
       try {
@@ -850,6 +864,14 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
                   event.type === 'result'
                     ? null
                     : prev.testCaseGenerationResult,
+                testCodeGenerationPlanDraft:
+                  event.type === 'result' && event.data
+                    ? ''
+                    : prev.testCodeGenerationPlanDraft,
+                testCodeGenerationResult:
+                  event.type === 'result'
+                    ? null
+                    : prev.testCodeGenerationResult,
                 requirementAnalysisError:
                   event.type === 'error'
                     ? event.message
@@ -972,6 +994,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         ...prev,
         requirementAnalysisResult: acceptedResult,
         testCaseGenerationPlanDraft: buildTestCaseGenerationWorkflowDraft(acceptedResult),
+        testCodeGenerationPlanDraft: '',
         latestNotification: {
           level: 'info',
           title: 'RequirementAnalysis',
@@ -1046,9 +1069,16 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         }
 
         const completionSummary = envelope.data.completion_check?.summary
+        const nextTestCodePlanDraft =
+          uiState.requirementAnalysisResult
+            ? buildTestCodeGenerationWorkflowDraft(uiState.requirementAnalysisResult, envelope.data)
+            : ''
         setUiState((prev) => ({
           ...prev,
           testCaseGenerationResult: envelope.data ?? null,
+          testCodeGenerationPlanDraft: nextTestCodePlanDraft,
+          testCodeGenerationResult: null,
+          testCodeGenerationError: null,
           latestNotification: {
             level: 'info',
             title: 'TestCaseGeneration',
@@ -1067,6 +1097,95 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         setUiState((prev) => ({
           ...prev,
           testCaseGenerationIsRunning: false,
+        }))
+      }
+    },
+    setTestCodeGenerationPlanDraft(planDraft: string) {
+      setUiState((prev) => ({
+        ...prev,
+        testCodeGenerationPlanDraft: planDraft,
+      }))
+    },
+    resetTestCodeGenerationPlanDraft() {
+      if (!uiState.requirementAnalysisResult || !uiState.testCaseGenerationResult) {
+        return
+      }
+      setUiState((prev) => ({
+        ...prev,
+        testCodeGenerationPlanDraft: buildTestCodeGenerationWorkflowDraft(
+          uiState.requirementAnalysisResult!,
+          uiState.testCaseGenerationResult!,
+        ),
+      }))
+    },
+    async generateTestCodeFromTestCases(planDraft?: string) {
+      if (!uiState.requirementAnalysisResult || !uiState.testCaseGenerationResult) {
+        setUiState((prev) => ({
+          ...prev,
+          testCodeGenerationError: '请先完成测试用例生成，再生成测试代码。',
+        }))
+        return
+      }
+
+      setUiState((prev) => ({
+        ...prev,
+        testCodeGenerationIsRunning: true,
+        testCodeGenerationError: null,
+      }))
+
+      try {
+        const payload = {
+          settings: toTestCodeGenerationSettingsPayload(uiState.requirementAnalysisSettings),
+          input: toTestCodeGenerationInputPayload(
+            uiState.requirementAnalysisResult,
+            uiState.testCaseGenerationResult,
+            planDraft ?? uiState.testCodeGenerationPlanDraft,
+            uiState.panel.composer.prompt,
+          ),
+        }
+        const response = await bridgeFetchImpl(
+          new URL('/v1/test-code-generation/runs', bridgeBaseUrl).toString(),
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          },
+        )
+        const bodyText = await response.text()
+        const envelope = bodyText ? JSON.parse(bodyText) as {
+          success?: boolean
+          data?: TestCodeGenerationResultPayload
+          error?: { message?: string }
+        } : {}
+
+        if (!response.ok || !envelope.success || !envelope.data) {
+          throw new Error(
+            envelope.error?.message
+              || `测试代码生成失败（HTTP ${response.status}）`,
+          )
+        }
+
+        setUiState((prev) => ({
+          ...prev,
+          testCodeGenerationResult: envelope.data ?? null,
+          latestNotification: {
+            level: 'info',
+            title: 'TestCodeGeneration',
+            message: `已生成 ${envelope.data.test_files.length} 个测试文件草案`,
+          },
+          finalSummary: `测试代码生成完成，共 ${envelope.data.test_files.length} 个文件草案。`,
+        }))
+      } catch (error) {
+        setUiState((prev) => ({
+          ...prev,
+          testCodeGenerationError: error instanceof Error ? error.message : String(error),
+        }))
+      } finally {
+        setUiState((prev) => ({
+          ...prev,
+          testCodeGenerationIsRunning: false,
         }))
       }
     },

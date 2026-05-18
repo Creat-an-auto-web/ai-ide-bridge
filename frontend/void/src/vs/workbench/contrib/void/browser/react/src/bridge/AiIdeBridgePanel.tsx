@@ -79,6 +79,10 @@ export const AiIdeBridgePanel = () => {
     testCaseGenerationResult,
     testCaseGenerationError,
     testCaseGenerationIsRunning,
+    testCodeGenerationPlanDraft,
+    testCodeGenerationResult,
+    testCodeGenerationError,
+    testCodeGenerationIsRunning,
   } = bridge.uiState
 
   const promptValue = isEditing || isComposing ? draftPrompt : panel.composer.prompt
@@ -218,6 +222,7 @@ export const AiIdeBridgePanel = () => {
       || hasPassedCompositionVerification
     )
   )
+  const canGenerateTestCode = Boolean(testCaseGenerationResult) && !testCodeGenerationIsRunning
   const lastRequirementAnalysisEvent =
     requirementAnalysisEvents.length > 0
       ? requirementAnalysisEvents[requirementAnalysisEvents.length - 1]
@@ -1108,6 +1113,139 @@ export const AiIdeBridgePanel = () => {
                     </li>
                   ))}
                 </ul>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {testCaseGenerationResult && (
+        <div style={sectionStyle}>
+          <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
+            下一阶段：测试代码生成
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            这一步会把上一阶段的 `test_plan + test_cases` 转成结构化测试文件草案，并调用后端 `/v1/test-code-generation/runs`。
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            当前阶段只生成测试代码草案，不自动写入工作区，也不生成业务实现代码。
+          </div>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+            <span>Test Code Draft / Plan</span>
+            <textarea
+              value={testCodeGenerationPlanDraft}
+              onChange={(event) => bridge.setTestCodeGenerationPlanDraft(event.target.value)}
+              placeholder='这里会自动生成测试代码阶段的 workflow draft，你也可以补充框架、fixture、参数化和文件拆分要求。'
+              style={{
+                ...inputStyle,
+                minHeight: 180,
+                resize: 'vertical',
+              }}
+            />
+          </label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <button
+              onClick={() => { void bridge.generateTestCodeFromTestCases() }}
+              disabled={!canGenerateTestCode}
+              style={{
+                ...buttonStyle,
+                opacity: canGenerateTestCode ? 1 : 0.55,
+                background: canGenerateTestCode ? 'rgba(78, 161, 255, 0.16)' : 'rgba(255, 255, 255, 0.03)',
+              }}
+            >
+              {testCodeGenerationIsRunning ? '测试代码生成中' : '生成测试代码草案'}
+            </button>
+            <button
+              onClick={() => bridge.resetTestCodeGenerationPlanDraft()}
+              disabled={!testCaseGenerationResult}
+              style={{
+                ...buttonStyle,
+                opacity: testCaseGenerationResult ? 1 : 0.55,
+              }}
+            >
+              重置测试代码 draft
+            </button>
+          </div>
+
+          {testCodeGenerationError && (
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--vscode-errorForeground)' }}>
+              测试代码生成错误：{testCodeGenerationError}
+            </div>
+          )}
+
+          {testCodeGenerationResult && (
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                实现计划：{testCodeGenerationResult.implementation_plan.join(' -> ')}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                质量检查：文件内容 {testCodeGenerationResult.quality_checks.has_test_file_content ? '通过' : '缺失'} · 文件命名 {testCodeGenerationResult.quality_checks.all_files_are_tests ? '通过' : '需确认'} · 覆盖输入用例 {testCodeGenerationResult.quality_checks.covers_all_input_test_cases ? '通过' : '缺失'} · changed_files 对齐 {testCodeGenerationResult.quality_checks.changed_files_match_generated_files ? '通过' : '缺失'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                变更文件：{testCodeGenerationResult.changed_files.join('、')}
+              </div>
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: 'var(--vscode-input-foreground)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--vscode-panel-border)',
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                }}
+              >
+                {testCodeGenerationResult.rationale}
+              </pre>
+              {testCodeGenerationResult.warnings.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                    警告
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                    {testCodeGenerationResult.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {testCodeGenerationResult.test_files.map((testFile) => (
+                  <div
+                    key={testFile.path}
+                    style={{
+                      border: '1px solid var(--vscode-panel-border)',
+                      borderRadius: 8,
+                      padding: '10px 12px',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                      {testFile.path}
+                    </div>
+                    <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+                      {testFile.framework} · {testFile.language} · 覆盖 {testFile.related_test_case_ids.join('、')}
+                    </div>
+                    <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+                      {testFile.purpose}
+                    </div>
+                    <pre
+                      style={{
+                        margin: 0,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        fontSize: 12,
+                        lineHeight: 1.6,
+                        color: 'var(--vscode-input-foreground)',
+                      }}
+                    >
+                      {testFile.content}
+                    </pre>
+                  </div>
+                ))}
               </div>
             </div>
           )}
