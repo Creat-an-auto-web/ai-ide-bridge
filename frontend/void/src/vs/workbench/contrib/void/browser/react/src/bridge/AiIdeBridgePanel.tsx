@@ -152,23 +152,31 @@ export const AiIdeBridgePanel = () => {
   const verificationGateSummary = requirementAnalysisResult?.verification_gate_summary ?? null
   const userReviewGuidance = requirementAnalysisResult?.user_review_guidance ?? null
   const requirementPackageStatus = requirementAnalysisResult?.status ?? 'draft'
+  const isRequirementResultAccepted = requirementPackageStatus === 'accepted'
   const hasPassedCompositionVerification = requirementAnalysisResult?.composition_verification?.status === 'pass'
   const hasFailedCompositionVerification = (
     requirementAnalysisResult?.composition_verification?.status === 'revise'
     || requirementAnalysisResult?.composition_verification?.status === 'blocked'
   )
   const canAcceptRequirementResult = (
+    !isRequirementResultAccepted
+    && !requirementAnalysisIsRunning
+    &&
     requirementPackageStatus === 'paused_converged'
   )
   const canContinueRequirementResult = (
-    requirementPackageStatus === 'paused_converged'
-    || requirementPackageStatus === 'paused_content_verified'
-    || requirementPackageStatus === 'paused_format_invalid'
-    || requirementPackageStatus === 'paused_stalled'
-    || requirementPackageStatus === 'paused_blocked'
+    !isRequirementResultAccepted
+    && (
+      requirementPackageStatus === 'paused_converged'
+      || requirementPackageStatus === 'paused_content_verified'
+      || requirementPackageStatus === 'paused_format_invalid'
+      || requirementPackageStatus === 'paused_stalled'
+      || requirementPackageStatus === 'paused_blocked'
+    )
   )
   const canStartCompositionVerification = (
     !requirementAnalysisIsRunning
+    && !isRequirementResultAccepted
     && !hasFailedCompositionVerification
     && (
       requirementPackageStatus === 'paused_content_verified'
@@ -177,20 +185,24 @@ export const AiIdeBridgePanel = () => {
   )
   const canReturnToContentReview = (
     !requirementAnalysisIsRunning
+    && !isRequirementResultAccepted
     && Boolean(requirementAnalysisResult)
     && hasFailedCompositionVerification
   )
   const canContinuePassedComposition = (
     !requirementAnalysisIsRunning
+    && !isRequirementResultAccepted
     && Boolean(requirementAnalysisResult)
     && hasPassedCompositionVerification
   )
   const canRetryRequirementAnalysis = (
     !requirementAnalysisIsRunning
+    && !isRequirementResultAccepted
     && Boolean(requirementAnalysisLastPrompt?.trim())
   )
   const canSubmitRequirementFeedback = (
     !requirementAnalysisIsRunning
+    && !isRequirementResultAccepted
     && Boolean(requirementAnalysisResult)
     && Boolean(feedbackText.trim())
   )
@@ -776,7 +788,12 @@ export const AiIdeBridgePanel = () => {
               </ul>
             </div>
           )}
-          {!requirementAnalysisIsRunning && (
+          {isRequirementResultAccepted && (
+            <div style={{ marginTop: 12, fontSize: 12, color: 'var(--vscode-input-foreground)', background: 'rgba(92, 196, 137, 0.10)', border: '1px solid rgba(92, 196, 137, 0.28)', borderRadius: 8, padding: '10px 12px', lineHeight: 1.6 }}>
+              当前需求分析结果已被接受，需求分析阶段已锁定。后续测试生成或实现阶段尚未接入此面板，因此当前不会自动进入下一阶段。
+            </div>
+          )}
+          {!requirementAnalysisIsRunning && !isRequirementResultAccepted && (
             <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
                 继续完善需求分析
@@ -875,7 +892,7 @@ export const AiIdeBridgePanel = () => {
               </div>
             </div>
           )}
-          {!requirementAnalysisIsRunning && (
+          {!requirementAnalysisIsRunning && !isRequirementResultAccepted && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
               <button
                 onClick={() => bridge.acceptRequirementAnalysisResult()}

@@ -1,229 +1,231 @@
 {
-  "package_id": "reqpkg_export_csv_001",
-  "task_id": "task_export_csv_001",
+  "package_id": "reqpkg_login_site_001",
+  "task_id": "ra_login_001",
   "status": "paused_converged",
-  "iteration_count": 2,
+  "iteration_count": 3,
   "requirement_spec": {
-    "task_id": "task_export_csv_001",
+    "task_id": "ra_login_001",
     "version": 2,
-    "problem_statement": "用户希望将任务执行记录导出为 CSV，以便做审计、汇报和离线分析。",
-    "product_goal": "提供按当前筛选条件导出任务记录的能力，并确保导出结果、权限控制和异常反馈行为可验证。",
+    "problem_statement": "当前网站还没有注册和登录能力，访客无法创建账号，也无法以已注册身份进入需要登录的页面。",
+    "product_goal": "为网站提供可验证的账号注册、登录认证和登录状态反馈能力，让用户能够从访客身份进入已登录身份。",
     "scope": [
-      "按当前筛选条件导出任务记录",
-      "导出权限控制",
-      "导出失败反馈",
-      "导出结果文件约定"
+      "账号注册入口",
+      "账号登录入口",
+      "登录状态反馈",
+      "退出登录"
     ],
     "out_of_scope": [
-      "异步大文件导出",
-      "Excel 格式导出",
-      "自定义字段模板"
+      "第三方 OAuth 登录",
+      "手机号短信验证码登录",
+      "管理员后台账号管理",
+      "多设备会话管理"
     ],
     "constraints": [
-      "第一期只允许仓库管理员执行导出",
-      "保持现有任务记录列表筛选逻辑不变",
-      "不新增外部依赖"
+      "注册和登录结果必须给出明确成功或失败反馈",
+      "密码等敏感信息不得以明文形式在页面回显",
+      "退出登录后用户不应继续保持已登录身份"
     ],
     "assumptions": [
-      "当前任务记录列表已支持筛选条件设置",
-      "CSV 是当前阶段唯一支持的导出格式"
+      "第一版使用邮箱或用户名加密码作为注册登录凭据",
+      "网站已有基础页面承载注册和登录入口",
+      "注册成功后可以引导用户进入登录或已登录流程，具体交互可在后续设计中细化"
     ],
     "interfaces_or_contracts": [
-      "导出请求必须显式携带当前筛选条件",
-      "无权限用户不可触发实际导出行为",
-      "导出失败时需要返回可展示的错误信息"
+      "注册提交接口需要返回成功、字段校验失败或账号已存在结果",
+      "登录提交接口需要返回成功、凭据错误或账号不可用结果",
+      "退出登录动作需要结束当前登录状态并返回可展示结果"
     ],
     "acceptance_criteria": [
-      "仓库管理员只能导出自己有权限查看的数据",
-      "导出结果必须与当前筛选条件一致",
-      "导出失败时用户可以得到明确原因"
+      "访客可以提交有效注册信息并创建账号",
+      "已注册用户可以使用正确凭据登录网站",
+      "注册或登录失败时用户可以看到明确原因并继续修正",
+      "已登录用户可以识别当前登录状态并主动退出"
     ],
-    "decomposition_strategy": "先按能力域分组，再按独立业务结果拆分 user story"
+    "decomposition_strategy": "按访客注册、已注册用户登录、认证反馈、登录状态生命周期四个可测试业务结果拆分。"
   },
   "capability_groups": [
     {
-      "id": "capability_export_flow",
-      "title": "任务记录导出主流程",
-      "goal": "让仓库管理员可以基于当前筛选条件导出任务记录 CSV",
+      "id": "capability_account_access",
+      "title": "账号访问能力",
+      "goal": "让用户完成注册、登录、识别登录状态并主动结束会话。",
       "scope": [
-        "导出触发",
-        "筛选条件透传",
-        "文件生成"
+        "账号注册入口",
+        "账号登录入口",
+        "登录状态反馈",
+        "退出登录"
       ],
       "story_ids": [
-        "story_export_selected_records"
-      ],
-      "priority": "high"
-    },
-    {
-      "id": "capability_export_guardrails",
-      "title": "导出权限与异常反馈",
-      "goal": "确保导出行为只对有权限用户开放，并在异常情况下有清晰反馈",
-      "scope": [
-        "权限校验",
-        "失败反馈",
-        "空结果处理"
-      ],
-      "story_ids": [
-        "story_export_permission_guard",
-        "story_export_failure_feedback"
+        "story_visitor_registers_account",
+        "story_registered_user_logs_in",
+        "story_user_gets_auth_feedback",
+        "story_logged_in_user_manages_session_state"
       ],
       "priority": "high"
     }
   ],
   "story_units": [
     {
-      "id": "story_export_selected_records",
-      "story_kind": "admin_outcome",
-      "title": "仓库管理员可以按当前筛选条件导出任务记录 CSV",
-      "as_a": "仓库管理员",
-      "when_context": "我已经在任务记录列表中设置筛选条件",
-      "i_want": "导出当前筛选结果为 CSV 文件",
-      "so_that": "我可以将审计数据用于汇报和离线分析",
-      "narrative": "As a 仓库管理员, when 我已经在任务记录列表中设置筛选条件, I want 导出当前筛选结果为 CSV 文件, so that 我可以将审计数据用于汇报和离线分析。",
-      "actor": "仓库管理员",
-      "goal": "导出当前筛选结果为 CSV 文件",
-      "business_value": "我可以将审计数据用于汇报和离线分析",
-      "business_outcome": "用户得到与当前筛选结果一致的 CSV 文件",
+      "id": "story_visitor_registers_account",
+      "story_kind": "user_outcome",
+      "title": "访客可以使用有效账号信息完成网站注册",
+      "as_a": "访客",
+      "when_context": "我第一次使用网站并提交有效的注册信息",
+      "i_want": "创建一个可用于后续登录的网站账号",
+      "so_that": "我可以从访客身份转为已注册用户",
+      "narrative": "作为访客，当我第一次使用网站并提交有效的注册信息时，我希望创建一个可用于后续登录的网站账号，从而我可以从访客身份转为已注册用户。",
+      "actor": "访客",
+      "goal": "创建一个可用于后续登录的网站账号",
+      "business_value": "我可以从访客身份转为已注册用户",
+      "business_outcome": "访客可以完成账号创建并获得清晰的注册结果",
       "scope": [
-        "导出按钮触发",
-        "筛选条件透传",
-        "CSV 文件下载"
+        "账号注册入口",
+        "注册成功反馈",
+        "注册字段校验"
       ],
       "out_of_scope": [
-        "异步任务导出",
-        "Excel 格式导出"
+        "第三方 OAuth 登录",
+        "短信验证码注册"
       ],
       "acceptance_criteria": [
-        "Given 用户已筛选任务状态为已完成且时间范围为最近 30 天, When 用户点击导出, Then 下载的 CSV 仅包含满足当前筛选条件的记录",
-        "Given 当前列表为空, When 用户点击导出, Then 系统提示无可导出数据且不生成空文件",
-        "Given 导出成功, When 文件生成完成, Then 文件名中包含导出日期且表头字段顺序符合约定"
+        "提交有效注册信息后系统会创建账号并展示注册成功结果",
+        "提交缺失或格式错误的信息时系统会指出需要修正的字段",
+        "提交已存在账号信息时系统会提示该账号不可重复注册"
       ],
       "dependencies": [],
       "priority": "high",
       "risk": "medium",
       "test_focus": [
-        "正常导出当前筛选结果",
-        "空结果导出提示",
-        "导出字段顺序校验"
+        "注册成功路径",
+        "字段校验失败",
+        "账号重复注册"
       ],
-      "test_scenarios": [
-        "管理员按筛选条件导出成功",
-        "空结果列表触发导出",
-        "导出文件头字段校验"
-      ],
-      "open_questions": [
-        "CSV 表头字段是否需要后续支持配置化"
-      ],
-      "implementation_hints": [
-        "导出接口应显式接收当前筛选参数，不应只依赖前端本地状态"
-      ]
+      "implementation_hints": []
     },
     {
-      "id": "story_export_permission_guard",
-      "story_kind": "compliance_guard",
-      "title": "普通成员在无导出权限时不能触发任务记录导出",
-      "as_a": "普通成员",
-      "when_context": "我正在查看任务记录列表但没有导出权限",
-      "i_want": "系统阻止我触发真实导出行为并给出明确提示",
-      "so_that": "导出能力不会暴露给无权限用户",
-      "narrative": "As a 普通成员, when 我正在查看任务记录列表但没有导出权限, I want 系统阻止我触发真实导出行为并给出明确提示, so that 导出能力不会暴露给无权限用户。",
-      "actor": "普通成员",
-      "goal": "系统阻止我触发真实导出行为并给出明确提示",
-      "business_value": "导出能力不会暴露给无权限用户",
-      "business_outcome": "无权限用户无法误触发接受操作或获得导出文件",
+      "id": "story_registered_user_logs_in",
+      "story_kind": "user_outcome",
+      "title": "已注册用户可以使用正确凭据登录网站",
+      "as_a": "已注册用户",
+      "when_context": "我已经拥有网站账号并提交正确登录凭据",
+      "i_want": "进入网站的已登录状态",
+      "so_that": "我可以访问需要登录身份的页面或能力",
+      "narrative": "作为已注册用户，当我已经拥有网站账号并提交正确登录凭据时，我希望进入网站的已登录状态，从而我可以访问需要登录身份的页面或能力。",
+      "actor": "已注册用户",
+      "goal": "进入网站的已登录状态",
+      "business_value": "我可以访问需要登录身份的页面或能力",
+      "business_outcome": "已注册用户可以通过正确凭据建立登录会话",
       "scope": [
-        "导出入口权限控制",
-        "无权限提示"
+        "账号登录入口",
+        "登录成功反馈",
+        "登录会话建立"
       ],
       "out_of_scope": [
-        "角色系统重构",
-        "更细粒度的数据权限模型"
+        "第三方 OAuth 登录",
+        "多因素认证"
       ],
       "acceptance_criteria": [
-        "Given 当前用户不是仓库管理员, When 用户尝试点击导出入口, Then 系统阻止导出请求发起",
-        "Given 当前用户不是仓库管理员, When 用户尝试导出, Then 用户看到明确的无权限提示",
-        "Given 无权限用户刷新页面后再次操作, When 用户再次尝试导出, Then 仍然无法获得导出文件"
+        "提交正确凭据后系统会建立登录状态并展示登录成功结果",
+        "提交错误密码时系统不会建立登录状态并展示凭据错误提示",
+        "提交不存在账号时系统会提示无法完成登录"
       ],
       "dependencies": [
-        "story_export_selected_records"
+        "story_visitor_registers_account"
       ],
       "priority": "high",
-      "risk": "high",
+      "risk": "medium",
       "test_focus": [
-        "无权限导出阻断",
-        "提示信息可见性",
-        "重复操作一致性"
+        "登录成功路径",
+        "错误密码",
+        "不存在账号"
       ],
-      "test_scenarios": [
-        "普通成员点击导出被阻止",
-        "无权限提示展示",
-        "刷新后再次导出仍被阻止"
-      ],
-      "open_questions": [],
-      "implementation_hints": [
-        "权限校验应同时覆盖前端入口态和后端请求态"
-      ]
+      "implementation_hints": []
     },
     {
-      "id": "story_export_failure_feedback",
+      "id": "story_user_gets_auth_feedback",
       "story_kind": "system_feedback",
-      "title": "仓库管理员在导出失败时可以得到明确的失败原因和下一步操作提示",
-      "as_a": "仓库管理员",
-      "when_context": "我发起了任务记录导出但导出过程失败",
-      "i_want": "看到明确的失败原因和下一步建议",
-      "so_that": "我可以判断是重试、调整筛选条件还是联系管理员",
-      "narrative": "As a 仓库管理员, when 我发起了任务记录导出但导出过程失败, I want 看到明确的失败原因和下一步建议, so that 我可以判断是重试、调整筛选条件还是联系管理员。",
-      "actor": "仓库管理员",
-      "goal": "看到明确的失败原因和下一步建议",
-      "business_value": "我可以判断是重试、调整筛选条件还是联系管理员",
-      "business_outcome": "用户在导出失败时不会停留在无反馈状态",
+      "title": "用户可以根据注册登录反馈判断下一步操作",
+      "as_a": "正在注册或登录的用户",
+      "when_context": "我提交注册或登录表单后系统完成处理",
+      "i_want": "看到明确的成功、失败或修正提示",
+      "so_that": "我可以知道是否已进入账号流程的下一步",
+      "narrative": "作为正在注册或登录的用户，当我提交注册或登录表单后系统完成处理时，我希望看到明确的成功、失败或修正提示，从而我可以知道是否已进入账号流程的下一步。",
+      "actor": "正在注册或登录的用户",
+      "goal": "看到明确的成功、失败或修正提示",
+      "business_value": "我可以知道是否已进入账号流程的下一步",
+      "business_outcome": "用户不会因注册登录结果不明确而停留在不可判断状态",
       "scope": [
-        "导出失败提示",
-        "可理解错误信息",
-        "下一步操作建议"
+        "注册反馈",
+        "登录反馈",
+        "表单错误提示"
       ],
       "out_of_scope": [
-        "自动失败恢复",
-        "失败任务后台重试"
+        "全站通知系统重构"
       ],
       "acceptance_criteria": [
-        "Given 导出过程因网络或服务异常失败, When 导出结束, Then 用户可以看到明确失败原因",
-        "Given 导出失败, When 错误信息展示, Then 用户可以区分权限错误、无数据和服务异常",
-        "Given 导出失败, When 用户查看提示, Then 提示中包含下一步操作建议"
+        "注册成功时用户可以看到成功结果或被引导到登录/已登录页面",
+        "登录成功时用户可以看到已登录状态或进入登录后页面",
+        "注册或登录失败时用户可以看到可操作的错误提示"
       ],
       "dependencies": [
-        "story_export_selected_records"
+        "story_visitor_registers_account",
+        "story_registered_user_logs_in"
+      ],
+      "priority": "medium",
+      "risk": "low",
+      "test_focus": [
+        "成功反馈",
+        "失败反馈",
+        "用户下一步引导"
+      ],
+      "implementation_hints": []
+    },
+    {
+      "id": "story_logged_in_user_manages_session_state",
+      "story_kind": "user_outcome",
+      "title": "已登录用户可以识别当前登录状态并主动退出",
+      "as_a": "已登录用户",
+      "when_context": "我已经通过正确凭据进入网站的已登录状态",
+      "i_want": "看到当前账号的登录状态并可以主动退出登录",
+      "so_that": "我可以确认账号访问状态并在需要时结束当前会话",
+      "narrative": "作为已登录用户，当我已经通过正确凭据进入网站的已登录状态时，我希望看到当前账号的登录状态并可以主动退出登录，从而我可以确认账号访问状态并在需要时结束当前会话。",
+      "actor": "已登录用户",
+      "goal": "看到当前账号的登录状态并可以主动退出登录",
+      "business_value": "我可以确认账号访问状态并在需要时结束当前会话",
+      "business_outcome": "用户可以明确判断自己是否处于登录状态，并能主动结束登录会话",
+      "scope": [
+        "登录状态展示",
+        "退出登录",
+        "会话结束反馈"
+      ],
+      "out_of_scope": [
+        "多设备会话管理",
+        "强制下线其他设备"
+      ],
+      "acceptance_criteria": [
+        "登录成功后用户可以看到当前已登录状态或账号标识",
+        "用户点击退出登录后系统会结束当前登录状态",
+        "退出登录后用户访问需要登录的页面时会被要求重新登录"
+      ],
+      "dependencies": [
+        "story_registered_user_logs_in"
       ],
       "priority": "medium",
       "risk": "medium",
       "test_focus": [
-        "失败原因区分",
-        "反馈信息完整性",
-        "后续操作建议展示"
+        "已登录状态展示",
+        "退出登录",
+        "退出后访问限制"
       ],
-      "test_scenarios": [
-        "网络异常导致导出失败",
-        "服务异常导致导出失败",
-        "无数据与权限错误区分"
-      ],
-      "open_questions": [
-        "下一步操作建议是否需要按错误类型做差异化文案"
-      ],
-      "implementation_hints": [
-        "错误码到用户提示文案的映射应可维护，不要散落在多个组件中"
-      ]
+      "implementation_hints": []
     }
   ],
   "analysis_summary": {
-    "story_unit_count": 3,
+    "story_unit_count": 4,
     "high_priority_count": 2,
-    "high_risk_count": 1,
-    "capability_group_count": 2
+    "high_risk_count": 0,
+    "capability_group_count": 1
   },
-  "warnings": [
-    "当前方案尚未覆盖异步大文件导出，这属于明确的后续范围"
-  ],
+  "warnings": [],
   "quality_checks": {
     "has_clear_scope": true,
     "has_testable_ac": true,
@@ -232,26 +234,119 @@
   },
   "verification": {
     "status": "pass",
-    "summary": "当前 story 集合已覆盖导出主路径、权限控制和失败反馈，具备进入下一阶段的条件。",
+    "summary": "注册、登录、反馈和登录状态生命周期 story 的单条叙事清晰，验收标准可测试，依赖关系可解释。",
     "issues": [],
     "revision_guidance": [],
     "quality_score": {
-      "scope_clarity": 9,
-      "testability": 9,
-      "dependency_sanity": 8,
-      "story_granularity": 8
+      "scope_clarity": 91,
+      "testability": 93,
+      "dependency_sanity": 90,
+      "story_granularity": 88
     }
+  },
+  "composition_verification": {
+    "status": "pass",
+    "summary": "注册、登录、反馈和登录状态生命周期 story 已能形成完整账号访问闭环，可以构造端到端集成测试。",
+    "coverage_assessment": {
+      "covers_primary_user_goal": true,
+      "covers_permission_constraints": true,
+      "covers_failure_handling": true,
+      "covers_end_to_end_flow": true
+    },
+    "composition_issues": [],
+    "integration_test_scenarios": [
+      {
+        "id": "it_register_login_logout",
+        "title": "访客注册后登录并退出",
+        "covers_story_ids": [
+          "story_visitor_registers_account",
+          "story_registered_user_logs_in",
+          "story_user_gets_auth_feedback",
+          "story_logged_in_user_manages_session_state"
+        ],
+        "covers_capability_group_ids": [
+          "capability_account_access"
+        ],
+        "expected_outcome": "用户可以完成注册、登录、看到登录状态、退出登录，并在退出后不再保持登录身份。"
+      },
+      {
+        "id": "it_login_failure_feedback",
+        "title": "错误凭据登录失败并展示可操作反馈",
+        "covers_story_ids": [
+          "story_registered_user_logs_in",
+          "story_user_gets_auth_feedback"
+        ],
+        "covers_capability_group_ids": [
+          "capability_account_access"
+        ],
+        "expected_outcome": "用户不会进入已登录状态，并能看到可修正的失败提示。"
+      }
+    ],
+    "redundant_story_ids": [],
+    "missing_story_topics": [],
+    "revision_guidance": []
   },
   "history": [
     {
       "iteration": 1,
-      "verification_status": "revise",
-      "issue_count": 2
+      "analysis_summary": "当前网站还没有注册和登录能力，访客无法创建账号，也无法以已注册身份进入需要登录的页面。",
+      "verification_status": "pass",
+      "issue_count": 0,
+      "revision_guidance": []
     },
     {
       "iteration": 2,
+      "analysis_summary": "组合验证指出登录状态生命周期不完整，需补充退出登录和已登录状态识别。",
       "verification_status": "pass",
-      "issue_count": 0
+      "issue_count": 0,
+      "revision_guidance": [],
+      "composition_verification_status": "revise",
+      "composition_issue_count": 1,
+      "composition_revision_guidance": [
+        "补充一条覆盖已登录状态展示和退出登录的 story。",
+        "重新检查注册、登录、登录状态之间是否能形成端到端集成测试闭环。"
+      ]
+    },
+    {
+      "iteration": 3,
+      "analysis_summary": "补充登录状态生命周期 story 后，注册、登录、反馈和退出登录形成完整闭环。",
+      "verification_status": "pass",
+      "issue_count": 0,
+      "revision_guidance": [],
+      "composition_verification_status": "pass",
+      "composition_issue_count": 0,
+      "composition_revision_guidance": []
     }
-  ]
+  ],
+  "verification_gate_summary": {
+    "blocking_issue_count": 0,
+    "nonblocking_suggestion_count": 0,
+    "explicit_capability_coverage": {
+      "required": [
+        "注册",
+        "登录"
+      ],
+      "covered": [
+        "注册",
+        "登录"
+      ],
+      "missing": [],
+      "covered_count": 2,
+      "required_count": 2
+    },
+    "decision_reason": "阻塞问题已清零，显式能力覆盖达到门槛，当前结果适合进入用户审核。"
+  },
+  "user_review_guidance": {
+    "summary_points": [
+      "目标：为网站提供可验证的账号注册、登录认证和登录状态反馈能力。",
+      "范围：账号注册入口、账号登录入口、登录状态反馈、退出登录",
+      "当前拆分为 1 个能力组、4 条 user story。"
+    ],
+    "suggestions": [
+      "确认第一版是否只支持邮箱或用户名加密码登录。",
+      "确认注册成功后是直接进入已登录状态，还是引导用户前往登录页。",
+      "确认退出登录后访问受保护页面时的跳转或提示规则。"
+    ],
+    "clarification_questions": []
+  }
 }

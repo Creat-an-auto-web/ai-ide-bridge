@@ -949,8 +949,9 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         latestNotification: {
           level: 'info',
           title: 'RequirementAnalysis',
-          message: '已接受当前需求分析结果。',
+          message: '已接受当前需求分析结果，需求分析阶段已锁定。后续测试生成或实现阶段尚未接入此面板。',
         },
+        finalSummary: '需求分析结果已接受。下一阶段（测试生成或实现编排）尚未接入当前面板。',
       }))
     },
     stopRequirementAnalysis() {
