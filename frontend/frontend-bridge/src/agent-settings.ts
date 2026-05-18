@@ -74,7 +74,7 @@ export interface RequirementAnalysisRunInputPayload {
   story_feedback?: StoryFeedbackPayload | null
   revision_focus: string[]
   previous_verification_summary: string | null
-  analysis_goal: 'content_review' | 'composition_review'
+  analysis_goal: 'content_review' | 'composition_review' | 'composition_revision'
   previous_analysis_result?: Partial<RequirementAnalysisResultPayload> | null
   execution_constraints: {
     disallow_new_dependencies: boolean

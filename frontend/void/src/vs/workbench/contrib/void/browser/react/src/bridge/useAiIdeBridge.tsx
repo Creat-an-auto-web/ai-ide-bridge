@@ -91,7 +91,7 @@ interface RequirementAnalysisContinuationOptions {
   appendedPrompt?: string | null
   globalFeedback?: GlobalFeedbackPayload | null
   storyFeedback?: StoryFeedbackPayload | null
-  analysisGoal?: 'content_review' | 'composition_review'
+  analysisGoal?: 'content_review' | 'composition_review' | 'composition_revision'
 }
 
 const cloneContinuationOptions = (
@@ -160,7 +160,16 @@ const toPreviousAnalysisResultSnapshot = (
     capability_groups: normalizeCapabilityGroupsForSnapshot(previousResult),
     warnings: previousResult.warnings,
     quality_checks: previousResult.quality_checks,
+    verification: previousResult.verification,
+    composition_verification: previousResult.composition_verification ?? null,
   }
+}
+
+const shouldContinueWithCompositionRevision = (
+  previousResult: RequirementAnalysisResultPayload | null | undefined,
+) => {
+  const compositionStatus = previousResult?.composition_verification?.status
+  return compositionStatus === 'revise' || compositionStatus === 'blocked'
 }
 
 const isNativeVoidHost = () =>
@@ -467,9 +476,18 @@ const toContinuationRevisionFocus = (
   storyFeedback?: StoryFeedbackPayload | null,
 ): string[] => {
   const focus: string[] = []
-  const compositionGuidance = previousResult?.composition_verification?.revision_guidance ?? []
-  if (compositionGuidance.length > 0) {
-    focus.push(...compositionGuidance)
+  const compositionVerification = previousResult?.composition_verification
+  if (compositionVerification?.revision_guidance?.length) {
+    focus.push(...compositionVerification.revision_guidance)
+  }
+  if (compositionVerification?.missing_story_topics?.length) {
+    focus.push(...compositionVerification.missing_story_topics.map((topic) => `补充缺失的组合能力：${topic}`))
+  }
+  if (compositionVerification?.composition_issues?.length) {
+    focus.push(...compositionVerification.composition_issues.map((issue) => issue.suggested_action || issue.message))
+  }
+  if (compositionVerification?.status === 'pass' && focus.length === 0) {
+    focus.push('在不破坏当前已通过组合闭环的前提下，继续增强端到端流程覆盖、边界场景、跨 story 依赖一致性和集成测试可验证性。')
   }
   if (globalFeedback?.feedback_text?.trim()) {
     focus.push(globalFeedback.feedback_text.trim())
@@ -556,7 +574,7 @@ const toRequirementAnalysisInputPayload = async (
     iteration,
     analysis_goal: analysisGoal,
     previous_analysis_result:
-      analysisGoal === 'composition_review'
+      analysisGoal === 'composition_review' || analysisGoal === 'composition_revision'
         ? toPreviousAnalysisResultSnapshot(previousResult)
         : null,
     execution_constraints: {
@@ -886,8 +904,12 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       }
     },
     async continueRequirementAnalysis() {
+      const previousResult = uiState.requirementAnalysisResult
       await this.runRequirementAnalysis(uiState.panel.composer.prompt, {
-        previousResult: uiState.requirementAnalysisResult,
+        previousResult,
+        analysisGoal: shouldContinueWithCompositionRevision(previousResult)
+          ? 'composition_revision'
+          : 'content_review',
       })
     },
     async continueRequirementAnalysisToCompositionReview() {
@@ -899,8 +921,12 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     async continueRequirementAnalysisWithFeedback(
       continuationOptions: RequirementAnalysisContinuationOptions = {},
     ) {
+      const previousResult = uiState.requirementAnalysisResult
       await this.runRequirementAnalysis(uiState.panel.composer.prompt, {
-        previousResult: uiState.requirementAnalysisResult,
+        previousResult,
+        analysisGoal: shouldContinueWithCompositionRevision(previousResult)
+          ? 'composition_revision'
+          : 'content_review',
         ...continuationOptions,
       })
     },

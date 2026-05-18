@@ -234,8 +234,8 @@ class RequirementAnalysisInput:
         if not isinstance(value, str) or not value.strip():
             return "content_review"
         normalized = value.strip()
-        if normalized not in {"content_review", "composition_review"}:
-            raise ValueError("analysis_goal must be content_review or composition_review")
+        if normalized not in {"content_review", "composition_review", "composition_revision"}:
+            raise ValueError("analysis_goal must be content_review, composition_review, or composition_revision")
         return normalized
 
     @staticmethod

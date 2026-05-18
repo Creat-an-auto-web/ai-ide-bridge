@@ -77,6 +77,8 @@ class RequirementAnalysisOrchestrator:
     ) -> RequirementAnalysisPackage:
         if analysis_input.analysis_goal == "composition_review":
             return await self._run_composition_review_only(settings, analysis_input, progress_callback)
+        if analysis_input.analysis_goal == "composition_revision":
+            return await self._run_composition_revision(settings, analysis_input, progress_callback)
 
         await emit_progress(
             progress_callback,
@@ -267,11 +269,187 @@ class RequirementAnalysisOrchestrator:
     ) -> RequirementAnalysisPackage:
         latest_result = self._analysis_result_from_input_snapshot(analysis_input)
         latest_verification = self._content_review_passed_verification()
+        iteration = max(1, analysis_input.iteration)
+        latest_composition_verification = await self._verify_composition(
+            settings,
+            analysis_input,
+            latest_result,
+            iteration,
+            progress_callback,
+        )
+        history = [
+            RequirementAnalysisIteration(
+                iteration=iteration,
+                analysis_summary=latest_result.requirement_spec.problem_statement,
+                verification_status=latest_verification.status,
+                issue_count=0,
+                revision_guidance=[],
+                composition_verification_status=latest_composition_verification.status,
+                composition_issue_count=len(latest_composition_verification.composition_issues),
+                composition_revision_guidance=list(latest_composition_verification.revision_guidance),
+            )
+        ]
+        if latest_composition_verification.status == "pass":
+            status = "paused_converged"
+        elif latest_composition_verification.status == "blocked":
+            status = "paused_blocked"
+        else:
+            status = "paused_stalled"
+        return self._build_package(
+            task_id=analysis_input.task_id,
+            status=status,
+            result=latest_result,
+            verification=latest_verification,
+            composition_verification=latest_composition_verification,
+            history=history,
+            analysis_input=analysis_input,
+        )
+
+    async def _run_composition_revision(
+        self,
+        settings: RequirementAnalysisAgentSettings,
+        analysis_input: RequirementAnalysisInput,
+        progress_callback: ProgressCallback | None = None,
+    ) -> RequirementAnalysisPackage:
+        if not isinstance(analysis_input.previous_analysis_result, dict):
+            raise ValueError("previous_analysis_result is required for composition_revision")
+
+        await emit_progress(
+            progress_callback,
+            RunProgressEvent(
+                type="status",
+                stage="building_workspace_summary",
+                message="正在整理工作区摘要和组合修订上下文",
+                metadata={"repo_root": analysis_input.repo_root},
+            ),
+        )
+        enriched_input = replace(
+            analysis_input,
+            workspace_summary=self._build_workspace_summary(analysis_input),
+        )
+        service = build_requirement_analysis_service(
+            settings,
+            progress_callback=progress_callback,
+        )
+        verification_service = build_requirement_verification_service(
+            settings,
+            progress_callback=progress_callback,
+        )
+        iteration = max(1, enriched_input.iteration)
+        await emit_progress(
+            progress_callback,
+            RunProgressEvent(
+                type="status",
+                stage="composition_revision_started",
+                message=f"开始第 {iteration} 轮组合问题驱动的需求修订",
+                metadata={"iteration": iteration, "revision_focus": enriched_input.revision_focus},
+            ),
+        )
+        try:
+            latest_result = await service.analyze(
+                enriched_input,
+                metadata={"orchestrator": self.name, "iteration": str(iteration), "analysis_goal": "composition_revision"},
+            )
+        except ValueError as error:
+            return self._build_format_invalid_package(enriched_input, error)
+
+        await emit_progress(
+            progress_callback,
+            RunProgressEvent(
+                type="status",
+                stage="verification_iteration_started",
+                message=f"开始第 {iteration} 轮组合修订后的单条 story 验证",
+                metadata={"iteration": iteration, "story_unit_count": len(latest_result.story_units)},
+            ),
+        )
+        latest_verification = await verification_service.verify(
+            RequirementVerificationInput(
+                analysis_input=enriched_input,
+                analysis_result=latest_result,
+                iteration=iteration,
+            ),
+            metadata={"orchestrator": self.name, "iteration": str(iteration), "analysis_goal": "composition_revision"},
+        )
+        await emit_progress(
+            progress_callback,
+            RunProgressEvent(
+                type="status",
+                stage="verification_iteration_completed",
+                message=f"第 {iteration} 轮组合修订后的单条验证结果：{latest_verification.status}",
+                metadata={
+                    "iteration": iteration,
+                    "verification_status": latest_verification.status,
+                    "issue_count": len(latest_verification.issues),
+                },
+            ),
+        )
+        if latest_verification.status != "pass":
+            history = [
+                RequirementAnalysisIteration(
+                    iteration=iteration,
+                    analysis_summary=latest_result.requirement_spec.problem_statement,
+                    verification_status=latest_verification.status,
+                    issue_count=len(latest_verification.issues),
+                    revision_guidance=list(latest_verification.revision_guidance),
+                )
+            ]
+            return self._build_package(
+                task_id=enriched_input.task_id,
+                status="paused_blocked" if latest_verification.status == "blocked" else "paused_stalled",
+                result=latest_result,
+                verification=latest_verification,
+                composition_verification=None,
+                history=history,
+                analysis_input=enriched_input,
+            )
+
+        latest_composition_verification = await self._verify_composition(
+            settings,
+            enriched_input,
+            latest_result,
+            iteration,
+            progress_callback,
+        )
+        history = [
+            RequirementAnalysisIteration(
+                iteration=iteration,
+                analysis_summary=latest_result.requirement_spec.problem_statement,
+                verification_status=latest_verification.status,
+                issue_count=len(latest_verification.issues),
+                revision_guidance=list(latest_verification.revision_guidance),
+                composition_verification_status=latest_composition_verification.status,
+                composition_issue_count=len(latest_composition_verification.composition_issues),
+                composition_revision_guidance=list(latest_composition_verification.revision_guidance),
+            )
+        ]
+        if latest_composition_verification.status == "pass":
+            status = "paused_converged"
+        elif latest_composition_verification.status == "blocked":
+            status = "paused_blocked"
+        else:
+            status = "paused_stalled"
+        return self._build_package(
+            task_id=enriched_input.task_id,
+            status=status,
+            result=latest_result,
+            verification=latest_verification,
+            composition_verification=latest_composition_verification,
+            history=history,
+            analysis_input=enriched_input,
+        )
+
+    async def _verify_composition(
+        self,
+        settings: RequirementAnalysisAgentSettings,
+        analysis_input: RequirementAnalysisInput,
+        latest_result: RequirementAnalysisResult,
+        iteration: int,
+        progress_callback: ProgressCallback | None,
+    ) -> RequirementCompositionVerificationResult:
         composition_verification_service = build_requirement_composition_verification_service(
             settings,
             progress_callback=progress_callback,
         )
-        iteration = max(1, analysis_input.iteration)
         await emit_progress(
             progress_callback,
             RunProgressEvent(
@@ -303,33 +481,7 @@ class RequirementAnalysisOrchestrator:
                 },
             ),
         )
-        history = [
-            RequirementAnalysisIteration(
-                iteration=iteration,
-                analysis_summary=latest_result.requirement_spec.problem_statement,
-                verification_status=latest_verification.status,
-                issue_count=0,
-                revision_guidance=[],
-                composition_verification_status=latest_composition_verification.status,
-                composition_issue_count=len(latest_composition_verification.composition_issues),
-                composition_revision_guidance=list(latest_composition_verification.revision_guidance),
-            )
-        ]
-        if latest_composition_verification.status == "pass":
-            status = "paused_converged"
-        elif latest_composition_verification.status == "blocked":
-            status = "paused_blocked"
-        else:
-            status = "paused_stalled"
-        return self._build_package(
-            task_id=analysis_input.task_id,
-            status=status,
-            result=latest_result,
-            verification=latest_verification,
-            composition_verification=latest_composition_verification,
-            history=history,
-            analysis_input=analysis_input,
-        )
+        return latest_composition_verification
 
     def _build_workspace_summary(
         self,

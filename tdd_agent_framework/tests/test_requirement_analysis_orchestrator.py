@@ -23,6 +23,7 @@ from tdd_agent_framework.agents.requirement_analysis import (
 )
 from tdd_agent_framework.agents.requirement_composition_verification import (
     CompositionCoverageAssessment,
+    CompositionIssue,
     RequirementCompositionVerificationResult,
 )
 from tdd_agent_framework.core import ModelTarget, ProviderResponse
@@ -633,6 +634,144 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
         self.assertEqual(len(fallback_groups), 1)
         self.assertEqual(fallback_groups[0].story_ids, ["story_final"])
         self.assertIn("capability_groups 缺失", package.warnings[0])
+
+    def test_composition_revision_updates_stories_then_runs_content_and_composition_checks(self) -> None:
+        orchestrator = RequirementAnalysisOrchestrator()
+
+        previous_result = self._make_analysis_result("组合验证前的问题陈述", "story_before")
+        revised_result = self._make_analysis_result("组合修订后的问题陈述", "story_after")
+        verification_pass = RequirementVerificationResult(
+            status="pass",
+            summary="组合修订后的单条 story 质量已达标。",
+            issues=[],
+            revision_guidance=[],
+            quality_score=VerificationQualityScore(
+                scope_clarity=92,
+                testability=92,
+                dependency_sanity=92,
+                story_granularity=90,
+            ),
+        )
+        composition_pass = RequirementCompositionVerificationResult(
+            status="pass",
+            summary="组合修订后已形成完整闭环。",
+            coverage_assessment=CompositionCoverageAssessment(
+                covers_primary_user_goal=True,
+                covers_permission_constraints=True,
+                covers_failure_handling=True,
+                covers_end_to_end_flow=True,
+            ),
+            composition_issues=[],
+            integration_test_scenarios=[],
+            redundant_story_ids=[],
+            missing_story_topics=[],
+            revision_guidance=[],
+        )
+
+        class FakeAnalysisService:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.last_input = None
+
+            async def analyze(self, analysis_input, trace_id=None, metadata=None):
+                self.calls += 1
+                self.last_input = analysis_input
+                return revised_result
+
+        class FakeVerificationService:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.last_input = None
+
+            async def verify(self, verification_input, trace_id=None, metadata=None):
+                self.calls += 1
+                self.last_input = verification_input
+                return verification_pass
+
+        class FakeCompositionVerificationService:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.last_input = None
+
+            async def verify(self, verification_input, trace_id=None, metadata=None):
+                self.calls += 1
+                self.last_input = verification_input
+                return composition_pass
+
+        analysis_service = FakeAnalysisService()
+        verification_service = FakeVerificationService()
+        composition_verification_service = FakeCompositionVerificationService()
+        previous_composition_verification = RequirementCompositionVerificationResult(
+            status="revise",
+            summary="缺少完整端到端闭环。",
+            coverage_assessment=CompositionCoverageAssessment(
+                covers_primary_user_goal=True,
+                covers_permission_constraints=False,
+                covers_failure_handling=False,
+                covers_end_to_end_flow=False,
+            ),
+            composition_issues=[
+                CompositionIssue(
+                    id="composition_issue_001",
+                    severity="medium",
+                    issue_type="missing_story",
+                    message="缺少失败反馈 story。",
+                    related_story_ids=["story_before"],
+                    related_capability_group_ids=["capability_group_1"],
+                    suggested_action="补充失败反馈闭环",
+                )
+            ],
+            integration_test_scenarios=[],
+            redundant_story_ids=[],
+            missing_story_topics=["失败反馈"],
+            revision_guidance=["补充失败反馈闭环"],
+        )
+
+        analysis_input = RequirementAnalysisInput(
+            task_id="task_001",
+            mode="repo_chat",
+            user_prompt="拆解任务导出需求",
+            repo_root="/workspace/project",
+            workspace_summary=WorkspaceSummary(),
+            analysis_goal="composition_revision",
+            iteration=3,
+            previous_verification_summary=previous_composition_verification.summary,
+            revision_focus=list(previous_composition_verification.revision_guidance),
+            previous_analysis_result={
+                "requirement_spec": previous_result.requirement_spec.__dict__,
+                "story_units": [story.__dict__ for story in previous_result.story_units],
+                "capability_groups": [group.__dict__ for group in previous_result.capability_groups],
+                "warnings": previous_result.warnings,
+                "quality_checks": previous_result.quality_checks.__dict__,
+                "composition_verification": previous_composition_verification.__dict__,
+            },
+            execution_constraints=ExecutionConstraints(),
+        )
+
+        with (
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_analysis_service",
+                return_value=analysis_service,
+            ),
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_verification_service",
+                return_value=verification_service,
+            ),
+            patch(
+                "tdd_agent_framework.orchestrators.requirement_analysis.build_requirement_composition_verification_service",
+                return_value=composition_verification_service,
+            ),
+        ):
+            package = asyncio.run(orchestrator.run(object(), analysis_input))
+
+        self.assertEqual(package.status, "paused_converged")
+        self.assertEqual(analysis_service.calls, 1)
+        self.assertEqual(verification_service.calls, 1)
+        self.assertEqual(composition_verification_service.calls, 1)
+        self.assertEqual(analysis_service.last_input.analysis_goal, "composition_revision")
+        self.assertEqual(analysis_service.last_input.revision_focus, ["补充失败反馈闭环"])
+        self.assertEqual(composition_verification_service.last_input.analysis_result.story_units[0].id, "story_after")
+        self.assertEqual(package.composition_verification.status, "pass")
 
     def test_content_verified_package_includes_review_summary(self) -> None:
         orchestrator = RequirementAnalysisOrchestrator()

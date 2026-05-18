@@ -152,6 +152,11 @@ export const AiIdeBridgePanel = () => {
   const verificationGateSummary = requirementAnalysisResult?.verification_gate_summary ?? null
   const userReviewGuidance = requirementAnalysisResult?.user_review_guidance ?? null
   const requirementPackageStatus = requirementAnalysisResult?.status ?? 'draft'
+  const hasPassedCompositionVerification = requirementAnalysisResult?.composition_verification?.status === 'pass'
+  const hasFailedCompositionVerification = (
+    requirementAnalysisResult?.composition_verification?.status === 'revise'
+    || requirementAnalysisResult?.composition_verification?.status === 'blocked'
+  )
   const canAcceptRequirementResult = (
     requirementPackageStatus === 'paused_converged'
   )
@@ -164,10 +169,21 @@ export const AiIdeBridgePanel = () => {
   )
   const canStartCompositionVerification = (
     !requirementAnalysisIsRunning
+    && !hasFailedCompositionVerification
     && (
       requirementPackageStatus === 'paused_content_verified'
       || requirementPackageStatus === 'paused_stalled'
     )
+  )
+  const canReturnToContentReview = (
+    !requirementAnalysisIsRunning
+    && Boolean(requirementAnalysisResult)
+    && hasFailedCompositionVerification
+  )
+  const canContinuePassedComposition = (
+    !requirementAnalysisIsRunning
+    && Boolean(requirementAnalysisResult)
+    && hasPassedCompositionVerification
   )
   const canRetryRequirementAnalysis = (
     !requirementAnalysisIsRunning
@@ -872,17 +888,58 @@ export const AiIdeBridgePanel = () => {
               >
                 接受当前结果
               </button>
-              <button
-                onClick={() => { void bridge.continueRequirementAnalysis() }}
-                disabled={!canContinueRequirementResult}
-                style={{
-                  ...buttonStyle,
-                  opacity: canContinueRequirementResult ? 1 : 0.55,
-                  background: canContinueRequirementResult ? 'rgba(78, 161, 255, 0.18)' : 'rgba(255, 255, 255, 0.03)',
-                }}
-              >
-                继续优化
-              </button>
+              {!hasPassedCompositionVerification && (
+                <button
+                  onClick={() => { void bridge.continueRequirementAnalysis() }}
+                  disabled={!canContinueRequirementResult}
+                  style={{
+                    ...buttonStyle,
+                    opacity: canContinueRequirementResult ? 1 : 0.55,
+                    background: canContinueRequirementResult ? 'rgba(78, 161, 255, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                  }}
+                >
+                  {hasFailedCompositionVerification ? '按组合问题继续优化' : '继续优化'}
+                </button>
+              )}
+              {hasPassedCompositionVerification && (
+                <button
+                  onClick={() => { void bridge.continueRequirementAnalysisWithFeedback({ analysisGoal: 'content_review' }) }}
+                  disabled={!canContinuePassedComposition}
+                  style={{
+                    ...buttonStyle,
+                    opacity: canContinuePassedComposition ? 1 : 0.55,
+                    background: canContinuePassedComposition ? 'rgba(78, 161, 255, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                  }}
+                >
+                  继续单条 story 优化
+                </button>
+              )}
+              {hasPassedCompositionVerification && (
+                <button
+                  onClick={() => { void bridge.continueRequirementAnalysisWithFeedback({ analysisGoal: 'composition_revision' }) }}
+                  disabled={!canContinuePassedComposition}
+                  style={{
+                    ...buttonStyle,
+                    opacity: canContinuePassedComposition ? 1 : 0.55,
+                    background: canContinuePassedComposition ? 'rgba(92, 196, 137, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                  }}
+                >
+                  继续组合优化
+                </button>
+              )}
+              {hasFailedCompositionVerification && (
+                <button
+                  onClick={() => { void bridge.continueRequirementAnalysisWithFeedback({ analysisGoal: 'content_review' }) }}
+                  disabled={!canReturnToContentReview}
+                  style={{
+                    ...buttonStyle,
+                    opacity: canReturnToContentReview ? 1 : 0.55,
+                    background: canReturnToContentReview ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.03)',
+                  }}
+                >
+                  返回单条 story 优化
+                </button>
+              )}
               <button
                 onClick={() => { void bridge.continueRequirementAnalysisToCompositionReview() }}
                 disabled={!canStartCompositionVerification}

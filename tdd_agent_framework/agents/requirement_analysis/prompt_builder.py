@@ -79,11 +79,18 @@ class RequirementAnalysisPromptBuilder:
         )
 
     def build_user_prompt(self, analysis_input: RequirementAnalysisInput) -> str:
+        previous_analysis_result = (
+            analysis_input.previous_analysis_result
+            if isinstance(analysis_input.previous_analysis_result, dict)
+            else None
+        )
         payload = {
             "task_id": analysis_input.task_id,
             "iteration": analysis_input.iteration,
+            "analysis_goal": analysis_input.analysis_goal,
             "mode": analysis_input.mode,
             "user_prompt": analysis_input.user_prompt,
+            "previous_analysis_result": previous_analysis_result,
             "workspace_summary": {
                 "languages": analysis_input.workspace_summary.languages,
                 "frameworks": analysis_input.workspace_summary.frameworks,
@@ -204,6 +211,10 @@ class RequirementAnalysisPromptBuilder:
             "15. 如果输入里提供了 global_feedback，必要时同步修正 requirement_spec 的 scope、out_of_scope、constraints 和 acceptance_criteria。\n"
             "16. 不要返回验证器或组合验证器风格的结果；禁止只返回 status、summary、issues、revision_guidance、coverage_assessment 这类审查结论对象。\n"
             "17. 你的输出必须同时包含 requirement_spec、capability_groups、story_units 三个顶层字段，缺一不可。\n\n"
+            "18. 当 analysis_goal 为 composition_revision 时，必须以 previous_analysis_result 中已有 story 为基线，围绕 revision_context 和上一轮 composition_verification 做增删改；不要无视上一版结果从零重写。\n"
+            "19. 如果上一轮 composition_verification.status 为 revise 或 blocked，应优先修复端到端闭环、缺失能力、story 依赖冲突、重复或割裂的 story。\n"
+            "20. 如果上一轮 composition_verification.status 为 pass，则这是组合增强优化：不要推翻已通过闭环，应在保持通过结果稳定的前提下，补强边界场景、跨 story 一致性、验收标准和集成测试可验证性。\n"
+            "21. composition_revision 必要时可以新增、合并、拆分或改写 story，但必须保持所有 story 单条仍可测试。\n\n"
             f"输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
             "输出最小结构示意：\n"
             f"{json.dumps(output_shape, ensure_ascii=False, separators=(',', ':'))}\n\n"
