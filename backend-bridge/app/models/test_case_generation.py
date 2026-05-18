@@ -41,10 +41,18 @@ class TestCaseGenerationSettingsPayload(BaseModel):
 
 class StoryUnitPayload(BaseModel):
     id: str
+    story_kind: str | None = None
     title: str
+    as_a: str | None = None
+    when_context: str | None = None
+    i_want: str | None = None
+    so_that: str | None = None
+    narrative: str | None = None
     actor: str
+    context: str | None = None
     goal: str
     business_value: str | None = None
+    business_outcome: str | None = None
     scope: list[str] = Field(default_factory=list)
     out_of_scope: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list)
@@ -64,6 +72,7 @@ class TestCaseGenerationExecutionConstraintsPayload(BaseModel):
 class TestCaseGenerationInputPayload(BaseModel):
     task_id: str
     user_prompt: str | None = None
+    plan: str | None = None
     story_units: list[StoryUnitPayload] = Field(default_factory=list)
     execution_constraints: TestCaseGenerationExecutionConstraintsPayload = Field(
         default_factory=TestCaseGenerationExecutionConstraintsPayload,

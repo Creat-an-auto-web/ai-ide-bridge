@@ -67,6 +67,7 @@ class TestCaseGenerationConstraints:
 class TestCaseGenerationInput:
     task_id: str
     user_prompt: str | None = None
+    plan: str | None = None
     story_units: list[StoryUnit] = field(default_factory=list)
     execution_constraints: TestCaseGenerationConstraints = field(
         default_factory=TestCaseGenerationConstraints,
@@ -82,6 +83,7 @@ class TestCaseGenerationInput:
         return cls(
             task_id=_require_str(data.get("task_id"), "task_id"),
             user_prompt=_optional_str(data.get("user_prompt"), "user_prompt"),
+            plan=_optional_str(data.get("plan"), "plan"),
             story_units=[StoryUnit.from_dict(item) for item in raw_story_units],
             execution_constraints=TestCaseGenerationConstraints.from_dict(
                 data.get("execution_constraints"),
@@ -151,12 +153,22 @@ class TestCaseQualityChecks:
 
 
 @dataclass(frozen=True)
+class TestCaseCompletionCheck:
+    status: str
+    is_complete: bool
+    summary: str
+    missing_items: list[str]
+    notes: list[str]
+
+
+@dataclass(frozen=True)
 class TestCaseGenerationResult:
     test_plan: str
     test_cases: list[GeneratedTestCase]
     coverage_summary: TestCoverageSummary
     warnings: list[str]
     quality_checks: TestCaseQualityChecks
+    completion_check: TestCaseCompletionCheck | None = None
 
 
 def build_coverage_summary(

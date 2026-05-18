@@ -309,13 +309,13 @@ export interface StoryFeedbackPayload {
 export const createDefaultRequirementAnalysisSettings = (): RequirementAnalysisAgentSettings => ({
   enabled: true,
   providerKind: 'openai_compatible',
-  providerName: 'openai',
-  model: '',
-  apiBase: 'https://api.openai.com/v1',
-  apiKey: '',
+  providerName: 'zhipu',
+  model: 'GLM-4.7-Flash',
+  apiBase: 'https://api.z.ai/api/paas/v4',
+  apiKey: '485fb46f5e5d479e86c9aeb7a6935404.FKHeuhM9ai8RqLZm',
   temperature: 0.2,
-  maxTokens: 3200,
-  timeoutSeconds: 90,
+  maxTokens: 4000,
+  timeoutSeconds: 60,
   maxRequestSeconds: 900,
   firstRoundMaxCapabilityGroups: 4,
   firstRoundMaxStoryUnits: 12,
@@ -366,7 +366,10 @@ export const normalizeRequirementAnalysisSettings = (
     providerName: toNonEmptyString(record.providerName, defaults.providerName),
     model: typeof record.model === 'string' ? record.model.trim() : defaults.model,
     apiBase: toNonEmptyString(record.apiBase, defaults.apiBase),
-    apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
+    apiKey:
+      typeof record.apiKey === 'string' && record.apiKey.trim().length > 0
+        ? record.apiKey
+        : defaults.apiKey,
     temperature: toFiniteNumber(record.temperature, defaults.temperature),
     maxTokens: Math.max(1, Math.round(toFiniteNumber(record.maxTokens, defaults.maxTokens))),
     timeoutSeconds: Math.max(1, toFiniteNumber(record.timeoutSeconds, defaults.timeoutSeconds)),

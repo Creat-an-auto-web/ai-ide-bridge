@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -14,6 +15,26 @@ from app.services.openhands_engine import OpenHandsEngine
 from app.services.requirement_analysis_service import RequirementAnalysisBackendService
 from app.services.test_case_generation_service import TestCaseGenerationBackendService
 from app.services.task_service import TaskService
+
+
+def _load_local_env() -> None:
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.exists():
+        return
+
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if key:
+            os.environ.setdefault(key, value)
+
+
+_load_local_env()
 
 
 @asynccontextmanager

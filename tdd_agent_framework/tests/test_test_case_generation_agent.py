@@ -6,6 +6,7 @@ import unittest
 from tdd_agent_framework.agents.test_case_generation import (
     TestCaseGenerationAgent,
     TestCaseGenerationInput,
+    TestCaseGenerationParser,
     TestCaseGenerationValidationError,
 )
 from tdd_agent_framework.core import AgentRunContext, ModelTarget, ProviderResponse
@@ -29,10 +30,17 @@ def make_input() -> TestCaseGenerationInput:
             "story_units": [
                 {
                     "id": "story_refresh_success",
+                    "story_kind": "user_outcome",
                     "title": "过期 token 自动刷新",
+                    "as_a": "已登录用户",
+                    "when_context": "访问接口时 access token 已过期",
+                    "i_want": "系统自动刷新 access token",
+                    "so_that": "我不用重新登录也能继续使用功能",
+                    "narrative": "作为已登录用户，当访问接口时 access token 已过期，我想让系统自动刷新 access token，以便不用重新登录也能继续使用功能。",
                     "actor": "已登录用户",
                     "goal": "在 token 过期后自动获取新 token",
                     "business_value": "减少登录中断",
+                    "business_outcome": "用户可无感继续操作",
                     "scope": ["token expiry detection"],
                     "out_of_scope": [],
                     "acceptance_criteria": [
@@ -57,6 +65,40 @@ def make_input() -> TestCaseGenerationInput:
 
 
 class TestCaseGenerationAgentTest(unittest.TestCase):
+    def test_parser_accepts_json_wrapped_in_markdown(self) -> None:
+        parser = TestCaseGenerationParser()
+        response = ProviderResponse(
+            raw_text="""```json
+            {
+              "test_plan": "覆盖正向、边界和失败路径。",
+              "test_cases": [
+                {
+                  "id": "tc_refresh_success_positive",
+                  "story_id": "story_refresh_success",
+                  "title": "refresh 正向成功",
+                  "level": "unit",
+                  "category": "positive",
+                  "purpose": "验证 token 过期后可以成功刷新",
+                  "preconditions": ["refresh token 有效"],
+                  "test_input": {"access_token_expired": true, "refresh_token_valid": true},
+                  "steps": ["触发请求", "执行刷新流程", "读取 token 存储"],
+                  "expected_result": "返回新 token 并写回存储",
+                  "acceptance_criteria_refs": ["新 token 会写回存储"],
+                  "priority": "high",
+                  "automatable": true
+                }
+              ],
+              "warnings": []
+            }
+            ```""",
+            parsed_json=None,
+        )
+
+        result = parser.parse(response, expected_story_units=make_input().story_units)
+
+        self.assertEqual(result.test_plan, "覆盖正向、边界和失败路径。")
+        self.assertEqual(len(result.test_cases), 1)
+
     def test_returns_valid_result(self) -> None:
         payload = {
             "test_plan": "按 story 覆盖正向、边界和失败路径。",

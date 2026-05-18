@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from tdd_agent_framework.core import ProviderResponse
 
@@ -13,17 +14,36 @@ from .models import (
 
 
 class TestCaseGenerationParser:
+    @staticmethod
+    def _load_payload(response: ProviderResponse) -> dict:
+        if response.parsed_json is not None:
+            if isinstance(response.parsed_json, dict):
+                return response.parsed_json
+            raise ValueError("provider output must be a JSON object")
+
+        raw_text = response.raw_text.strip()
+        if not raw_text:
+            raise ValueError("provider output is empty")
+
+        try:
+            payload = json.loads(raw_text)
+        except json.JSONDecodeError:
+            match = re.search(r"\{[\s\S]*\}", raw_text)
+            if match is None:
+                raise
+            payload = json.loads(match.group(0))
+
+        if not isinstance(payload, dict):
+            raise ValueError("provider output must be a JSON object")
+        return payload
+
     def parse(
         self,
         response: ProviderResponse,
         *,
         expected_story_units,
     ) -> TestCaseGenerationResult:
-        payload = response.parsed_json
-        if payload is None:
-            payload = json.loads(response.raw_text)
-        if not isinstance(payload, dict):
-            raise ValueError("provider output must be a JSON object")
+        payload = self._load_payload(response)
 
         test_plan = payload.get("test_plan")
         if not isinstance(test_plan, str) or not test_plan.strip():

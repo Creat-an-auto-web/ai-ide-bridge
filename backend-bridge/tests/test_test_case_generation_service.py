@@ -36,13 +36,21 @@ class TestCaseGenerationBackendServiceTest(unittest.IsolatedAsyncioTestCase):
                 "input": {
                     "task_id": "task_001",
                     "user_prompt": "生成测试用例",
+                    "plan": "覆盖正向、边界、负向场景",
                     "story_units": [
                         {
                             "id": "story_1",
+                            "story_kind": "user_outcome",
                             "title": "Story 1",
+                            "as_a": "用户",
+                            "when_context": "当触发关键流程时",
+                            "i_want": "完成目标",
+                            "so_that": "获得价值",
+                            "narrative": "作为用户，当触发关键流程时，我想完成目标，以便获得价值。",
                             "actor": "用户",
                             "goal": "目标",
                             "business_value": "价值",
+                            "business_outcome": "获得价值",
                             "scope": ["scope_1"],
                             "out_of_scope": [],
                             "acceptance_criteria": ["ac1", "ac2", "ac3"],
@@ -89,6 +97,7 @@ class TestCaseGenerationBackendServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["test_plan"], "覆盖正向、边界、负向")
         self.assertIsNotNone(orchestrator.called_args)
         self.assertEqual(orchestrator.called_args[1].task_id, "task_001")
+        self.assertEqual(orchestrator.called_args[1].plan, "覆盖正向、边界、负向场景")
 
 
 if __name__ == "__main__":
