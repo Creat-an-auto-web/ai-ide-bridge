@@ -1,0 +1,15 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "95286ab4deff4f70026794b2f6f5e203304120d9",
+  "prompts": {},
+  "humans": {
+    "h_5ad3b0b3a1d0cf": {
+      "author": "Rcb725"
+    },
+    "h_71457205b507dd": {
+      "author": "Rcb725 <ricebean725@gmail.com>"
+    }
+  }
+}
