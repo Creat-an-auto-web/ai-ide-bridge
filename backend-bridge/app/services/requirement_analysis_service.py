@@ -19,6 +19,10 @@ from tdd_agent_framework.agents.requirement_analysis import (  # noqa: E402
     WorkspaceSummary,
     ExecutionConstraints,
 )
+from tdd_agent_framework.agents.requirement_feedback import (  # noqa: E402
+    GlobalFeedback,
+    StoryFeedback,
+)
 from tdd_agent_framework.core import RunProgressEvent  # noqa: E402
 from tdd_agent_framework.orchestrators import RequirementAnalysisOrchestrator  # noqa: E402
 
@@ -41,9 +45,21 @@ class RequirementAnalysisBackendService:
             diagnostics=list(payload.input.diagnostics),
             recent_test_failures=list(payload.input.recent_test_failures),
             git_diff_summary=payload.input.git_diff_summary,
+            global_feedback=(
+                GlobalFeedback.from_dict(self._normalize_global_feedback(payload))
+                if payload.input.global_feedback is not None
+                else None
+            ),
+            story_feedback=(
+                StoryFeedback.from_dict(self._normalize_story_feedback(payload))
+                if payload.input.story_feedback is not None
+                else None
+            ),
             revision_focus=list(payload.input.revision_focus),
             previous_verification_summary=payload.input.previous_verification_summary,
             iteration=payload.input.iteration,
+            analysis_goal=payload.input.analysis_goal,
+            previous_analysis_result=payload.input.previous_analysis_result,
             execution_constraints=ExecutionConstraints.from_dict(
                 payload.input.execution_constraints.model_dump()
             ),
@@ -102,9 +118,21 @@ class RequirementAnalysisBackendService:
                 diagnostics=list(payload.input.diagnostics),
                 recent_test_failures=list(payload.input.recent_test_failures),
                 git_diff_summary=payload.input.git_diff_summary,
+                global_feedback=(
+                    GlobalFeedback.from_dict(self._normalize_global_feedback(payload))
+                    if payload.input.global_feedback is not None
+                    else None
+                ),
+                story_feedback=(
+                    StoryFeedback.from_dict(self._normalize_story_feedback(payload))
+                    if payload.input.story_feedback is not None
+                    else None
+                ),
                 revision_focus=list(payload.input.revision_focus),
                 previous_verification_summary=payload.input.previous_verification_summary,
                 iteration=payload.input.iteration,
+                analysis_goal=payload.input.analysis_goal,
+                previous_analysis_result=payload.input.previous_analysis_result,
                 execution_constraints=ExecutionConstraints.from_dict(
                     payload.input.execution_constraints.model_dump()
                 ),
@@ -116,9 +144,11 @@ class RequirementAnalysisBackendService:
             )
             result_payload = asdict(result)
             result_message = {
+                "paused_content_verified": "需求内容验证已通过，等待用户审核后进入组合验证",
                 "paused_converged": "需求分析已收敛，等待用户决定是否接受或继续优化",
                 "paused_stalled": "需求分析已暂停，等待用户决定是否继续优化",
                 "paused_blocked": "需求分析已阻塞，等待用户提供更多信息或人工介入",
+                "paused_format_invalid": "需求分析格式校验失败，等待用户选择重试或人工介入",
             }.get(result.status, "需求分析完成")
             await event_callback(
                 {
@@ -137,3 +167,25 @@ class RequirementAnalysisBackendService:
                 await heartbeat_task
             except asyncio.CancelledError:
                 pass
+
+    def _normalize_global_feedback(self, payload: RequirementAnalysisRunRequest) -> dict:
+        feedback = payload.input.global_feedback
+        if feedback is None:
+            raise ValueError("global_feedback is required")
+        data = feedback.model_dump()
+        if not data.get("package_id"):
+            data["package_id"] = payload.input.task_id
+        if not data.get("author_role"):
+            data["author_role"] = "user"
+        return data
+
+    def _normalize_story_feedback(self, payload: RequirementAnalysisRunRequest) -> dict:
+        feedback = payload.input.story_feedback
+        if feedback is None:
+            raise ValueError("story_feedback is required")
+        data = feedback.model_dump()
+        if not data.get("package_id"):
+            data["package_id"] = payload.input.task_id
+        if not data.get("author_role"):
+            data["author_role"] = "user"
+        return data

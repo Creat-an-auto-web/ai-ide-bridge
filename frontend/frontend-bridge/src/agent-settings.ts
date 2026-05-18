@@ -10,6 +10,13 @@ export interface RequirementAnalysisAgentSettings {
   temperature: number
   maxTokens: number
   timeoutSeconds: number
+  maxRequestSeconds: number
+  firstRoundMaxCapabilityGroups: number | null
+  firstRoundMaxStoryUnits: number | null
+  secondRoundMaxCapabilityGroups: number | null
+  secondRoundMaxStoryUnits: number | null
+  laterRoundMaxCapabilityGroups: number | null
+  laterRoundMaxStoryUnits: number | null
 }
 
 export interface RequirementAnalysisAgentSettingsSummary {
@@ -32,6 +39,13 @@ export interface RequirementAnalysisAgentSettingsPayload {
   temperature: number
   max_tokens: number
   timeout_seconds: number
+  max_request_seconds: number
+  first_round_max_capability_groups: number | null
+  first_round_max_story_units: number | null
+  second_round_max_capability_groups: number | null
+  second_round_max_story_units: number | null
+  later_round_max_capability_groups: number | null
+  later_round_max_story_units: number | null
 }
 
 export interface RequirementAnalysisAgentSettingsDisplayPayload
@@ -60,11 +74,13 @@ export interface RequirementAnalysisRunInputPayload {
   story_feedback?: StoryFeedbackPayload | null
   revision_focus: string[]
   previous_verification_summary: string | null
+  analysis_goal: 'content_review' | 'composition_review'
+  previous_analysis_result?: Partial<RequirementAnalysisResultPayload> | null
   execution_constraints: {
     disallow_new_dependencies: boolean
     preserve_public_api: boolean
-    max_capability_groups: number
-    max_story_units: number
+    max_capability_groups: number | null
+    max_story_units: number | null
   }
 }
 
@@ -76,6 +92,8 @@ export interface RequirementAnalysisResultPayload {
     | 'verified'
     | 'blocked'
     | 'paused_converged'
+    | 'paused_content_verified'
+    | 'paused_format_invalid'
     | 'paused_stalled'
     | 'paused_blocked'
     | 'accepted'
@@ -195,6 +213,23 @@ export interface RequirementAnalysisResultPayload {
     composition_issue_count?: number
     composition_revision_guidance?: string[]
   }>
+  verification_gate_summary?: {
+    blocking_issue_count: number
+    nonblocking_suggestion_count: number
+    explicit_capability_coverage: {
+      required: string[]
+      covered: string[]
+      missing: string[]
+      covered_count: number
+      required_count: number
+    }
+    decision_reason: string
+  }
+  user_review_guidance?: {
+    summary_points: string[]
+    suggestions: string[]
+    clarification_questions: string[]
+  }
 }
 
 export interface RequirementAnalysisStreamEvent {
@@ -281,6 +316,13 @@ export const createDefaultRequirementAnalysisSettings = (): RequirementAnalysisA
   temperature: 0.2,
   maxTokens: 3200,
   timeoutSeconds: 90,
+  maxRequestSeconds: 900,
+  firstRoundMaxCapabilityGroups: 4,
+  firstRoundMaxStoryUnits: 12,
+  secondRoundMaxCapabilityGroups: 6,
+  secondRoundMaxStoryUnits: 24,
+  laterRoundMaxCapabilityGroups: null,
+  laterRoundMaxStoryUnits: null,
 })
 
 const toFiniteNumber = (value: unknown, fallback: number) => {
@@ -288,6 +330,17 @@ const toFiniteNumber = (value: unknown, fallback: number) => {
     return fallback
   }
   return value
+}
+
+const toNullablePositiveInteger = (value: unknown, fallback: number | null) => {
+  if (value == null) {
+    return null
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback
+  }
+  const rounded = Math.round(value)
+  return rounded > 0 ? rounded : fallback
 }
 
 const toNonEmptyString = (value: unknown, fallback: string) => {
@@ -317,6 +370,31 @@ export const normalizeRequirementAnalysisSettings = (
     temperature: toFiniteNumber(record.temperature, defaults.temperature),
     maxTokens: Math.max(1, Math.round(toFiniteNumber(record.maxTokens, defaults.maxTokens))),
     timeoutSeconds: Math.max(1, toFiniteNumber(record.timeoutSeconds, defaults.timeoutSeconds)),
+    maxRequestSeconds: Math.max(1, toFiniteNumber(record.maxRequestSeconds, defaults.maxRequestSeconds)),
+    firstRoundMaxCapabilityGroups: toNullablePositiveInteger(
+      record.firstRoundMaxCapabilityGroups,
+      defaults.firstRoundMaxCapabilityGroups,
+    ),
+    firstRoundMaxStoryUnits: toNullablePositiveInteger(
+      record.firstRoundMaxStoryUnits,
+      defaults.firstRoundMaxStoryUnits,
+    ),
+    secondRoundMaxCapabilityGroups: toNullablePositiveInteger(
+      record.secondRoundMaxCapabilityGroups,
+      defaults.secondRoundMaxCapabilityGroups,
+    ),
+    secondRoundMaxStoryUnits: toNullablePositiveInteger(
+      record.secondRoundMaxStoryUnits,
+      defaults.secondRoundMaxStoryUnits,
+    ),
+    laterRoundMaxCapabilityGroups: toNullablePositiveInteger(
+      record.laterRoundMaxCapabilityGroups,
+      defaults.laterRoundMaxCapabilityGroups,
+    ),
+    laterRoundMaxStoryUnits: toNullablePositiveInteger(
+      record.laterRoundMaxStoryUnits,
+      defaults.laterRoundMaxStoryUnits,
+    ),
   }
 }
 
@@ -349,6 +427,13 @@ export const toRequirementAnalysisAgentSettingsPayload = (
   temperature: settings.temperature,
   max_tokens: settings.maxTokens,
   timeout_seconds: settings.timeoutSeconds,
+  max_request_seconds: settings.maxRequestSeconds,
+  first_round_max_capability_groups: settings.firstRoundMaxCapabilityGroups,
+  first_round_max_story_units: settings.firstRoundMaxStoryUnits,
+  second_round_max_capability_groups: settings.secondRoundMaxCapabilityGroups,
+  second_round_max_story_units: settings.secondRoundMaxStoryUnits,
+  later_round_max_capability_groups: settings.laterRoundMaxCapabilityGroups,
+  later_round_max_story_units: settings.laterRoundMaxStoryUnits,
 })
 
 export const toRequirementAnalysisAgentSettingsDisplayPayload = (

@@ -63,8 +63,10 @@ class RequirementAnalysisQualityChecker:
             and not set(result.requirement_spec.scope).intersection(result.requirement_spec.out_of_scope),
             has_testable_ac=self._has_testable_ac(result),
             dependency_graph_valid=True,
-            story_count_within_limit=len(result.story_units)
-            <= analysis_input.execution_constraints.max_story_units,
+            story_count_within_limit=(
+                analysis_input.execution_constraints.max_story_units is None
+                or len(result.story_units) <= analysis_input.execution_constraints.max_story_units
+            ),
         )
 
         if not quality_checks.story_count_within_limit:
@@ -118,11 +120,15 @@ class RequirementAnalysisQualityChecker:
                 raise RequirementAnalysisValidationError(
                     f"story user story fields are inconsistent with legacy aliases: {story.id}",
                 )
-            if not story.narrative.startswith("As a ") or ", when " not in story.narrative or ", I want " not in story.narrative:
+            if (
+                not story.narrative.startswith("作为")
+                or "，当" not in story.narrative
+                or "时，我希望" not in story.narrative
+            ):
                 raise RequirementAnalysisValidationError(
                     f"story narrative must follow four-part user story format: {story.id}",
                 )
-            if story.so_that and ", so that " not in story.narrative:
+            if story.so_that and "，从而" not in story.narrative:
                 raise RequirementAnalysisValidationError(
                     f"story narrative must include so_that clause when provided: {story.id}",
                 )
@@ -142,7 +148,10 @@ class RequirementAnalysisQualityChecker:
                 warnings.append(
                     f"story {story.id} has {len(story.acceptance_criteria)} acceptance criteria; recommended range is 3-7",
                 )
-        if len(story_units) > analysis_input.execution_constraints.max_story_units:
+        if (
+            analysis_input.execution_constraints.max_story_units is not None
+            and len(story_units) > analysis_input.execution_constraints.max_story_units
+        ):
             raise RequirementAnalysisValidationError(
                 "story_units count exceeds execution_constraints.max_story_units",
             )
@@ -157,7 +166,10 @@ class RequirementAnalysisQualityChecker:
     ) -> None:
         if not capability_groups:
             raise RequirementAnalysisValidationError("capability_groups must be a non-empty list")
-        if len(capability_groups) > analysis_input.execution_constraints.max_capability_groups:
+        if (
+            analysis_input.execution_constraints.max_capability_groups is not None
+            and len(capability_groups) > analysis_input.execution_constraints.max_capability_groups
+        ):
             raise RequirementAnalysisValidationError(
                 "capability_groups count exceeds execution_constraints.max_capability_groups",
             )

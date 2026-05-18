@@ -72,7 +72,7 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
                 "when_context": "我的 access token 已过期但 refresh token 仍有效",
                 "i_want": "系统自动获取并写回新的 access token",
                 "so_that": "我不需要重新登录也能继续完成当前操作",
-                "narrative": "As a 已登录用户, when 我的 access token 已过期但 refresh token 仍有效, I want 系统自动获取并写回新的 access token, so that 我不需要重新登录也能继续完成当前操作。",
+                "narrative": "作为已登录用户，当我的 access token 已过期但 refresh token 仍有效时，我希望系统自动获取并写回新的 access token，从而我不需要重新登录也能继续完成当前操作。",
                 "actor": "已登录用户",
                 "goal": "系统自动获取并写回新的 access token",
                 "business_value": "我不需要重新登录也能继续完成当前操作",
@@ -98,7 +98,7 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
                 "when_context": "我的 token 刷新流程失败或 refresh token 无效",
                 "i_want": "系统终止当前会话并清理本地登录状态",
                 "so_that": "我不会继续停留在错误的登录状态中",
-                "narrative": "As a 已登录用户, when 我的 token 刷新流程失败或 refresh token 无效, I want 系统终止当前会话并清理本地登录状态, so that 我不会继续停留在错误的登录状态中。",
+                "narrative": "作为已登录用户，当我的 token 刷新流程失败或 refresh token 无效时，我希望系统终止当前会话并清理本地登录状态，从而我不会继续停留在错误的登录状态中。",
                 "actor": "已登录用户",
                 "goal": "系统终止当前会话并清理本地登录状态",
                 "business_value": "我不会继续停留在错误的登录状态中",
@@ -136,7 +136,7 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
         self.assertTrue(result.quality_checks.story_count_within_limit)
         self.assertEqual(
             result.story_units[0].narrative,
-            "As a 已登录用户, when 我的 access token 已过期但 refresh token 仍有效, I want 系统自动获取并写回新的 access token, so that 我不需要重新登录也能继续完成当前操作.",
+            "作为已登录用户，当我的 access token 已过期但 refresh token 仍有效时，我希望系统自动获取并写回新的 access token，从而我不需要重新登录也能继续完成当前操作。",
         )
 
     def test_normalizes_narrative_from_structured_fields(self) -> None:
@@ -167,7 +167,7 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
                 "when_context": "我已经在任务记录列表中设置筛选条件",
                 "i_want": "导出当前筛选结果为 CSV 文件",
                 "so_that": "我可以将审计数据用于汇报和离线分析",
-                "narrative": "As a 仓库管理员, when 已设置筛选条件时, I want 把结果导出成 CSV, so that 后续方便分析。",
+                "narrative": "作为仓库管理员，当已设置筛选条件时，我希望把结果导出成 CSV，从而后续方便分析。",
                 "actor": "仓库管理员",
                 "goal": "导出当前筛选结果为 CSV 文件",
                 "business_value": "我可以将审计数据用于汇报和离线分析",
@@ -197,8 +197,258 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
 
         self.assertEqual(
             result.story_units[0].narrative,
-            "As a 仓库管理员, when 我已经在任务记录列表中设置筛选条件, I want 导出当前筛选结果为 CSV 文件, so that 我可以将审计数据用于汇报和离线分析.",
+            "作为仓库管理员，当我已经在任务记录列表中设置筛选条件时，我希望导出当前筛选结果为 CSV 文件，从而我可以将审计数据用于汇报和离线分析。",
         )
+
+    def test_backfills_missing_story_scope_and_test_focus_from_requirement_context(self) -> None:
+        payload = {
+        "requirement_spec": {
+            "task_id": "task_001",
+            "version": 1,
+            "problem_statement": "需要补齐模型偶发遗漏的结构字段。",
+            "product_goal": "即使输出轻微缺字段也能继续验证闭环。",
+            "scope": ["export current filtered records", "download csv artifact"],
+            "out_of_scope": [],
+            "constraints": [],
+            "assumptions": [],
+            "interfaces_or_contracts": [],
+            "acceptance_criteria": [
+                "story scope 会被补齐",
+                "test focus 会有最小保底值",
+                "结果可继续进入后续验证",
+            ],
+            "decomposition_strategy": "单 story 保底",
+        },
+        "story_units": [
+            {
+                "id": "S1",
+                "story_kind": "user_outcome",
+                "title": "仓库管理员可以导出当前筛选后的任务记录用于审计汇报",
+                "as_a": "仓库管理员",
+                "when_context": "我已经在任务记录列表中设置筛选条件并准备发起审计汇报",
+                "i_want": "导出当前筛选结果为 CSV 文件",
+                "so_that": "我可以将审计数据提供给外部汇报和离线分析流程",
+                "narrative": "作为仓库管理员，当我已经在任务记录列表中设置筛选条件并准备发起审计汇报时，我希望导出当前筛选结果为 CSV 文件，从而我可以将审计数据提供给外部汇报和离线分析流程。",
+                "acceptance_criteria": [
+                    "可以导出当前筛选结果",
+                    "导出文件格式正确",
+                    "导出结果包含筛选后的任务记录",
+                ],
+                "dependencies": [],
+                "priority": "high",
+                "risk": "medium",
+            }
+        ],
+        }
+        provider = FakeProvider(payload)
+        agent = RequirementAnalysisAgent(
+            provider=provider,
+            model_target=ModelTarget(provider="openai", model="gpt-5.4"),
+        )
+
+        result = asyncio.run(agent.run(make_input(), AgentRunContext(task_id="task_001")))
+
+        self.assertEqual(
+            result.story_units[0].scope,
+            ["export current filtered records", "download csv artifact"],
+        )
+        self.assertEqual(
+            result.story_units[0].test_focus,
+            ["可以导出当前筛选结果", "导出文件格式正确", "导出结果包含筛选后的任务记录"],
+        )
+
+    def test_backfills_missing_requirement_spec_from_top_level_and_story_units(self) -> None:
+        payload = {
+        "task_id": "task_001",
+        "user_prompt": "希望仓库管理员能导出当前筛选后的任务记录，并用于后续审计汇报。",
+        "story_units": [
+            {
+                "id": "S1",
+                "story_kind": "user_outcome",
+                "title": "仓库管理员可以导出当前筛选后的任务记录用于审计汇报",
+                "as_a": "仓库管理员",
+                "when_context": "我已经在任务记录列表中设置筛选条件并准备发起审计汇报",
+                "i_want": "导出当前筛选结果为 CSV 文件",
+                "so_that": "我可以将审计数据提供给外部汇报和离线分析流程",
+                "narrative": "作为仓库管理员，当我已经在任务记录列表中设置筛选条件并准备发起审计汇报时，我希望导出当前筛选结果为 CSV 文件，从而我可以将审计数据提供给外部汇报和离线分析流程。",
+                "scope": ["export current filtered records", "download csv artifact"],
+                "acceptance_criteria": [
+                    "可以导出当前筛选结果",
+                    "导出文件格式正确",
+                    "导出结果包含筛选后的任务记录",
+                ],
+                "dependencies": [],
+                "priority": "high",
+                "risk": "medium",
+                "test_focus": ["导出主路径", "文件格式", "筛选条件保留"],
+            }
+        ],
+        }
+        provider = FakeProvider(payload)
+        agent = RequirementAnalysisAgent(
+            provider=provider,
+            model_target=ModelTarget(provider="openai", model="gpt-5.4"),
+        )
+
+        result = asyncio.run(agent.run(make_input(), AgentRunContext(task_id="task_001")))
+
+        self.assertEqual(
+            result.requirement_spec.problem_statement,
+            "希望仓库管理员能导出当前筛选后的任务记录，并用于后续审计汇报。",
+        )
+        self.assertEqual(
+            result.requirement_spec.scope,
+            ["export current filtered records", "download csv artifact"],
+        )
+        self.assertEqual(
+            result.requirement_spec.product_goal,
+            "围绕“仓库管理员可以导出当前筛选后的任务记录用于审计汇报”产出可验证的结构化需求结果。",
+        )
+
+    def test_normalizes_story_aliases_and_missing_minimum_fields(self) -> None:
+        payload = {
+        "requirementSpec": {
+            "taskId": "task_001",
+            "productGoal": "让仓库管理员可以稳定完成导出动作。",
+            "scope": ["export current filtered records"],
+            "acceptanceCriteria": [
+                "可以导出当前筛选结果",
+                "导出结果格式稳定",
+                "导出失败时有明确反馈",
+            ],
+        },
+        "stories": [
+            {
+                "title": "仓库管理员导出当前筛选结果",
+                "actor": "仓库管理员",
+                "context": "我已经在任务记录列表中设置筛选条件",
+                "goal": "导出当前筛选结果为 CSV 文件",
+            }
+        ],
+        "capabilityGroups": [
+            {
+                "title": "导出主流程",
+            }
+        ],
+        }
+        provider = FakeProvider(payload)
+        agent = RequirementAnalysisAgent(
+            provider=provider,
+            model_target=ModelTarget(provider="openai", model="gpt-5.4"),
+        )
+
+        result = asyncio.run(agent.run(make_input(), AgentRunContext(task_id="task_001")))
+
+        self.assertEqual(result.requirement_spec.task_id, "task_001")
+        self.assertEqual(result.story_units[0].id, "S1")
+        self.assertEqual(result.story_units[0].as_a, "仓库管理员")
+        self.assertEqual(result.story_units[0].when_context, "我已经在任务记录列表中设置筛选条件")
+        self.assertEqual(result.story_units[0].i_want, "导出当前筛选结果为 CSV 文件")
+        self.assertEqual(result.story_units[0].priority, "medium")
+        self.assertEqual(result.story_units[0].risk, "medium")
+        self.assertEqual(result.capability_groups[0].story_ids, ["S1"])
+
+    def test_unwraps_nested_result_payload(self) -> None:
+        payload = {
+        "result": {
+            "analysis_result": {
+                "task_id": "task_001",
+                "user_prompt": "希望仓库管理员能导出当前筛选后的任务记录。",
+                "stories": [
+                    {
+                        "title": "仓库管理员可以导出当前筛选后的任务记录用于审计汇报",
+                        "actor": "仓库管理员",
+                        "context": "我已经在任务记录列表中设置筛选条件并准备发起审计汇报",
+                        "goal": "导出当前筛选结果为 CSV 文件",
+                        "scope": ["export current filtered records"],
+                        "acceptance_criteria": [
+                            "可以导出当前筛选结果",
+                            "导出文件格式正确",
+                            "导出结果包含筛选后的任务记录",
+                        ],
+                    }
+                ],
+            }
+        }
+        }
+        provider = FakeProvider(payload)
+        agent = RequirementAnalysisAgent(
+            provider=provider,
+            model_target=ModelTarget(provider="openai", model="gpt-5.4"),
+        )
+
+        result = asyncio.run(agent.run(make_input(), AgentRunContext(task_id="task_001")))
+
+        self.assertEqual(result.requirement_spec.task_id, "task_001")
+        self.assertEqual(result.story_units[0].id, "S1")
+        self.assertEqual(result.analysis_summary.story_unit_count, 1)
+
+    def test_reports_missing_story_units_more_accurately(self) -> None:
+        payload = {
+        "requirement_spec": {
+            "task_id": "task_001",
+            "version": 1,
+            "problem_statement": "只有 spec，没有 stories。",
+            "product_goal": "说明错误信息应准确。",
+            "scope": ["scope_a"],
+            "out_of_scope": [],
+            "constraints": [],
+            "assumptions": [],
+            "interfaces_or_contracts": [],
+            "acceptance_criteria": ["a", "b", "c"],
+            "decomposition_strategy": "按单一 story 输出",
+        }
+        }
+        provider = FakeProvider(payload)
+        agent = RequirementAnalysisAgent(
+            provider=provider,
+            model_target=ModelTarget(provider="openai", model="gpt-5.4"),
+        )
+
+        with self.assertRaisesRegex(ValueError, "story_units must be a non-empty list"):
+            asyncio.run(agent.run(make_input(), AgentRunContext(task_id="task_001")))
+
+    def test_recovers_from_verifier_style_payload_using_analysis_input(self) -> None:
+        payload = {
+        "status": "revise",
+        "summary": "当前 story 边界不清晰，需要继续收敛。",
+        "issues": [
+            {
+                "id": "issue_1",
+                "severity": "high",
+                "type": "over_scoped",
+                "message": "当前输出缺少标准需求分析结构。",
+            }
+        ],
+        "revision_guidance": ["围绕核心业务目标重建最小 story 并保留修订上下文。"],
+        }
+        provider = FakeProvider(payload)
+        agent = RequirementAnalysisAgent(
+            provider=provider,
+            model_target=ModelTarget(provider="openai", model="gpt-5.4"),
+        )
+        analysis_input = RequirementAnalysisInput(
+            task_id="task_001",
+            mode="repo_chat",
+            user_prompt="为任务列表增加 CSV 导出能力，并确保权限和失败反馈合理。",
+            repo_root="/workspace/project",
+            workspace_summary=WorkspaceSummary(
+                languages=["python"],
+                frameworks=["pytest"],
+                key_modules=["app/tasks", "tests/tasks"],
+            ),
+            revision_focus=["补充权限控制 story", "补充失败反馈 story"],
+            previous_verification_summary="当前 story 边界不清晰，需要继续收敛。",
+            execution_constraints=ExecutionConstraints(max_story_units=4),
+        )
+
+        result = asyncio.run(agent.run(analysis_input, AgentRunContext(task_id="task_001")))
+
+        self.assertEqual(result.requirement_spec.task_id, "task_001")
+        self.assertEqual(result.analysis_summary.story_unit_count, 1)
+        self.assertTrue(result.story_units[0].title)
+        self.assertIn("未返回标准 RequirementAnalysis 结构", "\n".join(result.warnings))
+        self.assertEqual(result.capability_groups[0].story_ids, ["S1"])
 
     def test_rejects_cyclic_dependencies(self) -> None:
         payload = {
@@ -228,7 +478,7 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
                 "when_context": "我已经处于需要执行目标 A 的业务场景中",
                 "i_want": "完成目标 A 对应的单一业务能力",
                 "so_that": "我可以完成当前业务流程中的关键一步",
-                "narrative": "As a 注册用户, when 我已经处于需要执行目标 A 的业务场景中, I want 完成目标 A 对应的单一业务能力, so that 我可以完成当前业务流程中的关键一步。",
+                "narrative": "作为注册用户，当我已经处于需要执行目标 A 的业务场景中时，我希望完成目标 A 对应的单一业务能力，从而我可以完成当前业务流程中的关键一步。",
                 "actor": "注册用户",
                 "goal": "完成目标 A 对应的单一业务能力",
                 "business_value": "我可以完成当前业务流程中的关键一步",
@@ -254,7 +504,7 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
                 "when_context": "我已经处于需要执行目标 B 的业务场景中",
                 "i_want": "完成目标 B 对应的单一业务能力",
                 "so_that": "我可以推进当前业务流程的后续步骤",
-                "narrative": "As a 注册用户, when 我已经处于需要执行目标 B 的业务场景中, I want 完成目标 B 对应的单一业务能力, so that 我可以推进当前业务流程的后续步骤。",
+                "narrative": "作为注册用户，当我已经处于需要执行目标 B 的业务场景中时，我希望完成目标 B 对应的单一业务能力，从而我可以推进当前业务流程的后续步骤。",
                 "actor": "注册用户",
                 "goal": "完成目标 B 对应的单一业务能力",
                 "business_value": "我可以推进当前业务流程的后续步骤",
@@ -311,7 +561,7 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
                 "when_context": "我正在执行需要目标 1 的业务流程",
                 "i_want": "完成目标 1 对应的业务能力",
                 "so_that": "我可以推进当前流程",
-                "narrative": "As a 注册用户, when 我正在执行需要目标 1 的业务流程, I want 完成目标 1 对应的业务能力, so that 我可以推进当前流程。",
+                "narrative": "作为注册用户，当我正在执行需要目标 1 的业务流程时，我希望完成目标 1 对应的业务能力，从而我可以推进当前流程。",
                 "actor": "注册用户",
                 "goal": "完成目标 1 对应的业务能力",
                 "business_value": "我可以推进当前流程",
@@ -337,7 +587,7 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
                 "when_context": "我正在执行需要目标 2 的业务流程",
                 "i_want": "完成目标 2 对应的业务能力",
                 "so_that": "我可以推进当前流程的下一步",
-                "narrative": "As a 注册用户, when 我正在执行需要目标 2 的业务流程, I want 完成目标 2 对应的业务能力, so that 我可以推进当前流程的下一步。",
+                "narrative": "作为注册用户，当我正在执行需要目标 2 的业务流程时，我希望完成目标 2 对应的业务能力，从而我可以推进当前流程的下一步。",
                 "actor": "注册用户",
                 "goal": "完成目标 2 对应的业务能力",
                 "business_value": "我可以推进当前流程的下一步",

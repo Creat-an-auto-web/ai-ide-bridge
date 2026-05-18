@@ -91,6 +91,76 @@ interface RequirementAnalysisContinuationOptions {
   appendedPrompt?: string | null
   globalFeedback?: GlobalFeedbackPayload | null
   storyFeedback?: StoryFeedbackPayload | null
+  analysisGoal?: 'content_review' | 'composition_review'
+}
+
+const cloneContinuationOptions = (
+  options: RequirementAnalysisContinuationOptions,
+): RequirementAnalysisContinuationOptions => ({
+  previousResult: options.previousResult ?? null,
+  appendedPrompt: options.appendedPrompt ?? null,
+  globalFeedback: options.globalFeedback ?? null,
+  storyFeedback: options.storyFeedback ?? null,
+  analysisGoal: options.analysisGoal ?? 'content_review',
+})
+
+const uniqueNonEmptyStrings = (values: Array<string | null | undefined>): string[] => {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    const normalized = value?.trim()
+    if (!normalized || seen.has(normalized)) {
+      continue
+    }
+    seen.add(normalized)
+    result.push(normalized)
+  }
+  return result
+}
+
+const normalizeCapabilityGroupsForSnapshot = (
+  previousResult: RequirementAnalysisResultPayload,
+): RequirementAnalysisResultPayload['capability_groups'] => {
+  const alternateCapabilityGroups = (previousResult as { capabilityGroups?: RequirementAnalysisResultPayload['capability_groups'] }).capabilityGroups
+  if (Array.isArray(previousResult.capability_groups) && previousResult.capability_groups.length > 0) {
+    return previousResult.capability_groups
+  }
+  if (Array.isArray(alternateCapabilityGroups) && alternateCapabilityGroups.length > 0) {
+    return alternateCapabilityGroups
+  }
+
+  const stories = Array.isArray(previousResult.story_units) ? previousResult.story_units : []
+  if (stories.length === 0) {
+    return []
+  }
+  const storyScope = uniqueNonEmptyStrings(stories.flatMap((story) => story.scope ?? []))
+  const specScope = uniqueNonEmptyStrings(previousResult.requirement_spec?.scope ?? [])
+  const storyIds = uniqueNonEmptyStrings(stories.map((story) => story.id))
+  return [
+    {
+      id: 'capability_group_1',
+      title: '整体需求分组',
+      goal: '基于当前已通过的 user story 组合进入组合验证',
+      scope: storyScope.length > 0 ? storyScope : specScope.length > 0 ? specScope : ['当前需求范围'],
+      story_ids: storyIds,
+      priority: stories.some((story) => story.priority === 'high') ? 'high' : 'medium',
+    },
+  ]
+}
+
+const toPreviousAnalysisResultSnapshot = (
+  previousResult: RequirementAnalysisResultPayload | null | undefined,
+) => {
+  if (!previousResult) {
+    return null
+  }
+  return {
+    requirement_spec: previousResult.requirement_spec,
+    story_units: previousResult.story_units,
+    capability_groups: normalizeCapabilityGroupsForSnapshot(previousResult),
+    warnings: previousResult.warnings,
+    quality_checks: previousResult.quality_checks,
+  }
 }
 
 const isNativeVoidHost = () =>
@@ -369,6 +439,28 @@ const REQUIREMENT_ANALYSIS_MAX_TEST_FAILURES = 8
 const REQUIREMENT_ANALYSIS_MAX_GIT_DIFF_CHARS = 4000
 const REQUIREMENT_ANALYSIS_MAX_PREVIOUS_SUMMARY_CHARS = 1200
 
+const resolveIterationExecutionConstraints = (
+  settings: RequirementAnalysisAgentSettings,
+  iteration: number,
+) => {
+  if (iteration <= 1) {
+    return {
+      max_capability_groups: settings.firstRoundMaxCapabilityGroups,
+      max_story_units: settings.firstRoundMaxStoryUnits,
+    }
+  }
+  if (iteration === 2) {
+    return {
+      max_capability_groups: settings.secondRoundMaxCapabilityGroups,
+      max_story_units: settings.secondRoundMaxStoryUnits,
+    }
+  }
+  return {
+    max_capability_groups: settings.laterRoundMaxCapabilityGroups,
+    max_story_units: settings.laterRoundMaxStoryUnits,
+  }
+}
+
 const toContinuationRevisionFocus = (
   previousResult: RequirementAnalysisResultPayload | null | undefined,
   globalFeedback?: GlobalFeedbackPayload | null,
@@ -402,11 +494,19 @@ const toContinuationRevisionFocus = (
 
 const toRequirementAnalysisInputPayload = async (
   accessor: unknown,
+  settings: RequirementAnalysisAgentSettings,
   prompt: string,
   options: RequirementAnalysisContinuationOptions = {},
 ) => {
   const previousResult = options.previousResult ?? null
   const appendedPrompt = options.appendedPrompt?.trim() ?? ''
+  const analysisGoal = options.analysisGoal ?? 'content_review'
+  const iteration = previousResult
+    ? analysisGoal === 'composition_review'
+      ? Math.max(1, previousResult.iteration_count)
+      : Math.max(1, previousResult.iteration_count + 1)
+    : 1
+  const executionConstraints = resolveIterationExecutionConstraints(settings, iteration)
   const contextSource = createVoidRealContextSourceFromAccessor({
     accessor: accessor as never,
   })
@@ -416,9 +516,11 @@ const toRequirementAnalysisInputPayload = async (
   ])
 
   return {
-    task_id: typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `ra_${Math.random().toString(16).slice(2, 10)}`,
+    task_id:
+      previousResult?.task_id
+      ?? (typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `ra_${Math.random().toString(16).slice(2, 10)}`),
     mode: 'repo_chat',
     user_prompt: appendedPrompt
       ? `${prompt}\n\n[用户追加说明]\n${appendedPrompt}`
@@ -451,12 +553,17 @@ const toRequirementAnalysisInputPayload = async (
           ?? '',
         REQUIREMENT_ANALYSIS_MAX_PREVIOUS_SUMMARY_CHARS,
       ) || null,
-    iteration: previousResult ? Math.max(1, previousResult.iteration_count + 1) : 1,
+    iteration,
+    analysis_goal: analysisGoal,
+    previous_analysis_result:
+      analysisGoal === 'composition_review'
+        ? toPreviousAnalysisResultSnapshot(previousResult)
+        : null,
     execution_constraints: {
       disallow_new_dependencies: true,
       preserve_public_api: true,
-      max_capability_groups: 6,
-      max_story_units: 24,
+      max_capability_groups: executionConstraints.max_capability_groups,
+      max_story_units: executionConstraints.max_story_units,
     },
   }
 }
@@ -486,6 +593,8 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       : {}) ?? {}
   const entryRef = useRef<ReturnType<typeof attachVoidRealIdeSidebarFromAccessor> | null>(null)
   const requirementAnalysisSocketRef = useRef<WebSocket | null>(null)
+  const requirementAnalysisStopRequestedRef = useRef(false)
+  const requirementAnalysisLastRunOptionsRef = useRef<RequirementAnalysisContinuationOptions>({})
 
   const [uiState, setUiState] = useState<AiIdeBridgeUiState>({
     panel: emptyBridgeSidebarState(),
@@ -602,6 +711,9 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         return
       }
 
+      requirementAnalysisLastRunOptionsRef.current = cloneContinuationOptions(continuationOptions)
+      requirementAnalysisStopRequestedRef.current = false
+
       setUiState((prev) => ({
         ...prev,
         requirementAnalysisError: null,
@@ -617,6 +729,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       try {
         const inputPayload = await toRequirementAnalysisInputPayload(
           accessorRef.current,
+          uiState.requirementAnalysisSettings,
           nextPrompt,
           continuationOptions,
         )
@@ -642,6 +755,13 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           requirementAnalysisSocketRef.current = socket
 
           const finishWithError = (error: Error) => {
+            if (requirementAnalysisStopRequestedRef.current) {
+              if (!settled) {
+                settled = true
+                resolve()
+              }
+              return
+            }
             if (settled) {
               return
             }
@@ -725,12 +845,26 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           }
 
           socket.onerror = () => {
+            if (requirementAnalysisStopRequestedRef.current) {
+              if (!settled) {
+                settled = true
+                resolve()
+              }
+              return
+            }
             finishWithError(new Error('需求分析流式连接失败'))
           }
 
           socket.onclose = () => {
             if (requirementAnalysisSocketRef.current === socket) {
               requirementAnalysisSocketRef.current = null
+            }
+            if (requirementAnalysisStopRequestedRef.current) {
+              if (!settled) {
+                settled = true
+                resolve()
+              }
+              return
             }
             if (!settled) {
               finishWithError(new Error('需求分析流式连接已关闭'))
@@ -744,6 +878,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           requirementAnalysisError: error instanceof Error ? error.message : String(error),
         }))
       } finally {
+        requirementAnalysisStopRequestedRef.current = false
         setUiState((prev) => ({
           ...prev,
           requirementAnalysisIsRunning: false,
@@ -753,6 +888,12 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     async continueRequirementAnalysis() {
       await this.runRequirementAnalysis(uiState.panel.composer.prompt, {
         previousResult: uiState.requirementAnalysisResult,
+      })
+    },
+    async continueRequirementAnalysisToCompositionReview() {
+      await this.runRequirementAnalysis(uiState.panel.composer.prompt, {
+        previousResult: uiState.requirementAnalysisResult,
+        analysisGoal: 'composition_review',
       })
     },
     async continueRequirementAnalysisWithFeedback(
@@ -766,9 +907,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     async retryRequirementAnalysis() {
       await this.runRequirementAnalysis(
         uiState.requirementAnalysisLastPrompt ?? uiState.panel.composer.prompt,
-        {
-          previousResult: uiState.requirementAnalysisResult,
-        },
+        requirementAnalysisLastRunOptionsRef.current,
       )
     },
     acceptRequirementAnalysisResult() {
@@ -789,6 +928,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       }))
     },
     stopRequirementAnalysis() {
+      requirementAnalysisStopRequestedRef.current = true
       requirementAnalysisSocketRef.current?.close()
       requirementAnalysisSocketRef.current = null
       setUiState((prev) => ({

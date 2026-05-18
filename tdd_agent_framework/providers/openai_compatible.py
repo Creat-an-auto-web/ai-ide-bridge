@@ -68,14 +68,23 @@ class OpenAICompatibleProvider:
 
         for attempt in range(1, self.request_retry_attempts + 1):
             try:
-                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-                    async with client.stream("POST", url, json=payload, headers=headers) as response:
-                        raw_json, content = await self._read_response(
-                            response,
-                            agent_name=provider_request.agent_name,
-                        )
+                async with asyncio.timeout(self.config.max_request_seconds):
+                    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                        async with client.stream("POST", url, json=payload, headers=headers) as response:
+                            raw_json, content = await self._read_response(
+                                response,
+                                agent_name=provider_request.agent_name,
+                            )
                 last_connect_error = None
                 break
+            except TimeoutError as exc:
+                raise ProviderError(
+                    self._format_total_timeout_error(
+                        url=url,
+                        provider_request=provider_request,
+                        attempt=attempt,
+                    ),
+                ) from exc
             except httpx.HTTPStatusError as exc:
                 response = exc.response
                 if self._is_retryable_status(response.status_code) and attempt < self.request_retry_attempts:
@@ -183,16 +192,16 @@ class OpenAICompatibleProvider:
             "messages": messages,
             "temperature": provider_request.generation_config.temperature,
             "max_tokens": provider_request.generation_config.max_tokens,
-            "stream": provider_request.generation_config.response_format != "json_object",
+            "stream": True,
         }
         if provider_request.generation_config.response_format == "json_object":
             payload["response_format"] = {"type": "json_object"}
         return payload
 
     def _build_timeout(self, provider_request: ProviderRequest) -> httpx.Timeout:
-        # Structured json_object requests are non-streaming in this project, so a
-        # bounded read timeout gives us earlier retries instead of waiting for an
-        # upstream gateway timeout page.
+        # Requirement-analysis style requests can run long. We keep streaming on
+        # so upstream gateways see incremental bytes, but still enforce a bounded
+        # per-read timeout to surface stuck responses earlier.
         read_timeout: float | None = None
         if provider_request.generation_config.response_format == "json_object":
             read_timeout = max(self.config.timeout_seconds * 3, self.config.timeout_seconds + 120.0)
@@ -237,24 +246,81 @@ class OpenAICompatibleProvider:
 
     def _extract_content(self, raw_json: dict[str, Any]) -> str:
         choices = raw_json.get("choices")
-        if not isinstance(choices, list) or not choices:
-            raise ProviderError("provider response does not contain choices")
-        message = choices[0].get("message")
-        if not isinstance(message, dict):
-            raise ProviderError("provider response does not contain choices[0].message")
-        content = message.get("content")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message")
+            if isinstance(message, dict):
+                content = self._extract_content_value(message.get("content"))
+                if content:
+                    return content
+            text = choices[0].get("text")
+            if isinstance(text, str) and text.strip():
+                return text
+
+        output_text = raw_json.get("output_text")
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text
+
+        output = raw_json.get("output")
+        if isinstance(output, list):
+            content = self._extract_text_from_output_items(output)
+            if content:
+                return content
+
+        content = self._extract_content_value(raw_json.get("content"))
+        if content:
+            return content
+
+        raise ProviderError(
+            "provider response does not contain supported text content "
+            "(expected choices/message/content, choices/text, output_text, or output/content text)",
+        )
+
+    def _extract_content_value(self, content: Any) -> str:
         if isinstance(content, str):
             return content
         if isinstance(content, list):
             text_parts: list[str] = []
             for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    text = item.get("text")
-                    if isinstance(text, str):
-                        text_parts.append(text)
+                text = self._extract_text_from_content_item(item)
+                if text:
+                    text_parts.append(text)
             if text_parts:
                 return "\n".join(text_parts)
-        raise ProviderError("provider response message content is not a supported format")
+        return ""
+
+    def _extract_text_from_content_item(self, item: Any) -> str:
+        if isinstance(item, str):
+            return item
+        if not isinstance(item, dict):
+            return ""
+        if item.get("type") == "text":
+            text = item.get("text")
+            if isinstance(text, str):
+                return text
+            if isinstance(text, dict):
+                value = text.get("value")
+                if isinstance(value, str):
+                    return value
+        text = item.get("text")
+        if isinstance(text, str):
+            return text
+        return ""
+
+    def _extract_text_from_output_items(self, output: list[Any]) -> str:
+        text_parts: list[str] = []
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if isinstance(content, list):
+                extracted = self._extract_content_value(content)
+                if extracted:
+                    text_parts.append(extracted)
+                    continue
+            text = item.get("text")
+            if isinstance(text, str) and text.strip():
+                text_parts.append(text)
+        return "\n".join(part for part in text_parts if part.strip())
 
     async def _read_response(
         self,
@@ -381,6 +447,21 @@ class OpenAICompatibleProvider:
             f"read_timeout={self._read_timeout_label(provider_request)}, "
             f"attempt={attempt}/{self.request_retry_attempts}, "
             f"detail={detail})"
+        )
+
+    def _format_total_timeout_error(
+        self,
+        *,
+        url: str,
+        provider_request: ProviderRequest,
+        attempt: int,
+    ) -> str:
+        return (
+            "provider request failed: "
+            f"total request timeout while calling {provider_request.agent_name} model "
+            f"{provider_request.model_target.model} at {url} "
+            f"(max_request_seconds={self.config.max_request_seconds}s, "
+            f"attempt={attempt}/{self.request_retry_attempts})"
         )
 
     def _format_status_error(

@@ -41,6 +41,7 @@ class RequirementAnalysisAgent(
         data: RequirementAnalysisInput,
         context: AgentRunContext,
     ) -> ProviderRequest:
+        self._latest_analysis_input = data
         return ProviderRequest(
             agent_name=self.name,
             task_id=context.task_id,
@@ -57,7 +58,10 @@ class RequirementAnalysisAgent(
         )
 
     def parse_response(self, response) -> RequirementAnalysisResult:
-        return self.parser.parse(response)
+        return self.parser.parse(
+            response,
+            analysis_input=getattr(self, "_latest_analysis_input", None),
+        )
 
     def finalize_output(
         self,

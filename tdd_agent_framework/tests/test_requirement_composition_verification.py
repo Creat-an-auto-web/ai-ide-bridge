@@ -18,6 +18,9 @@ from tdd_agent_framework.agents.requirement_composition_verification import (
     RequirementCompositionVerificationAgent,
     RequirementCompositionVerificationInput,
 )
+from tdd_agent_framework.agents.requirement_composition_verification.models import (
+    RequirementCompositionVerificationResult,
+)
 from tdd_agent_framework.core import AgentRunContext, ModelTarget, ProviderResponse
 
 
@@ -94,6 +97,32 @@ class RequirementCompositionVerificationAgentTest(unittest.TestCase):
         self.assertEqual(result.integration_test_scenarios[0].id, "it_export_success")
         self.assertIn("导出失败反馈", result.missing_story_topics)
 
+    def test_composition_result_accepts_type_alias_and_missing_summary(self) -> None:
+        result = RequirementCompositionVerificationResult.from_dict(
+            {
+                "verdict": "revise",
+                "coverage_assessment": {
+                    "covers_primary_user_goal": True,
+                    "covers_permission_constraints": False,
+                    "covers_failure_handling": False,
+                    "covers_end_to_end_flow": False,
+                },
+                "composition_issues": [
+                    {
+                        "id": "issue_1",
+                        "severity": "high",
+                        "type": "missing_permission_path",
+                        "message": "缺少权限路径 story。",
+                    }
+                ],
+                "integration_test_scenarios": [],
+            }
+        )
+
+        self.assertEqual(result.status, "revise")
+        self.assertEqual(result.composition_issues[0].issue_type, "missing_permission_path")
+        self.assertTrue(result.summary)
+
     def _make_analysis_input(self) -> RequirementAnalysisInput:
         return RequirementAnalysisInput(
             task_id="task_001",
@@ -136,7 +165,7 @@ class RequirementCompositionVerificationAgentTest(unittest.TestCase):
                     when_context="我已经在任务记录列表中设置筛选条件",
                     i_want="导出当前筛选结果为 CSV 文件",
                     so_that="我可以将审计数据用于汇报和离线分析",
-                    narrative="As a 仓库管理员, when 我已经在任务记录列表中设置筛选条件, I want 导出当前筛选结果为 CSV 文件, so that 我可以将审计数据用于汇报和离线分析。",
+                    narrative="作为仓库管理员，当我已经在任务记录列表中设置筛选条件时，我希望导出当前筛选结果为 CSV 文件，从而我可以将审计数据用于汇报和离线分析。",
                     actor="仓库管理员",
                     goal="导出当前筛选结果为 CSV 文件",
                     business_value="我可以将审计数据用于汇报和离线分析",
@@ -144,9 +173,9 @@ class RequirementCompositionVerificationAgentTest(unittest.TestCase):
                     scope=["导出按钮触发", "CSV 文件下载"],
                     out_of_scope=["Excel 格式导出"],
                     acceptance_criteria=[
-                        "Given 用户已设置筛选条件, When 用户点击导出, Then 下载的 CSV 仅包含满足当前筛选条件的记录",
-                        "Given 导出成功, When 文件生成完成, Then 字段顺序符合约定",
-                        "Given 当前列表为空, When 用户点击导出, Then 系统提示无可导出数据",
+                        "给定用户已设置筛选条件，当用户点击导出时，那么下载的 CSV 仅包含满足当前筛选条件的记录",
+                        "给定导出成功，当文件生成完成时，那么字段顺序符合约定",
+                        "给定当前列表为空，当用户点击导出时，那么系统提示无可导出数据",
                     ],
                     dependencies=[],
                     priority="high",

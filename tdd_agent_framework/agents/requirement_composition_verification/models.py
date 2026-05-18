@@ -65,7 +65,10 @@ class CompositionIssue:
         return cls(
             id=_require_str(data.get("id"), "composition_issue.id"),
             severity=_require_str(data.get("severity"), "composition_issue.severity").lower(),
-            issue_type=_require_str(data.get("issue_type"), "composition_issue.issue_type"),
+            issue_type=_require_str(
+                data.get("issue_type") if data.get("issue_type") is not None else data.get("type"),
+                "composition_issue.issue_type",
+            ),
             message=_require_str(data.get("message"), "composition_issue.message"),
             related_story_ids=_optional_list_of_str(
                 data.get("related_story_ids"),
@@ -132,13 +135,39 @@ class RequirementCompositionVerificationResult:
             raise ValueError("composition_issues must be a list")
         if not isinstance(raw_scenarios, list):
             raise ValueError("integration_test_scenarios must be a list")
+        normalized_issues = []
+        for index, item in enumerate(raw_issues, start=1):
+            if isinstance(item, dict):
+                normalized_issues.append(item)
+                continue
+            normalized_issues.append(
+                {
+                    "id": f"composition_issue_{index}",
+                    "severity": "medium",
+                    "issue_type": "unspecified_issue",
+                    "message": str(item),
+                    "related_story_ids": [],
+                    "related_capability_group_ids": [],
+                }
+            )
+        status_value = data.get("status") if data.get("status") is not None else data.get("verdict")
+        normalized_status = str(status_value).strip().lower() if status_value is not None else ""
+        if normalized_status not in {"pass", "revise", "blocked"}:
+            normalized_status = "revise" if normalized_issues else "pass"
+        summary_value = data.get("summary")
+        if not isinstance(summary_value, str) or not summary_value.strip():
+            summary_value = (
+                "当前 story 组合存在需要修订的闭环问题。"
+                if normalized_issues
+                else "当前 story 组合已经形成可验证闭环。"
+            )
         return cls(
-            status=_require_str(data.get("status"), "composition_verification.status").lower(),
-            summary=_require_str(data.get("summary"), "composition_verification.summary"),
+            status=normalized_status,
+            summary=_require_str(summary_value, "composition_verification.summary"),
             coverage_assessment=CompositionCoverageAssessment.from_dict(
                 data.get("coverage_assessment")
             ),
-            composition_issues=[CompositionIssue.from_dict(item) for item in raw_issues],
+            composition_issues=[CompositionIssue.from_dict(item) for item in normalized_issues],
             integration_test_scenarios=[
                 IntegrationTestScenario.from_dict(item)
                 for item in raw_scenarios

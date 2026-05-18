@@ -9,5 +9,6 @@ class ProviderConfig:
     api_base: str
     api_key: str
     timeout_seconds: float = 60.0
+    max_request_seconds: float = 900.0
     headers: dict[str, str] = field(default_factory=dict)
     chat_path: str = "/chat/completions"

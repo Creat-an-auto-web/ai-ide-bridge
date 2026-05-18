@@ -10,12 +10,71 @@ class RequirementAnalysisPromptBuilder:
     max_diagnostics = 8
     max_recent_test_failures = 8
     max_revision_focus = 8
+    json_example = {
+        "requirement_spec": {
+            "task_id": "task_001",
+            "version": 1,
+            "problem_statement": "当前任务列表缺少导出能力，用户无法将筛选结果用于汇报和离线分析。",
+            "product_goal": "为任务列表提供稳定的 CSV 导出能力，并补齐权限与失败反馈边界。",
+            "scope": ["任务列表导出入口", "CSV 文件生成", "导出失败反馈"],
+            "out_of_scope": ["Excel 导出", "任务列表整体改版"],
+            "constraints": ["保持现有公共接口不变", "不新增外部依赖"],
+            "assumptions": ["当前任务列表已经支持筛选条件"],
+            "interfaces_or_contracts": ["导出结果仅覆盖当前筛选条件下的任务记录"],
+            "acceptance_criteria": [
+                "用户可以对当前筛选结果发起 CSV 导出",
+                "导出成功时文件内容与当前筛选条件一致",
+                "导出失败时用户可以看到明确反馈",
+            ],
+            "decomposition_strategy": "按导出主路径、权限约束与失败反馈三个能力方向拆分",
+        },
+        "capability_groups": [
+            {
+                "id": "CG1",
+                "title": "任务列表导出主流程",
+                "goal": "让用户可以完成当前筛选结果的导出",
+                "scope": ["任务列表导出入口", "CSV 文件生成"],
+                "story_ids": ["S1"],
+                "priority": "high",
+            }
+        ],
+        "story_units": [
+            {
+                "id": "S1",
+                "story_kind": "user_outcome",
+                "title": "任务列表用户可以导出当前筛选结果用于汇报和离线分析",
+                "as_a": "任务列表用户",
+                "when_context": "我已经在任务列表中设置好筛选条件并准备导出结果",
+                "i_want": "导出当前筛选结果为 CSV 文件",
+                "so_that": "我可以将当前结果用于汇报和离线分析",
+                "narrative": "作为任务列表用户，当我已经在任务列表中设置好筛选条件并准备导出结果时，我希望导出当前筛选结果为 CSV 文件，从而我可以将当前结果用于汇报和离线分析。",
+                "actor": "任务列表用户",
+                "goal": "导出当前筛选结果为 CSV 文件",
+                "business_value": "我可以将当前结果用于汇报和离线分析",
+                "business_outcome": "用户能够获得与当前筛选条件一致的导出文件。",
+                "scope": ["任务列表导出入口", "CSV 文件生成"],
+                "out_of_scope": ["Excel 导出"],
+                "acceptance_criteria": [
+                    "给定用户已经设置筛选条件，当用户发起导出时，那么系统会生成仅包含当前筛选结果的 CSV 文件",
+                    "给定导出成功，当用户下载文件时，那么文件字段顺序符合约定",
+                    "给定导出失败，当系统无法生成文件时，那么用户可以看到明确失败反馈",
+                ],
+                "dependencies": [],
+                "priority": "high",
+                "risk": "medium",
+                "test_focus": ["导出主路径", "筛选条件保留", "失败反馈"],
+                "implementation_hints": ["优先复用现有筛选逻辑，避免重复定义导出范围"],
+            }
+        ],
+    }
 
     def build_system_prompt(self) -> str:
         return (
             "你是 RequirementAnalysisAgent。"
             "你的任务是把原始需求整理成结构化 RequirementSpec 和 StoryUnit 列表。"
-            "输出必须是合法 json 对象，不要输出 markdown，不要解释。"
+            "你只能返回一个标准 json 对象。"
+            "不要输出 markdown，不要使用 ```json 代码块，不要添加任何前缀、后缀或解释。"
+            "输出必须能被 json.loads 直接解析。"
             "每个 StoryUnit 必须可测试、可排序、可实现，并且必须是完整的 user story。"
         )
 
@@ -109,7 +168,7 @@ class RequirementAnalysisPromptBuilder:
                     "when_context": "...",
                     "i_want": "...",
                     "so_that": "...",
-                    "narrative": "As a ..., when ..., I want ..., so that ...",
+                    "narrative": "作为[角色]，当[场景]时，我希望[能力]，从而[业务结果]。",
                     "actor": "...",
                     "goal": "...",
                     "business_value": "...",
@@ -128,21 +187,27 @@ class RequirementAnalysisPromptBuilder:
         return (
             "请基于下面输入生成结果。\n"
             "要求：\n"
-            "1. 输出必须是 json 对象。\n"
-            "2. 必须先给出 capability_groups，再给出每个 group 内展开的 story_units。\n"
-            "3. capability_groups 数量不能超过 max_capability_groups。\n"
-            "4. story_units 总数量不能超过 max_story_units。\n"
-            "5. capability_groups.story_ids 必须只引用已有 story id。\n"
-            "6. dependencies 只能引用已有 story id。\n"
-            "7. acceptance_criteria 必须可被测试验证。\n"
-            "8. 每个 story_unit 都必须显式提供 story_kind、as_a、when_context、i_want、so_that、narrative、business_outcome，并保持语义一致。\n"
-            "9. narrative 必须遵循 As a [role], when [context], I want [capability], so that [business outcome].\n"
-            "10. title 必须是具体的业务能力描述，不要只写功能名、模块名、页面名或技术组件名，例如不要写“用户登录”“导出 CSV”“需求分析页面”。\n"
-            "11. 一条 story 只能表达一个主要用户目标，不能把多个独立能力揉进同一条。\n"
-            "12. 对复杂需求优先做能力域分组，不要一次性平铺出无层次的大量 story。\n"
-            "13. 如果输入里提供了 user_feedback，必须显式吸收这些反馈；对 story_feedback 要优先修订对应 story 或将其拆分/改写。\n"
-            "14. 如果输入里提供了 global_feedback，必要时同步修正 requirement_spec 的 scope、out_of_scope、constraints 和 acceptance_criteria。\n\n"
+            "1. 只允许返回一个标准 json 对象，且必须能被 json.loads 直接解析。\n"
+            "2. 不要输出 markdown，不要使用 ```json 代码块，不要添加任何解释、前缀或后缀。\n"
+            "3. 必须先给出 capability_groups，再给出每个 group 内展开的 story_units。\n"
+            "4. capability_groups 数量不能超过 max_capability_groups。\n"
+            "5. story_units 总数量不能超过 max_story_units。\n"
+            "6. capability_groups.story_ids 必须只引用已有 story id。\n"
+            "7. dependencies 只能引用已有 story id。\n"
+            "8. acceptance_criteria 必须可被测试验证。\n"
+            "9. 每个 story_unit 都必须显式提供 story_kind、as_a、when_context、i_want、so_that、narrative、business_outcome，并保持语义一致。\n"
+            "10. narrative 必须遵循“作为[角色]，当[场景]时，我希望[能力]，从而[业务结果]。”；如果 so_that 为空，则使用“作为[角色]，当[场景]时，我希望[能力]。”。\n"
+            "11. title 必须是具体的业务能力描述，不要只写功能名、模块名、页面名或技术组件名，例如不要写“用户登录”“导出 CSV”“需求分析页面”。\n"
+            "12. 一条 story 只能表达一个主要用户目标，不能把多个独立能力揉进同一条。\n"
+            "13. 对复杂需求优先做能力域分组，不要一次性平铺出无层次的大量 story。\n"
+            "14. 如果输入里提供了 user_feedback，必须显式吸收这些反馈；对 story_feedback 要优先修订对应 story 或将其拆分/改写。\n"
+            "15. 如果输入里提供了 global_feedback，必要时同步修正 requirement_spec 的 scope、out_of_scope、constraints 和 acceptance_criteria。\n"
+            "16. 不要返回验证器或组合验证器风格的结果；禁止只返回 status、summary、issues、revision_guidance、coverage_assessment 这类审查结论对象。\n"
+            "17. 你的输出必须同时包含 requirement_spec、capability_groups、story_units 三个顶层字段，缺一不可。\n\n"
             f"输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
-            "输出结构示意：\n"
-            f"{json.dumps(output_shape, ensure_ascii=False, separators=(',', ':'))}"
+            "输出最小结构示意：\n"
+            f"{json.dumps(output_shape, ensure_ascii=False, separators=(',', ':'))}\n\n"
+            "输出完整 json 示例：\n"
+            "请严格参考下面示例的 json 层级、字段名、数组/对象位置与字符串类型；示例仅用于格式参考，不要照抄业务内容。\n"
+            f"{json.dumps(self.json_example, ensure_ascii=False, indent=2)}"
         )

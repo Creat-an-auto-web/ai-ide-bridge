@@ -25,6 +25,10 @@ const statusTextOfRequirementPackage = (value: string) => {
   switch (value) {
     case 'paused_converged':
       return '已收敛，等待用户决定'
+    case 'paused_content_verified':
+      return '内容验证通过，等待用户审核'
+    case 'paused_format_invalid':
+      return '格式校验失败，等待重试或人工介入'
     case 'paused_stalled':
       return '已暂停，需继续优化或人工介入'
     case 'paused_blocked':
@@ -145,16 +149,25 @@ export const AiIdeBridgePanel = () => {
   }
   const requirementVerificationIssues = requirementVerification.issues ?? []
   const requirementHistory = requirementAnalysisResult?.history ?? []
+  const verificationGateSummary = requirementAnalysisResult?.verification_gate_summary ?? null
+  const userReviewGuidance = requirementAnalysisResult?.user_review_guidance ?? null
   const requirementPackageStatus = requirementAnalysisResult?.status ?? 'draft'
   const canAcceptRequirementResult = (
     requirementPackageStatus === 'paused_converged'
-    || requirementPackageStatus === 'paused_stalled'
-    || requirementPackageStatus === 'paused_blocked'
   )
   const canContinueRequirementResult = (
     requirementPackageStatus === 'paused_converged'
+    || requirementPackageStatus === 'paused_content_verified'
+    || requirementPackageStatus === 'paused_format_invalid'
     || requirementPackageStatus === 'paused_stalled'
     || requirementPackageStatus === 'paused_blocked'
+  )
+  const canStartCompositionVerification = (
+    !requirementAnalysisIsRunning
+    && (
+      requirementPackageStatus === 'paused_content_verified'
+      || requirementPackageStatus === 'paused_stalled'
+    )
   )
   const canRetryRequirementAnalysis = (
     !requirementAnalysisIsRunning
@@ -175,6 +188,18 @@ export const AiIdeBridgePanel = () => {
     value: RequirementAnalysisAgentSettings[K],
   ) => {
     setDraftRequirementSettings((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const toNullablePositiveInteger = (rawValue: string) => {
+    const trimmed = rawValue.trim()
+    if (trimmed === '') {
+      return null
+    }
+    const parsed = Number(trimmed)
+    if (!Number.isFinite(parsed)) {
+      return null
+    }
+    return Math.max(1, Math.round(parsed))
   }
 
   const resetFeedbackDraft = () => {
@@ -253,7 +278,7 @@ export const AiIdeBridgePanel = () => {
                   : '当前尚未保存 API Key。'}
               </span>
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
                 <span>Temperature</span>
                 <input
@@ -299,6 +324,126 @@ export const AiIdeBridgePanel = () => {
                   style={inputStyle}
                 />
               </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                <span>Max Run(s)</span>
+                <input
+                  type='number'
+                  min='1'
+                  value={draftRequirementSettings.maxRequestSeconds}
+                  onChange={(event) => {
+                    const nextValue = Number(event.target.value)
+                    if (Number.isFinite(nextValue)) {
+                      updateRequirementSetting('maxRequestSeconds', nextValue)
+                    }
+                  }}
+                  style={inputStyle}
+                />
+              </label>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 12, opacity: 0.82 }}>
+                Story / Group 上限策略：留空表示该轮次“不设上限”。
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                  <span>首轮最多组数</span>
+                  <input
+                    type='number'
+                    min='1'
+                    value={draftRequirementSettings.firstRoundMaxCapabilityGroups ?? ''}
+                    onChange={(event) => {
+                      updateRequirementSetting(
+                        'firstRoundMaxCapabilityGroups',
+                        toNullablePositiveInteger(event.target.value),
+                      )
+                    }}
+                    style={inputStyle}
+                    placeholder='4'
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                  <span>首轮最多 Story</span>
+                  <input
+                    type='number'
+                    min='1'
+                    value={draftRequirementSettings.firstRoundMaxStoryUnits ?? ''}
+                    onChange={(event) => {
+                      updateRequirementSetting(
+                        'firstRoundMaxStoryUnits',
+                        toNullablePositiveInteger(event.target.value),
+                      )
+                    }}
+                    style={inputStyle}
+                    placeholder='12'
+                  />
+                </label>
+                <div />
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                  <span>第二轮最多组数</span>
+                  <input
+                    type='number'
+                    min='1'
+                    value={draftRequirementSettings.secondRoundMaxCapabilityGroups ?? ''}
+                    onChange={(event) => {
+                      updateRequirementSetting(
+                        'secondRoundMaxCapabilityGroups',
+                        toNullablePositiveInteger(event.target.value),
+                      )
+                    }}
+                    style={inputStyle}
+                    placeholder='6'
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                  <span>第二轮最多 Story</span>
+                  <input
+                    type='number'
+                    min='1'
+                    value={draftRequirementSettings.secondRoundMaxStoryUnits ?? ''}
+                    onChange={(event) => {
+                      updateRequirementSetting(
+                        'secondRoundMaxStoryUnits',
+                        toNullablePositiveInteger(event.target.value),
+                      )
+                    }}
+                    style={inputStyle}
+                    placeholder='24'
+                  />
+                </label>
+                <div />
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                  <span>第三轮起最多组数</span>
+                  <input
+                    type='number'
+                    min='1'
+                    value={draftRequirementSettings.laterRoundMaxCapabilityGroups ?? ''}
+                    onChange={(event) => {
+                      updateRequirementSetting(
+                        'laterRoundMaxCapabilityGroups',
+                        toNullablePositiveInteger(event.target.value),
+                      )
+                    }}
+                    style={inputStyle}
+                    placeholder='留空=不限'
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                  <span>第三轮起最多 Story</span>
+                  <input
+                    type='number'
+                    min='1'
+                    value={draftRequirementSettings.laterRoundMaxStoryUnits ?? ''}
+                    onChange={(event) => {
+                      updateRequirementSetting(
+                        'laterRoundMaxStoryUnits',
+                        toNullablePositiveInteger(event.target.value),
+                      )
+                    }}
+                    style={inputStyle}
+                    placeholder='留空=不限'
+                  />
+                </label>
+              </div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -463,6 +608,64 @@ export const AiIdeBridgePanel = () => {
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
             验证结论：{requirementVerification.status} · {requirementVerification.summary}
           </div>
+          {verificationGateSummary && (
+            <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                验证门禁摘要
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                阻塞问题 {verificationGateSummary.blocking_issue_count} · 非阻塞建议 {verificationGateSummary.nonblocking_suggestion_count} · 显式能力覆盖 {verificationGateSummary.explicit_capability_coverage.covered_count}/{verificationGateSummary.explicit_capability_coverage.required_count}
+              </div>
+              {verificationGateSummary.explicit_capability_coverage.missing.length > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                  缺失能力：{verificationGateSummary.explicit_capability_coverage.missing.join('、')}
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                放行/暂停原因：{verificationGateSummary.decision_reason}
+              </div>
+            </div>
+          )}
+          {userReviewGuidance && (
+            <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {userReviewGuidance.summary_points.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                    快速概要
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                    {userReviewGuidance.summary_points.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {userReviewGuidance.suggestions.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                    审核建议
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                    {userReviewGuidance.suggestions.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {userReviewGuidance.clarification_questions.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                    建议你直接回答的问题
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                    {userReviewGuidance.clarification_questions.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
           {compositionVerification && (
             <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
               组合验证：{compositionVerification.status} · {compositionVerification.summary}
@@ -679,6 +882,17 @@ export const AiIdeBridgePanel = () => {
                 }}
               >
                 继续优化
+              </button>
+              <button
+                onClick={() => { void bridge.continueRequirementAnalysisToCompositionReview() }}
+                disabled={!canStartCompositionVerification}
+                style={{
+                  ...buttonStyle,
+                  opacity: canStartCompositionVerification ? 1 : 0.55,
+                  background: canStartCompositionVerification ? 'rgba(92, 196, 137, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                }}
+              >
+                进入组合验证
               </button>
               <button
                 onClick={() => { void bridge.retryRequirementAnalysis() }}

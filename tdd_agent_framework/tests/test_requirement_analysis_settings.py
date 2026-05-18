@@ -26,16 +26,25 @@ class RequirementAnalysisSettingsTest(unittest.TestCase):
                 "temperature": 0.1,
                 "max_tokens": 3200,
                 "timeout_seconds": 30,
+                "max_request_seconds": 600,
             },
         )
 
         public_view = RequirementAnalysisAgentSettingsView.from_settings(settings)
 
         self.assertEqual(settings.to_provider_config().api_base, "https://openrouter.ai/api/v1")
+        self.assertEqual(settings.to_provider_config().max_request_seconds, 600)
         self.assertEqual(settings.to_model_target().model, "qwen/qwen3-32b")
         self.assertEqual(settings.to_generation_config().max_tokens, 3200)
+        self.assertEqual(settings.first_round_max_capability_groups, 4)
+        self.assertEqual(settings.first_round_max_story_units, 12)
+        self.assertEqual(settings.second_round_max_capability_groups, 6)
+        self.assertEqual(settings.second_round_max_story_units, 24)
+        self.assertIsNone(settings.later_round_max_capability_groups)
+        self.assertIsNone(settings.later_round_max_story_units)
         self.assertTrue(public_view.has_api_key)
         self.assertEqual(public_view.provider_name, "openrouter")
+        self.assertEqual(public_view.max_request_seconds, 600)
 
     def test_build_service_rejects_disabled_agent(self) -> None:
         settings = RequirementAnalysisAgentSettings.from_dict(
@@ -94,6 +103,8 @@ class RequirementAnalysisSettingsTest(unittest.TestCase):
         self.assertIn("focus_7", prompt)
         self.assertNotIn("focus_8", prompt)
         self.assertNotIn("\"repo_root\"", prompt)
+        self.assertIn("输出最小结构示意", prompt)
+        self.assertIn("输出完整 json 示例", prompt)
 
     def test_requirement_analysis_input_from_dict_truncates_large_context_fields(self) -> None:
         analysis_input = RequirementAnalysisInput.from_dict(
@@ -128,6 +139,19 @@ class RequirementAnalysisSettingsTest(unittest.TestCase):
         self.assertEqual(len(analysis_input.revision_focus), 8)
         self.assertEqual(len(analysis_input.git_diff_summary), 4000)
         self.assertEqual(len(analysis_input.previous_verification_summary), 1200)
+
+    def test_execution_constraints_allow_null_limits(self) -> None:
+        constraints = ExecutionConstraints.from_dict(
+            {
+                "disallow_new_dependencies": True,
+                "preserve_public_api": True,
+                "max_capability_groups": None,
+                "max_story_units": None,
+            },
+        )
+
+        self.assertIsNone(constraints.max_capability_groups)
+        self.assertIsNone(constraints.max_story_units)
 
 
 if __name__ == "__main__":

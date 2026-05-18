@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from typing import Any, Awaitable, Callable, Generic, Protocol, TypeVar
 
 
@@ -114,3 +115,26 @@ async def emit_progress(
     maybe_awaitable = callback(event)
     if maybe_awaitable is not None:
         await maybe_awaitable
+
+
+def parse_json_object_from_text(text: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        parsed = _extract_first_json_object(text)
+    if not isinstance(parsed, dict):
+        raise ValueError("provider output must be a JSON object")
+    return parsed
+
+
+def _extract_first_json_object(text: str) -> Any:
+    decoder = json.JSONDecoder()
+    for start, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            parsed, _end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            continue
+        return parsed
+    raise ValueError("provider output does not contain a parseable JSON object")

@@ -107,8 +107,8 @@ class WorkspaceSummary:
 class ExecutionConstraints:
     disallow_new_dependencies: bool = False
     preserve_public_api: bool = False
-    max_story_units: int = 24
-    max_capability_groups: int = 6
+    max_story_units: int | None = 24
+    max_capability_groups: int | None = 6
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "ExecutionConstraints":
@@ -116,20 +116,28 @@ class ExecutionConstraints:
             return cls()
         if not isinstance(data, dict):
             raise ValueError("execution_constraints must be an object")
-        max_story_units = data.get("max_story_units", 24)
-        if not isinstance(max_story_units, int) or max_story_units <= 0:
-            raise ValueError("execution_constraints.max_story_units must be a positive integer")
-        max_capability_groups = data.get("max_capability_groups", 6)
-        if not isinstance(max_capability_groups, int) or max_capability_groups <= 0:
-            raise ValueError(
-                "execution_constraints.max_capability_groups must be a positive integer"
-            )
+        max_story_units = cls._nullable_positive_int(
+            data.get("max_story_units", 24),
+            "execution_constraints.max_story_units",
+        )
+        max_capability_groups = cls._nullable_positive_int(
+            data.get("max_capability_groups", 6),
+            "execution_constraints.max_capability_groups",
+        )
         return cls(
             disallow_new_dependencies=bool(data.get("disallow_new_dependencies", False)),
             preserve_public_api=bool(data.get("preserve_public_api", False)),
             max_story_units=max_story_units,
             max_capability_groups=max_capability_groups,
         )
+
+    @staticmethod
+    def _nullable_positive_int(value: Any, field_name: str) -> int | None:
+        if value is None:
+            return None
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{field_name} must be a positive integer or null")
+        return value
 
 
 @dataclass(frozen=True)
@@ -158,6 +166,8 @@ class RequirementAnalysisInput:
     revision_focus: list[str] = field(default_factory=list)
     previous_verification_summary: str | None = None
     iteration: int = 1
+    analysis_goal: str = "content_review"
+    previous_analysis_result: dict[str, Any] | None = None
     execution_constraints: ExecutionConstraints = field(default_factory=ExecutionConstraints)
 
     @classmethod
@@ -211,8 +221,30 @@ class RequirementAnalysisInput:
                 cls.max_previous_verification_summary_chars,
             ),
             iteration=max(1, int(data.get("iteration", 1))),
+            analysis_goal=cls._normalize_analysis_goal(data.get("analysis_goal")),
+            previous_analysis_result=cls._normalize_optional_object(
+                data.get("previous_analysis_result"),
+                "previous_analysis_result",
+            ),
             execution_constraints=ExecutionConstraints.from_dict(data.get("execution_constraints")),
         )
+
+    @staticmethod
+    def _normalize_analysis_goal(value: Any) -> str:
+        if not isinstance(value, str) or not value.strip():
+            return "content_review"
+        normalized = value.strip()
+        if normalized not in {"content_review", "composition_review"}:
+            raise ValueError("analysis_goal must be content_review or composition_review")
+        return normalized
+
+    @staticmethod
+    def _normalize_optional_object(value: Any, field_name: str) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError(f"{field_name} must be an object or null")
+        return value
 
 
 @dataclass(frozen=True)
@@ -367,8 +399,8 @@ class StoryUnit:
         so_that: str | None,
     ) -> str:
         if so_that:
-            return f"As a {as_a}, when {when_context}, I want {i_want}, so that {so_that}."
-        return f"As a {as_a}, when {when_context}, I want {i_want}."
+            return f"作为{as_a}，当{when_context}时，我希望{i_want}，从而{so_that}。"
+        return f"作为{as_a}，当{when_context}时，我希望{i_want}。"
 
 
 @dataclass(frozen=True)
@@ -435,7 +467,10 @@ class VerificationIssue:
         return cls(
             id=_require_str(data.get("id"), "verification_issue.id"),
             severity=_require_str(data.get("severity"), "verification_issue.severity").lower(),
-            issue_type=_require_str(data.get("type"), "verification_issue.type"),
+            issue_type=_require_str(
+                data.get("type") if data.get("type") is not None else data.get("issue_type"),
+                "verification_issue.type",
+            ),
             message=_require_str(data.get("message"), "verification_issue.message"),
             affected_story_ids=_optional_list_of_str(
                 data.get("affected_story_ids"),
@@ -486,10 +521,35 @@ class RequirementVerificationResult:
         raw_issues = data.get("issues", [])
         if not isinstance(raw_issues, list):
             raise ValueError("verification issues must be a list")
+        normalized_issues = []
+        for index, item in enumerate(raw_issues, start=1):
+            if isinstance(item, dict):
+                normalized_issues.append(item)
+                continue
+            normalized_issues.append(
+                {
+                    "id": f"issue_{index}",
+                    "severity": "medium",
+                    "type": "unspecified_issue",
+                    "message": str(item),
+                    "affected_story_ids": [],
+                }
+            )
+        status_value = data.get("status") if data.get("status") is not None else data.get("verdict")
+        normalized_status = str(status_value).strip().lower() if status_value is not None else ""
+        if normalized_status not in {"pass", "revise", "blocked"}:
+            normalized_status = "revise" if normalized_issues else "pass"
+        summary_value = data.get("summary")
+        if not isinstance(summary_value, str) or not summary_value.strip():
+            summary_value = (
+                "发现需要修订的问题。"
+                if normalized_issues
+                else "当前需求拆解通过验证，可以进入下一环。"
+            )
         return cls(
-            status=_require_str(data.get("status"), "verification.status").lower(),
-            summary=_require_str(data.get("summary"), "verification.summary"),
-            issues=[VerificationIssue.from_dict(item) for item in raw_issues],
+            status=normalized_status,
+            summary=_require_str(summary_value, "verification.summary"),
+            issues=[VerificationIssue.from_dict(item) for item in normalized_issues],
             revision_guidance=_optional_list_of_display_str(
                 data.get("revision_guidance"),
                 "verification.revision_guidance",
@@ -524,6 +584,8 @@ class RequirementAnalysisPackage:
     iteration_count: int
     composition_verification: RequirementCompositionVerificationResult | None = None
     history: list[RequirementAnalysisIteration] = field(default_factory=list)
+    verification_gate_summary: dict[str, Any] = field(default_factory=dict)
+    user_review_guidance: dict[str, list[str]] = field(default_factory=dict)
 
 
 def _score_value(value: Any, field_name: str) -> int:
