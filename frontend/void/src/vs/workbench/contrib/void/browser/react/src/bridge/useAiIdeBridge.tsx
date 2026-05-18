@@ -4,6 +4,7 @@ import { asText } from '../../../../../../../platform/request/common/request.js'
 import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js'
 import {
   BridgeSidebarPanelState,
+  buildTestCaseGenerationWorkflowDraft,
   GlobalFeedbackPayload,
   PatchReviewModel,
   RequirementAnalysisAgentSettings,
@@ -11,6 +12,7 @@ import {
   RequirementAnalysisAgentSettingsPayload,
   RequirementAnalysisAgentSettingsSummary,
   StoryFeedbackPayload,
+  TestCaseGenerationResultPayload,
   RequirementAnalysisStreamEvent,
   WorkspaceEditModel,
   attachVoidRealIdeSidebarFromAccessor,
@@ -20,6 +22,8 @@ import {
   emptyBridgeSidebarState,
   normalizeRequirementAnalysisSettings,
   summarizeRequirementAnalysisSettings,
+  toTestCaseGenerationInputPayload,
+  toTestCaseGenerationSettingsPayload,
   toRequirementAnalysisAgentSettingsPayload,
 } from '../../../../../../../../ai-ide-bridge/frontend-bridge/src/index.js'
 import { useAccessor } from '../util/services.js'
@@ -72,6 +76,10 @@ export interface AiIdeBridgeUiState {
   requirementAnalysisAutoRetryCount: number
   requirementAnalysisPreviewText: string
   requirementAnalysisEvents: RequirementAnalysisStreamEvent[]
+  testCaseGenerationPlanDraft: string
+  testCaseGenerationResult: TestCaseGenerationResultPayload | null
+  testCaseGenerationError: string | null
+  testCaseGenerationIsRunning: boolean
   latestNotification: { level: 'info' | 'warning' | 'error'; title: string; message: string } | null
   latestPatchReview: PatchReviewModel | null
   latestWorkspaceEdit: WorkspaceEditModel | null
@@ -609,6 +617,16 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         webSocketFactory?: (url: string) => WebSocket
       }
       : {}) ?? {}
+  const bridgeBaseUrl =
+    options.baseUrl
+    ?? hostOptions.baseUrl
+    ?? defaultNativeBaseUrl()
+    ?? 'http://127.0.0.1:27182'
+  const bridgeFetchImpl =
+    hostOptions.fetchImpl
+    ?? createNativeRequestFetch(nativeRequestService)
+    ?? createDesktopFetch()
+    ?? fetch
   const entryRef = useRef<ReturnType<typeof attachVoidRealIdeSidebarFromAccessor> | null>(null)
   const requirementAnalysisSocketRef = useRef<WebSocket | null>(null)
   const requirementAnalysisStopRequestedRef = useRef(false)
@@ -631,6 +649,10 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     requirementAnalysisAutoRetryCount: 0,
     requirementAnalysisPreviewText: '',
     requirementAnalysisEvents: [],
+    testCaseGenerationPlanDraft: '',
+    testCaseGenerationResult: null,
+    testCaseGenerationError: null,
+    testCaseGenerationIsRunning: false,
     latestNotification: null,
     latestPatchReview: null,
     latestWorkspaceEdit: null,
@@ -652,11 +674,8 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     const entry = attachVoidRealIdeSidebarFromAccessor({
       accessor: accessorRef.current,
       bridgeClientOptions: {
-        baseUrl: options.baseUrl ?? hostOptions.baseUrl ?? defaultNativeBaseUrl(),
-        fetchImpl:
-          hostOptions.fetchImpl
-          ?? createNativeRequestFetch(nativeRequestService)
-          ?? createDesktopFetch(),
+        baseUrl: bridgeBaseUrl,
+        fetchImpl: bridgeFetchImpl,
         webSocketFactory: hostOptions.webSocketFactory ?? defaultNativeWebSocketFactory,
       },
       branchProvider: options.branchProvider ?? hostOptions.branchProvider,
@@ -698,11 +717,11 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     hostOptions.branchProvider,
     hostOptions.gitDiffProvider,
     hostOptions.testLogsProvider,
-    options.baseUrl,
+    bridgeBaseUrl,
+    bridgeFetchImpl,
     options.branchProvider,
     options.gitDiffProvider,
     options.testLogsProvider,
-    nativeRequestService,
   ])
 
   return useMemo(() => ({
@@ -742,6 +761,8 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         requirementAnalysisPreviewText: '',
         requirementAnalysisEvents: [],
         requirementAnalysisResult: continuationOptions.previousResult ?? null,
+          testCaseGenerationResult: null,
+          testCaseGenerationError: null,
       }))
 
       try {
@@ -751,11 +772,6 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           nextPrompt,
           continuationOptions,
         )
-        const requirementAnalysisBaseUrl =
-          options.baseUrl
-          ?? hostOptions.baseUrl
-          ?? defaultNativeBaseUrl()
-          ?? 'http://127.0.0.1:27182'
         const payload = {
           settings: uiState.requirementAnalysisSettingsPayload,
           input: inputPayload,
@@ -768,7 +784,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         await new Promise<void>((resolve, reject) => {
           let settled = false
           const socket = webSocketFactory(
-            toWebSocketUrl(requirementAnalysisBaseUrl, '/v1/requirement-analysis/ws'),
+            toWebSocketUrl(bridgeBaseUrl, '/v1/requirement-analysis/ws'),
           )
           requirementAnalysisSocketRef.current = socket
 
@@ -826,6 +842,14 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
                   event.type === 'result' && event.data
                     ? event.data
                     : prev.requirementAnalysisResult,
+                testCaseGenerationPlanDraft:
+                  event.type === 'result' && event.data
+                    ? buildTestCaseGenerationWorkflowDraft(event.data)
+                    : prev.testCaseGenerationPlanDraft,
+                testCaseGenerationResult:
+                  event.type === 'result'
+                    ? null
+                    : prev.testCaseGenerationResult,
                 requirementAnalysisError:
                   event.type === 'error'
                     ? event.message
@@ -940,19 +964,111 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       if (!uiState.requirementAnalysisResult) {
         return
       }
+      const acceptedResult = {
+        ...uiState.requirementAnalysisResult,
+        status: 'accepted' as const,
+      }
       setUiState((prev) => ({
         ...prev,
-        requirementAnalysisResult: {
-          ...prev.requirementAnalysisResult!,
-          status: 'accepted',
-        },
+        requirementAnalysisResult: acceptedResult,
+        testCaseGenerationPlanDraft: buildTestCaseGenerationWorkflowDraft(acceptedResult),
         latestNotification: {
           level: 'info',
           title: 'RequirementAnalysis',
-          message: '已接受当前需求分析结果，需求分析阶段已锁定。后续测试生成或实现阶段尚未接入此面板。',
+          message: '已接受当前需求分析结果，可以继续生成测试用例草案。',
         },
-        finalSummary: '需求分析结果已接受。下一阶段（测试生成或实现编排）尚未接入当前面板。',
+        finalSummary: '需求分析结果已接受，下一阶段可直接生成测试用例草案并校验覆盖完成度。',
       }))
+    },
+    setTestCaseGenerationPlanDraft(planDraft: string) {
+      setUiState((prev) => ({
+        ...prev,
+        testCaseGenerationPlanDraft: planDraft,
+      }))
+    },
+    resetTestCaseGenerationPlanDraft() {
+      if (!uiState.requirementAnalysisResult) {
+        return
+      }
+      setUiState((prev) => ({
+        ...prev,
+        testCaseGenerationPlanDraft: buildTestCaseGenerationWorkflowDraft(
+          uiState.requirementAnalysisResult!,
+        ),
+      }))
+    },
+    async generateTestCasesFromRequirementAnalysis(planDraft?: string) {
+      if (!uiState.requirementAnalysisResult) {
+        setUiState((prev) => ({
+          ...prev,
+          testCaseGenerationError: '请先完成需求分析，再生成测试用例。',
+        }))
+        return
+      }
+
+      setUiState((prev) => ({
+        ...prev,
+        testCaseGenerationIsRunning: true,
+        testCaseGenerationError: null,
+      }))
+
+      try {
+        const payload = {
+          settings: toTestCaseGenerationSettingsPayload(uiState.requirementAnalysisSettings),
+          input: toTestCaseGenerationInputPayload(
+            uiState.requirementAnalysisResult,
+            planDraft ?? uiState.testCaseGenerationPlanDraft,
+            uiState.panel.composer.prompt,
+          ),
+        }
+        const response = await bridgeFetchImpl(
+          new URL('/v1/test-case-generation/runs', bridgeBaseUrl).toString(),
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          },
+        )
+        const bodyText = await response.text()
+        const envelope = bodyText ? JSON.parse(bodyText) as {
+          success?: boolean
+          data?: TestCaseGenerationResultPayload
+          error?: { message?: string }
+        } : {}
+
+        if (!response.ok || !envelope.success || !envelope.data) {
+          throw new Error(
+            envelope.error?.message
+              || `测试用例生成失败（HTTP ${response.status}）`,
+          )
+        }
+
+        const completionSummary = envelope.data.completion_check?.summary
+        setUiState((prev) => ({
+          ...prev,
+          testCaseGenerationResult: envelope.data ?? null,
+          latestNotification: {
+            level: 'info',
+            title: 'TestCaseGeneration',
+            message: `已生成 ${envelope.data.test_cases.length} 条测试用例`,
+          },
+          finalSummary:
+            completionSummary
+            ?? `测试用例生成完成，共 ${envelope.data.test_cases.length} 条。`,
+        }))
+      } catch (error) {
+        setUiState((prev) => ({
+          ...prev,
+          testCaseGenerationError: error instanceof Error ? error.message : String(error),
+        }))
+      } finally {
+        setUiState((prev) => ({
+          ...prev,
+          testCaseGenerationIsRunning: false,
+        }))
+      }
     },
     stopRequirementAnalysis() {
       requirementAnalysisStopRequestedRef.current = true
@@ -1001,5 +1117,5 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         requirementAnalysisSettingsPayload: toRequirementAnalysisAgentSettingsPayload(defaults),
       }))
     },
-  }), [uiState])
+  }), [bridgeBaseUrl, bridgeFetchImpl, uiState])
 }

@@ -17,6 +17,7 @@
 
 - [需求分析流程图](./requirement-analysis-flow.png)
 - [注册登录网站流程实例](./requirement-analysis-login-flow-example.md)
+- [测试用例生成 Workflow Draft](./test-case-generation-workflow-draft.md)
 - [User Story 标准](./requirement-analysis-user-story-standard.md)
 - [组合验证设计](./requirement-composition-verification-v1.md)
 - [用户反馈协议](./requirement-feedback-v1.md)
@@ -36,11 +37,13 @@
 - 在组合验证通过后，继续单条 story 优化或继续组合优化。
 - 追加全局反馈或指定某条 story 反馈。
 - 手动停止运行中的需求分析任务。
+- 在需求分析结果通过并被接受后，手动进入测试用例生成阶段。
+- 把 workflow draft / plan 传给 `test-case-generation` 后端，并查看完成度检查结果。
 
 当前不表示：
 
 - 需求分析结果已经自动进入代码实现。
-- 需求分析结果已经自动生成测试代码。
+- 需求分析结果已经自动生成最终测试代码文件。
 - `backend-bridge` 已经完整接入 OpenHands 执行链路。
 
 ## 3. 启动方式
@@ -394,6 +397,45 @@ analysis_goal = composition_revision
 - 用户接受当前需求分析结果。
 - 本轮需求分析结束。
 - 当前结果可以作为后续测试设计或实现阶段输入。
+- 当前面板会保留并生成下一阶段可编辑的 workflow draft，供测试用例生成使用。
+
+### 9.10 `生成测试用例草案`
+
+当需求分析结果已通过组合验证后，面板中会出现“下一阶段：测试用例生成”区域。
+
+这里会自动准备一份 `workflow draft / plan`，其作用是：
+
+- 把需求分析结果转成测试设计关注点。
+- 明确概念性测试用例与可执行测试之间的 gap。
+- 强调参数类型、参数组合、边界值、负向路径和端到端联动覆盖。
+
+点击：
+
+```text
+生成测试用例草案
+```
+
+前端会向：
+
+```text
+POST /v1/test-case-generation/runs
+```
+
+发送：
+
+- 当前需求分析得到的 `story_units`
+- workflow draft / `plan`
+- 当前模型配置
+
+后端返回：
+
+- `test_plan`
+- `test_cases`
+- `coverage_summary`
+- `quality_checks`
+- `completion_check`
+
+其中 `completion_check` 用来判断当前输出是否已经完成前端传入的 `plan`。
 
 ## 10. 反馈用法
 
@@ -523,11 +565,13 @@ analysis_goal = composition_revision
 7. 如果单条 story 可接受，点击 `进入组合验证`。
 8. 如果组合验证未通过，点击 `按组合问题继续优化`。
 9. 如果组合验证通过，按需要选择 `接受当前结果`、`继续单条 story 优化` 或 `继续组合优化`。
+10. 如需进入下一环，检查自动生成的 workflow draft，并点击 `生成测试用例草案`。
 
 ## 13. 相关文档
 
 - [需求分析流程图](./requirement-analysis-flow.png)
 - [注册登录网站流程实例](./requirement-analysis-login-flow-example.md)
+- [测试用例生成 Workflow Draft](./test-case-generation-workflow-draft.md)
 - [User Story 标准](./requirement-analysis-user-story-standard.md)
 - [组合验证设计](./requirement-composition-verification-v1.md)
 - [用户反馈协议](./requirement-feedback-v1.md)

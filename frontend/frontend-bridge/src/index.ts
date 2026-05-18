@@ -1,5 +1,6 @@
 export * from './protocol.js'
 export * from './agent-settings.js'
+export * from './test-case-generation.js'
 export * from './state.js'
 export * from './client.js'
 export * from './patch-review.js'

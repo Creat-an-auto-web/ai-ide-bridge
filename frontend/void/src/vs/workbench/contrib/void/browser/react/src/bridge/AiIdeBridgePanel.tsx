@@ -75,6 +75,10 @@ export const AiIdeBridgePanel = () => {
     requirementAnalysisAutoRetryCount,
     requirementAnalysisPreviewText,
     requirementAnalysisEvents,
+    testCaseGenerationPlanDraft,
+    testCaseGenerationResult,
+    testCaseGenerationError,
+    testCaseGenerationIsRunning,
   } = bridge.uiState
 
   const promptValue = isEditing || isComposing ? draftPrompt : panel.composer.prompt
@@ -205,6 +209,14 @@ export const AiIdeBridgePanel = () => {
     && !isRequirementResultAccepted
     && Boolean(requirementAnalysisResult)
     && Boolean(feedbackText.trim())
+  )
+  const canGenerateTestCases = (
+    Boolean(requirementAnalysisResult)
+    && !testCaseGenerationIsRunning
+    && (
+      isRequirementResultAccepted
+      || hasPassedCompositionVerification
+    )
   )
   const lastRequirementAnalysisEvent =
     requirementAnalysisEvents.length > 0
@@ -790,7 +802,7 @@ export const AiIdeBridgePanel = () => {
           )}
           {isRequirementResultAccepted && (
             <div style={{ marginTop: 12, fontSize: 12, color: 'var(--vscode-input-foreground)', background: 'rgba(92, 196, 137, 0.10)', border: '1px solid rgba(92, 196, 137, 0.28)', borderRadius: 8, padding: '10px 12px', lineHeight: 1.6 }}>
-              当前需求分析结果已被接受，需求分析阶段已锁定。后续测试生成或实现阶段尚未接入此面板，因此当前不会自动进入下一阶段。
+              当前需求分析结果已被接受，需求分析阶段已锁定。你现在可以基于当前 story 集合继续生成测试用例草案，并让后端检查是否完成 workflow draft。
             </div>
           )}
           {!requirementAnalysisIsRunning && !isRequirementResultAccepted && (
@@ -979,6 +991,124 @@ export const AiIdeBridgePanel = () => {
               >
                 重试需求分析
               </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {requirementAnalysisResult && (
+        <div style={sectionStyle}>
+          <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
+            下一阶段：测试用例生成
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            这一步会把已收敛的需求分析结果、story 集合和下方 workflow draft 一起发给后端 `/v1/test-case-generation/runs`。
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            draft 会提醒后端关注概念性测试用例和可执行测试之间的 gap，例如 string 字段、边界值、非法格式、重复值和端到端组合覆盖。
+          </div>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+            <span>Workflow Draft / Plan</span>
+            <textarea
+              value={testCaseGenerationPlanDraft}
+              onChange={(event) => bridge.setTestCaseGenerationPlanDraft(event.target.value)}
+              placeholder='接受需求分析结果后，这里会自动生成 workflow draft。你也可以手动补充注册、登录、参数组合、边界值和端到端覆盖要求。'
+              style={{
+                ...inputStyle,
+                minHeight: 180,
+                resize: 'vertical',
+              }}
+            />
+          </label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <button
+              onClick={() => { void bridge.generateTestCasesFromRequirementAnalysis() }}
+              disabled={!canGenerateTestCases}
+              style={{
+                ...buttonStyle,
+                opacity: canGenerateTestCases ? 1 : 0.55,
+                background: canGenerateTestCases ? 'rgba(92, 196, 137, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+              }}
+            >
+              {testCaseGenerationIsRunning ? '测试用例生成中' : '生成测试用例草案'}
+            </button>
+            <button
+              onClick={() => bridge.resetTestCaseGenerationPlanDraft()}
+              disabled={!requirementAnalysisResult}
+              style={{
+                ...buttonStyle,
+                opacity: requirementAnalysisResult ? 1 : 0.55,
+              }}
+            >
+              重置 workflow draft
+            </button>
+          </div>
+
+          {testCaseGenerationError && (
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--vscode-errorForeground)' }}>
+              测试用例生成错误：{testCaseGenerationError}
+            </div>
+          )}
+
+          {testCaseGenerationResult && (
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                覆盖摘要：已覆盖 {testCaseGenerationResult.coverage_summary.covered_story_count}/{testCaseGenerationResult.coverage_summary.total_story_count} 个 story，共 {testCaseGenerationResult.coverage_summary.total_test_case_count} 条测试用例。
+              </div>
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: 'var(--vscode-input-foreground)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--vscode-panel-border)',
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                }}
+              >
+                {testCaseGenerationResult.test_plan}
+              </pre>
+              {testCaseGenerationResult.completion_check && (
+                <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', background: 'rgba(78, 161, 255, 0.10)', border: '1px solid rgba(78, 161, 255, 0.24)', borderRadius: 8, padding: '10px 12px', lineHeight: 1.6 }}>
+                  完成度检查：{testCaseGenerationResult.completion_check.status} · {testCaseGenerationResult.completion_check.summary}
+                  {testCaseGenerationResult.completion_check.missing_items.length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      缺失项：{testCaseGenerationResult.completion_check.missing_items.join('、')}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                质量检查：输入/预期 {testCaseGenerationResult.quality_checks.has_inputs_and_expected_results ? '通过' : '缺失'} · 覆盖全部 story {testCaseGenerationResult.quality_checks.covers_all_stories ? '通过' : '未通过'} · 边界 {testCaseGenerationResult.quality_checks.has_boundary_cases ? '通过' : '缺失'} · 负向 {testCaseGenerationResult.quality_checks.has_negative_cases ? '通过' : '缺失'}
+              </div>
+              {testCaseGenerationResult.warnings.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                    警告
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                    {testCaseGenerationResult.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div>
+                <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                  测试用例列表
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                  {testCaseGenerationResult.test_cases.map((testCase) => (
+                    <li key={testCase.id}>
+                      <div style={{ fontWeight: 600 }}>{testCase.title}</div>
+                      <div>{testCase.story_id} · {testCase.level} · {testCase.category} · 预期：{testCase.expected_result}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           )}
         </div>
