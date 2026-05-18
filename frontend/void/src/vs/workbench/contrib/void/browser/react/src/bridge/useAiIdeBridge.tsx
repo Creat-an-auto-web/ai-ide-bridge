@@ -14,7 +14,9 @@ import {
   RequirementAnalysisAgentSettingsSummary,
   StoryFeedbackPayload,
   TestCaseGenerationResultPayload,
+  TestCodeExecutionResultPayload,
   TestCodeGenerationResultPayload,
+  TestCodeRepairResultPayload,
   RequirementAnalysisStreamEvent,
   WorkspaceEditModel,
   attachVoidRealIdeSidebarFromAccessor,
@@ -26,8 +28,11 @@ import {
   summarizeRequirementAnalysisSettings,
   toTestCaseGenerationInputPayload,
   toTestCaseGenerationSettingsPayload,
+  toTestCodeExecutionInputPayload,
   toTestCodeGenerationInputPayload,
   toTestCodeGenerationSettingsPayload,
+  toTestCodeRepairInputPayload,
+  toTestCodeRepairSettingsPayload,
   toRequirementAnalysisAgentSettingsPayload,
 } from '../../../../../../../../ai-ide-bridge/frontend-bridge/src/index.js'
 import { useAccessor } from '../util/services.js'
@@ -88,6 +93,13 @@ export interface AiIdeBridgeUiState {
   testCodeGenerationResult: TestCodeGenerationResultPayload | null
   testCodeGenerationError: string | null
   testCodeGenerationIsRunning: boolean
+  testCodeExecutionCommandDraft: string
+  testCodeExecutionResult: TestCodeExecutionResultPayload | null
+  testCodeExecutionError: string | null
+  testCodeExecutionIsRunning: boolean
+  testCodeRepairResult: TestCodeRepairResultPayload | null
+  testCodeRepairError: string | null
+  testCodeRepairIsRunning: boolean
   latestNotification: { level: 'info' | 'warning' | 'error'; title: string; message: string } | null
   latestPatchReview: PatchReviewModel | null
   latestWorkspaceEdit: WorkspaceEditModel | null
@@ -665,6 +677,13 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     testCodeGenerationResult: null,
     testCodeGenerationError: null,
     testCodeGenerationIsRunning: false,
+    testCodeExecutionCommandDraft: '',
+    testCodeExecutionResult: null,
+    testCodeExecutionError: null,
+    testCodeExecutionIsRunning: false,
+    testCodeRepairResult: null,
+    testCodeRepairError: null,
+    testCodeRepairIsRunning: false,
     latestNotification: null,
     latestPatchReview: null,
     latestWorkspaceEdit: null,
@@ -773,10 +792,15 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         requirementAnalysisPreviewText: '',
         requirementAnalysisEvents: [],
         requirementAnalysisResult: continuationOptions.previousResult ?? null,
-          testCaseGenerationResult: null,
-          testCaseGenerationError: null,
-          testCodeGenerationResult: null,
-          testCodeGenerationError: null,
+        testCaseGenerationResult: null,
+        testCaseGenerationError: null,
+        testCodeGenerationResult: null,
+        testCodeGenerationError: null,
+        testCodeExecutionCommandDraft: '',
+        testCodeExecutionResult: null,
+        testCodeExecutionError: null,
+        testCodeRepairResult: null,
+        testCodeRepairError: null,
       }))
 
       try {
@@ -872,6 +896,18 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
                   event.type === 'result'
                     ? null
                     : prev.testCodeGenerationResult,
+                testCodeExecutionCommandDraft:
+                  event.type === 'result'
+                    ? ''
+                    : prev.testCodeExecutionCommandDraft,
+                testCodeExecutionResult:
+                  event.type === 'result'
+                    ? null
+                    : prev.testCodeExecutionResult,
+                testCodeRepairResult:
+                  event.type === 'result'
+                    ? null
+                    : prev.testCodeRepairResult,
                 requirementAnalysisError:
                   event.type === 'error'
                     ? event.message
@@ -1079,6 +1115,11 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           testCodeGenerationPlanDraft: nextTestCodePlanDraft,
           testCodeGenerationResult: null,
           testCodeGenerationError: null,
+          testCodeExecutionCommandDraft: '',
+          testCodeExecutionResult: null,
+          testCodeExecutionError: null,
+          testCodeRepairResult: null,
+          testCodeRepairError: null,
           latestNotification: {
             level: 'info',
             title: 'TestCaseGeneration',
@@ -1170,6 +1211,11 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         setUiState((prev) => ({
           ...prev,
           testCodeGenerationResult: envelope.data ?? null,
+          testCodeExecutionCommandDraft: '',
+          testCodeExecutionResult: null,
+          testCodeExecutionError: null,
+          testCodeRepairResult: null,
+          testCodeRepairError: null,
           latestNotification: {
             level: 'info',
             title: 'TestCodeGeneration',
@@ -1186,6 +1232,182 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         setUiState((prev) => ({
           ...prev,
           testCodeGenerationIsRunning: false,
+        }))
+      }
+    },
+    setTestCodeExecutionCommandDraft(commandDraft: string) {
+      setUiState((prev) => ({
+        ...prev,
+        testCodeExecutionCommandDraft: commandDraft,
+      }))
+    },
+    async runGeneratedTestCode(commandDraft?: string) {
+      const requirementResult = uiState.requirementAnalysisResult
+      const testCaseResult = uiState.testCaseGenerationResult
+      const currentTestFiles =
+        uiState.testCodeRepairResult?.test_files
+        ?? uiState.testCodeGenerationResult?.test_files
+        ?? null
+
+      if (!requirementResult || !testCaseResult || !currentTestFiles?.length) {
+        setUiState((prev) => ({
+          ...prev,
+          testCodeExecutionError: '请先生成测试代码草案，再写入工作区并运行测试。',
+        }))
+        return
+      }
+
+      setUiState((prev) => ({
+        ...prev,
+        testCodeExecutionIsRunning: true,
+        testCodeExecutionError: null,
+      }))
+
+      try {
+        const contextSource = createVoidRealContextSourceFromAccessor({
+          accessor: accessorRef.current as never,
+        })
+        const repoRoot = await contextSource.getRepoRootPath()
+        if (!repoRoot) {
+          throw new Error('当前未检测到仓库根目录，无法写入测试文件并执行测试。')
+        }
+
+        const payload = {
+          input: toTestCodeExecutionInputPayload(
+            requirementResult.task_id,
+            repoRoot,
+            currentTestFiles,
+            commandDraft ?? uiState.testCodeExecutionCommandDraft,
+          ),
+        }
+        const response = await bridgeFetchImpl(
+          new URL('/v1/test-code-execution/runs', bridgeBaseUrl).toString(),
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          },
+        )
+        const bodyText = await response.text()
+        const envelope = bodyText ? JSON.parse(bodyText) as {
+          success?: boolean
+          data?: TestCodeExecutionResultPayload
+          error?: { message?: string }
+        } : {}
+
+        if (!response.ok || !envelope.success || !envelope.data) {
+          throw new Error(
+            envelope.error?.message
+              || `测试代码执行失败（HTTP ${response.status}）`,
+          )
+        }
+
+        setUiState((prev) => ({
+          ...prev,
+          testCodeExecutionResult: envelope.data ?? null,
+          latestNotification: {
+            level: envelope.data.passed ? 'info' : 'warning',
+            title: 'TestCodeExecution',
+            message: envelope.data.passed
+              ? `测试执行通过，已写入 ${envelope.data.artifacts.written_files.length} 个文件`
+              : `测试执行失败，可进入 repair，失败用例 ${envelope.data.failed_tests.length} 条`,
+          },
+          finalSummary: envelope.data.passed
+            ? `测试代码已落盘并执行通过，命令：${envelope.data.command}`
+            : `测试代码已落盘并执行完成，命令退出码 ${envelope.data.exit_code}，建议进入 repair。`,
+        }))
+      } catch (error) {
+        setUiState((prev) => ({
+          ...prev,
+          testCodeExecutionError: error instanceof Error ? error.message : String(error),
+        }))
+      } finally {
+        setUiState((prev) => ({
+          ...prev,
+          testCodeExecutionIsRunning: false,
+        }))
+      }
+    },
+    async repairGeneratedTestCode() {
+      const requirementResult = uiState.requirementAnalysisResult
+      const testCaseResult = uiState.testCaseGenerationResult
+      const executionResult = uiState.testCodeExecutionResult
+      const currentTestFiles =
+        uiState.testCodeRepairResult?.test_files
+        ?? uiState.testCodeGenerationResult?.test_files
+        ?? null
+
+      if (!requirementResult || !testCaseResult || !executionResult || !currentTestFiles?.length) {
+        setUiState((prev) => ({
+          ...prev,
+          testCodeRepairError: '请先完成测试代码执行，再根据失败结果进行 repair。',
+        }))
+        return
+      }
+
+      setUiState((prev) => ({
+        ...prev,
+        testCodeRepairIsRunning: true,
+        testCodeRepairError: null,
+      }))
+
+      try {
+        const payload = {
+          settings: toTestCodeRepairSettingsPayload(uiState.requirementAnalysisSettings),
+          input: toTestCodeRepairInputPayload(
+            requirementResult,
+            testCaseResult,
+            currentTestFiles,
+            executionResult,
+            uiState.panel.composer.prompt,
+            uiState.testCodeGenerationPlanDraft,
+          ),
+        }
+        const response = await bridgeFetchImpl(
+          new URL('/v1/test-code-repair/runs', bridgeBaseUrl).toString(),
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          },
+        )
+        const bodyText = await response.text()
+        const envelope = bodyText ? JSON.parse(bodyText) as {
+          success?: boolean
+          data?: TestCodeRepairResultPayload
+          error?: { message?: string }
+        } : {}
+
+        if (!response.ok || !envelope.success || !envelope.data) {
+          throw new Error(
+            envelope.error?.message
+              || `测试代码 repair 失败（HTTP ${response.status}）`,
+          )
+        }
+
+        setUiState((prev) => ({
+          ...prev,
+          testCodeRepairResult: envelope.data ?? null,
+          latestNotification: {
+            level: 'info',
+            title: 'TestCodeRepair',
+            message: `已生成 ${envelope.data.changed_files.length} 个测试文件修复结果`,
+          },
+          finalSummary: `测试代码 repair 完成，可再次执行测试验证修复结果。`,
+        }))
+      } catch (error) {
+        setUiState((prev) => ({
+          ...prev,
+          testCodeRepairError: error instanceof Error ? error.message : String(error),
+        }))
+      } finally {
+        setUiState((prev) => ({
+          ...prev,
+          testCodeRepairIsRunning: false,
         }))
       }
     },

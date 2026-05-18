@@ -83,6 +83,13 @@ export const AiIdeBridgePanel = () => {
     testCodeGenerationResult,
     testCodeGenerationError,
     testCodeGenerationIsRunning,
+    testCodeExecutionCommandDraft,
+    testCodeExecutionResult,
+    testCodeExecutionError,
+    testCodeExecutionIsRunning,
+    testCodeRepairResult,
+    testCodeRepairError,
+    testCodeRepairIsRunning,
   } = bridge.uiState
 
   const promptValue = isEditing || isComposing ? draftPrompt : panel.composer.prompt
@@ -223,6 +230,13 @@ export const AiIdeBridgePanel = () => {
     )
   )
   const canGenerateTestCode = Boolean(testCaseGenerationResult) && !testCodeGenerationIsRunning
+  const canRunGeneratedTests = Boolean(testCodeGenerationResult) && !testCodeExecutionIsRunning
+  const canRepairGeneratedTests = (
+    Boolean(testCodeExecutionResult)
+    && !testCodeRepairIsRunning
+    && !testCodeExecutionResult.passed
+  )
+  const activeTestFiles = testCodeRepairResult?.test_files ?? testCodeGenerationResult?.test_files ?? []
   const lastRequirementAnalysisEvent =
     requirementAnalysisEvents.length > 0
       ? requirementAnalysisEvents[requirementAnalysisEvents.length - 1]
@@ -1231,6 +1245,206 @@ export const AiIdeBridgePanel = () => {
                     </div>
                     <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
                       {testFile.purpose}
+                    </div>
+                    <pre
+                      style={{
+                        margin: 0,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        fontSize: 12,
+                        lineHeight: 1.6,
+                        color: 'var(--vscode-input-foreground)',
+                      }}
+                    >
+                      {testFile.content}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {testCodeGenerationResult && (
+        <div style={sectionStyle}>
+          <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
+            下一阶段：落盘、运行与 Repair
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            这一步会把当前测试文件草案真正写入工作区，然后调用后端 `/v1/test-code-execution/runs` 执行测试；失败后可以继续调用 `/v1/test-code-repair/runs` 生成修复后的测试文件。
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            当前执行源：{testCodeRepairResult ? 'repair 后测试文件' : '初始测试代码草案'} · 文件数：{activeTestFiles.length}
+          </div>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+            <span>测试命令（可选）</span>
+            <input
+              value={testCodeExecutionCommandDraft}
+              onChange={(event) => bridge.setTestCodeExecutionCommandDraft(event.target.value)}
+              placeholder='留空则由后端自动推断，例如 python -m pytest tests/test_registration_flow.py'
+              style={inputStyle}
+            />
+          </label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <button
+              onClick={() => { void bridge.runGeneratedTestCode() }}
+              disabled={!canRunGeneratedTests}
+              style={{
+                ...buttonStyle,
+                opacity: canRunGeneratedTests ? 1 : 0.55,
+                background: canRunGeneratedTests ? 'rgba(92, 196, 137, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+              }}
+            >
+              {testCodeExecutionIsRunning ? '写入并运行中' : '写入工作区并运行测试'}
+            </button>
+            <button
+              onClick={() => { void bridge.repairGeneratedTestCode() }}
+              disabled={!canRepairGeneratedTests}
+              style={{
+                ...buttonStyle,
+                opacity: canRepairGeneratedTests ? 1 : 0.55,
+                background: canRepairGeneratedTests ? 'rgba(255, 196, 92, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+              }}
+            >
+              {testCodeRepairIsRunning ? 'Repair 中' : '根据结果 Repair'}
+            </button>
+          </div>
+
+          {testCodeExecutionError && (
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--vscode-errorForeground)' }}>
+              测试执行错误：{testCodeExecutionError}
+            </div>
+          )}
+
+          {testCodeExecutionResult && (
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                执行结果：{testCodeExecutionResult.passed ? '通过' : '失败'} · exit code {testCodeExecutionResult.exit_code} · {testCodeExecutionResult.duration_ms} ms
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                执行命令：{testCodeExecutionResult.command}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                已写入文件：{testCodeExecutionResult.artifacts.written_files.join('、')}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                决策：{testCodeExecutionResult.evaluation.decision} · {testCodeExecutionResult.evaluation.failure_summary ?? '本轮无失败摘要'}
+              </div>
+              {testCodeExecutionResult.failed_tests.length > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                  失败用例：{testCodeExecutionResult.failed_tests.join('、')}
+                </div>
+              )}
+              {testCodeExecutionResult.passed_tests.length > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                  通过用例：{testCodeExecutionResult.passed_tests.join('、')}
+                </div>
+              )}
+              {testCodeExecutionResult.workspace_diff && (
+                <pre
+                  style={{
+                    margin: 0,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                    color: 'var(--vscode-input-foreground)',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid var(--vscode-panel-border)',
+                    borderRadius: 8,
+                    padding: '10px 12px',
+                    maxHeight: 220,
+                    overflow: 'auto',
+                  }}
+                >
+                  {testCodeExecutionResult.workspace_diff}
+                </pre>
+              )}
+              {(testCodeExecutionResult.stdout || testCodeExecutionResult.stderr) && (
+                <pre
+                  style={{
+                    margin: 0,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                    color: 'var(--vscode-input-foreground)',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid var(--vscode-panel-border)',
+                    borderRadius: 8,
+                    padding: '10px 12px',
+                    maxHeight: 260,
+                    overflow: 'auto',
+                  }}
+                >
+                  {[testCodeExecutionResult.stdout, testCodeExecutionResult.stderr].filter(Boolean).join('\n\n')}
+                </pre>
+              )}
+            </div>
+          )}
+
+          {testCodeRepairError && (
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--vscode-errorForeground)' }}>
+              Repair 错误：{testCodeRepairError}
+            </div>
+          )}
+
+          {testCodeRepairResult && (
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                Repair 计划：{testCodeRepairResult.repair_plan.join(' -> ')}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                质量检查：文件内容 {testCodeRepairResult.quality_checks.has_test_file_content ? '通过' : '缺失'} · 覆盖原始文件 {testCodeRepairResult.quality_checks.covers_all_original_files ? '通过' : '未通过'} · 保持测试范围 {testCodeRepairResult.quality_checks.keeps_test_scope ? '通过' : '需确认'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                修复文件：{testCodeRepairResult.changed_files.join('、')}
+              </div>
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: 'var(--vscode-input-foreground)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--vscode-panel-border)',
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                }}
+              >
+                {testCodeRepairResult.reasoning_summary}
+              </pre>
+              {testCodeRepairResult.warnings.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                    Repair 警告
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                    {testCodeRepairResult.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {testCodeRepairResult.test_files.map((testFile) => (
+                  <div
+                    key={testFile.path}
+                    style={{
+                      border: '1px solid var(--vscode-panel-border)',
+                      borderRadius: 8,
+                      padding: '10px 12px',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                      {testFile.path}
+                    </div>
+                    <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+                      {testFile.framework} · {testFile.language} · 覆盖 {testFile.related_test_case_ids.join('、')}
                     </div>
                     <pre
                       style={{

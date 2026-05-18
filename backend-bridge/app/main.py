@@ -9,13 +9,17 @@ from fastapi import FastAPI
 from app.api.requirement_analysis import router as requirement_analysis_router
 from app.api.test_case_generation import router as test_case_generation_router
 from app.api.test_code_generation import router as test_code_generation_router
+from app.api.test_code_execution import router as test_code_execution_router
+from app.api.test_code_repair import router as test_code_repair_router
 from app.api.tasks import router as task_router
 from app.services.event_bus import EventBus
 from app.services.mock_engine import MockEngine
 from app.services.openhands_engine import OpenHandsEngine
 from app.services.requirement_analysis_service import RequirementAnalysisBackendService
 from app.services.test_case_generation_service import TestCaseGenerationBackendService
+from app.services.test_code_execution_service import TestCodeExecutionBackendService
 from app.services.test_code_generation_service import TestCodeGenerationBackendService
+from app.services.test_code_repair_service import TestCodeRepairBackendService
 from app.services.task_service import TaskService
 
 
@@ -58,6 +62,8 @@ async def lifespan(app: FastAPI):
     app.state.requirement_analysis_service = RequirementAnalysisBackendService()
     app.state.test_case_generation_service = TestCaseGenerationBackendService()
     app.state.test_code_generation_service = TestCodeGenerationBackendService()
+    app.state.test_code_execution_service = TestCodeExecutionBackendService()
+    app.state.test_code_repair_service = TestCodeRepairBackendService()
     yield
 
 
@@ -73,3 +79,5 @@ app.include_router(task_router)
 app.include_router(requirement_analysis_router)
 app.include_router(test_case_generation_router)
 app.include_router(test_code_generation_router)
+app.include_router(test_code_execution_router)
+app.include_router(test_code_repair_router)
