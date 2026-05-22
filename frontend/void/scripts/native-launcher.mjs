@@ -698,8 +698,14 @@ const startVoidNative = async () => {
     runtimeExtensionsDir,
   ]
 
-  if (process.env.BRIDGE_ELECTRON_NO_SANDBOX === '1' || await isWslEnvironment()) {
+  const isWsl = await isWslEnvironment()
+  const electronOzonePlatform = process.env.BRIDGE_ELECTRON_OZONE_PLATFORM ?? 'x11'
+
+  if (process.env.BRIDGE_ELECTRON_NO_SANDBOX === '1' || isWsl) {
     codeArgs.push('--no-sandbox')
+  }
+  if (isWsl && electronOzonePlatform !== 'auto') {
+    codeArgs.push(`--ozone-platform=${electronOzonePlatform}`)
   }
   codeArgs.push('--ignore-certificate-errors')
 
@@ -713,6 +719,21 @@ const startVoidNative = async () => {
       env: {
         ...process.env,
         BROWSER: 'none',
+        ...(isWsl
+          ? {
+              ELECTRON_OZONE_PLATFORM_HINT: electronOzonePlatform === 'auto' ? 'auto' : electronOzonePlatform,
+              ...(electronOzonePlatform === 'x11'
+                ? {
+                    GDK_BACKEND: process.env.GDK_BACKEND ?? 'x11',
+                    QT_QPA_PLATFORM: process.env.QT_QPA_PLATFORM ?? 'xcb',
+                    WAYLAND_DISPLAY: '',
+                  }
+                : {}),
+              GTK_IM_MODULE: process.env.GTK_IM_MODULE ?? 'fcitx',
+              QT_IM_MODULE: process.env.QT_IM_MODULE ?? 'fcitx',
+              XMODIFIERS: process.env.XMODIFIERS ?? '@im=fcitx',
+            }
+          : {}),
       },
     },
   )
