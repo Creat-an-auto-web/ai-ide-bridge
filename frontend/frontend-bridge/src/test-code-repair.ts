@@ -65,6 +65,10 @@ export const toTestCodeRepairSettingsPayload = (
   timeout_seconds: settings.timeoutSeconds,
 })
 
+const safeArray = <T>(value: T[] | null | undefined): T[] => (
+  Array.isArray(value) ? value : []
+)
+
 export const toTestCodeRepairInputPayload = (
   requirementResult: RequirementAnalysisResultPayload,
   testCaseResult: TestCaseGenerationResultPayload,
@@ -74,18 +78,18 @@ export const toTestCodeRepairInputPayload = (
   planDraft?: string | null,
 ): TestCodeRepairRunInputPayload => ({
   task_id: requirementResult.task_id,
-  user_prompt: prompt.trim() || requirementResult.requirement_spec.problem_statement,
+  user_prompt: prompt.trim() || requirementResult.requirement_spec?.problem_statement || '',
   plan: planDraft?.trim() || null,
-  story_units: requirementResult.story_units,
+  story_units: safeArray(requirementResult.story_units),
   test_plan: testCaseResult.test_plan,
-  test_cases: testCaseResult.test_cases,
-  test_files: testFiles,
+  test_cases: safeArray(testCaseResult.test_cases),
+  test_files: safeArray(testFiles),
   execution_result: {
     command: executionResult.command,
     exit_code: executionResult.exit_code,
     stdout: executionResult.stdout,
     stderr: executionResult.stderr,
-    failed_tests: executionResult.failed_tests,
+    failed_tests: safeArray(executionResult.failed_tests),
     workspace_diff: executionResult.workspace_diff || null,
   },
 })

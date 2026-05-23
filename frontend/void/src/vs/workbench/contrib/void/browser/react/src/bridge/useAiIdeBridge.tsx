@@ -146,6 +146,10 @@ const uniqueNonEmptyStrings = (values: Array<string | null | undefined>): string
   return result
 }
 
+const safeArray = <T,>(value: T[] | null | undefined): T[] => (
+  Array.isArray(value) ? value : []
+)
+
 const normalizeCapabilityGroupsForSnapshot = (
   previousResult: RequirementAnalysisResultPayload,
 ): RequirementAnalysisResultPayload['capability_groups'] => {
@@ -157,12 +161,12 @@ const normalizeCapabilityGroupsForSnapshot = (
     return alternateCapabilityGroups
   }
 
-  const stories = Array.isArray(previousResult.story_units) ? previousResult.story_units : []
+  const stories = safeArray(previousResult.story_units)
   if (stories.length === 0) {
     return []
   }
-  const storyScope = uniqueNonEmptyStrings(stories.flatMap((story) => story.scope ?? []))
-  const specScope = uniqueNonEmptyStrings(previousResult.requirement_spec?.scope ?? [])
+  const storyScope = uniqueNonEmptyStrings(stories.flatMap((story) => safeArray(story.scope)))
+  const specScope = uniqueNonEmptyStrings(safeArray(previousResult.requirement_spec?.scope))
   const storyIds = uniqueNonEmptyStrings(stories.map((story) => story.id))
   return [
     {
@@ -505,14 +509,17 @@ const toContinuationRevisionFocus = (
 ): string[] => {
   const focus: string[] = []
   const compositionVerification = previousResult?.composition_verification
-  if (compositionVerification?.revision_guidance?.length) {
-    focus.push(...compositionVerification.revision_guidance)
+  const revisionGuidance = safeArray(compositionVerification?.revision_guidance)
+  const missingStoryTopics = safeArray(compositionVerification?.missing_story_topics)
+  const compositionIssues = safeArray(compositionVerification?.composition_issues)
+  if (revisionGuidance.length) {
+    focus.push(...revisionGuidance)
   }
-  if (compositionVerification?.missing_story_topics?.length) {
-    focus.push(...compositionVerification.missing_story_topics.map((topic) => `补充缺失的组合能力：${topic}`))
+  if (missingStoryTopics.length) {
+    focus.push(...missingStoryTopics.map((topic) => `补充缺失的组合能力：${topic}`))
   }
-  if (compositionVerification?.composition_issues?.length) {
-    focus.push(...compositionVerification.composition_issues.map((issue) => issue.suggested_action || issue.message))
+  if (compositionIssues.length) {
+    focus.push(...compositionIssues.map((issue) => issue.suggested_action || issue.message))
   }
   if (compositionVerification?.status === 'pass' && focus.length === 0) {
     focus.push('在不破坏当前已通过组合闭环的前提下，继续增强端到端流程覆盖、边界场景、跨 story 依赖一致性和集成测试可验证性。')
@@ -529,11 +536,13 @@ const toContinuationRevisionFocus = (
   if (!previousResult) {
     return []
   }
-  if (previousResult.verification?.revision_guidance?.length) {
-    return previousResult.verification.revision_guidance
+  const verificationRevisionGuidance = safeArray(previousResult.verification?.revision_guidance)
+  const verificationIssues = safeArray(previousResult.verification?.issues)
+  if (verificationRevisionGuidance.length) {
+    return verificationRevisionGuidance
   }
-  if (previousResult.verification?.issues?.length) {
-    return previousResult.verification.issues.map((issue) => issue.message)
+  if (verificationIssues.length) {
+    return verificationIssues.map((issue) => issue.message)
   }
   return ['在保持当前质量的前提下继续提升需求拆解的一致性、边界清晰度和 user story 粒度。']
 }
@@ -637,16 +646,24 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         webSocketFactory?: (url: string) => WebSocket
       }
       : {}) ?? {}
-  const bridgeBaseUrl =
-    options.baseUrl
-    ?? hostOptions.baseUrl
-    ?? defaultNativeBaseUrl()
-    ?? 'http://127.0.0.1:27182'
-  const bridgeFetchImpl =
-    hostOptions.fetchImpl
-    ?? createNativeRequestFetch(nativeRequestService)
-    ?? createDesktopFetch()
-    ?? fetch
+  const bridgeBaseUrl = useMemo(
+    () => (
+      options.baseUrl
+      ?? hostOptions.baseUrl
+      ?? defaultNativeBaseUrl()
+      ?? 'http://127.0.0.1:27182'
+    ),
+    [hostOptions.baseUrl, options.baseUrl],
+  )
+  const bridgeFetchImpl = useMemo(
+    () => (
+      hostOptions.fetchImpl
+      ?? createNativeRequestFetch(nativeRequestService)
+      ?? createDesktopFetch()
+      ?? fetch
+    ),
+    [hostOptions.fetchImpl, nativeRequestService],
+  )
   const entryRef = useRef<ReturnType<typeof attachVoidRealIdeSidebarFromAccessor> | null>(null)
   const requirementAnalysisSocketRef = useRef<WebSocket | null>(null)
   const requirementAnalysisStopRequestedRef = useRef(false)

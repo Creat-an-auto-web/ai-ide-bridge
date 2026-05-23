@@ -110,6 +110,10 @@ const uniqueNonEmptyStrings = (values: Array<string | null | undefined>) => {
   return result
 }
 
+const safeArray = <T>(value: T[] | null | undefined): T[] => (
+  Array.isArray(value) ? value : []
+)
+
 export const toTestCaseGenerationSettingsPayload = (
   settings: RequirementAnalysisAgentSettings,
 ): TestCaseGenerationSettingsPayload => ({
@@ -128,15 +132,21 @@ export const buildTestCaseGenerationWorkflowDraft = (
   result: RequirementAnalysisResultPayload,
 ): string => {
   const lines: string[] = []
-  const capabilityTitles = result.capability_groups.map((group) => group.title)
-  const integrationScenarios = result.composition_verification?.integration_test_scenarios ?? []
+  const requirementSpec = result.requirement_spec ?? {
+    acceptance_criteria: [],
+    product_goal: '',
+    problem_statement: '',
+  }
+  const storyUnits = safeArray(result.story_units)
+  const capabilityTitles = safeArray(result.capability_groups).map((group) => group.title)
+  const integrationScenarios = safeArray(result.composition_verification?.integration_test_scenarios)
   const requiredBehaviors = uniqueNonEmptyStrings([
-    ...result.requirement_spec.acceptance_criteria,
-    ...result.story_units.flatMap((story) => story.acceptance_criteria),
+    ...safeArray(requirementSpec.acceptance_criteria),
+    ...storyUnits.flatMap((story) => safeArray(story.acceptance_criteria)),
   ])
 
   lines.push('Workflow Draft')
-  lines.push(`目标：${result.requirement_spec.product_goal}`)
+  lines.push(`目标：${requirementSpec.product_goal}`)
   if (capabilityTitles.length > 0) {
     lines.push(`能力范围：${capabilityTitles.join('、')}`)
   }
@@ -166,8 +176,10 @@ export const buildTestCaseGenerationWorkflowDraft = (
   }
 
   lines.push('Story 级测试焦点：')
-  result.story_units.forEach((story, index) => {
-    const focus = story.test_focus.length > 0 ? story.test_focus.join('、') : story.scope.join('、')
+  storyUnits.forEach((story, index) => {
+    const testFocus = safeArray(story.test_focus)
+    const scope = safeArray(story.scope)
+    const focus = testFocus.length > 0 ? testFocus.join('、') : scope.join('、')
     lines.push(`${index + 1}. ${story.title}：${focus}`)
   })
 
@@ -180,9 +192,9 @@ export const toTestCaseGenerationInputPayload = (
   prompt: string,
 ): TestCaseGenerationRunInputPayload => ({
   task_id: result.task_id,
-  user_prompt: prompt.trim() || result.requirement_spec.problem_statement,
+  user_prompt: prompt.trim() || result.requirement_spec?.problem_statement || '',
   plan: planDraft.trim() || null,
-  story_units: result.story_units.map((story) => ({
+  story_units: safeArray(result.story_units).map((story) => ({
     id: story.id,
     story_kind: story.story_kind,
     title: story.title,
@@ -196,14 +208,14 @@ export const toTestCaseGenerationInputPayload = (
     goal: story.goal,
     business_value: story.business_value,
     business_outcome: story.business_outcome,
-    scope: story.scope,
-    out_of_scope: story.out_of_scope,
-    acceptance_criteria: story.acceptance_criteria,
-    dependencies: story.dependencies,
+    scope: safeArray(story.scope),
+    out_of_scope: safeArray(story.out_of_scope),
+    acceptance_criteria: safeArray(story.acceptance_criteria),
+    dependencies: safeArray(story.dependencies),
     priority: story.priority,
     risk: story.risk,
-    test_focus: story.test_focus,
-    implementation_hints: story.implementation_hints,
+    test_focus: safeArray(story.test_focus),
+    implementation_hints: safeArray(story.implementation_hints),
   })),
   execution_constraints: {
     max_test_cases_per_story: 6,

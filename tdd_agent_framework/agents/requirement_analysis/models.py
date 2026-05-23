@@ -578,6 +578,7 @@ class RequirementAnalysisPackage:
     requirement_spec: RequirementSpec
     story_units: list[StoryUnit]
     analysis_summary: AnalysisSummary
+    capability_groups: list[CapabilityGroup]
     warnings: list[str]
     quality_checks: QualityChecks
     verification: RequirementVerificationResult

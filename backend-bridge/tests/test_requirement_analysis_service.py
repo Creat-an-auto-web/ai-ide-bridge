@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import sys
 import unittest
@@ -18,6 +18,9 @@ from app.services.requirement_analysis_service import RequirementAnalysisBackend
 @dataclass(frozen=True)
 class FakeResult:
     status: str = "paused_converged"
+    story_units: list[dict] = field(default_factory=list)
+    analysis_summary: dict = field(default_factory=dict)
+    capability_groups: list[dict] = field(default_factory=list)
 
 
 class RequirementAnalysisBackendServiceTest(unittest.TestCase):
@@ -95,3 +98,54 @@ class RequirementAnalysisBackendServiceTest(unittest.TestCase):
         self.assertIsNone(analysis_input.execution_constraints.max_story_units)
         self.assertEqual(result["status"], "paused_converged")
         self.assertTrue(any(event.get("type") == "result" for event in events))
+
+    def test_stream_run_result_always_includes_capability_group_details(self) -> None:
+        orchestrator = AsyncMock()
+        orchestrator.run = AsyncMock(
+            return_value=FakeResult(
+                story_units=[
+                    {"id": "S1", "priority": "high", "risk": "medium"},
+                    {"id": "S2", "priority": "medium", "risk": "medium"},
+                ],
+                analysis_summary={
+                    "story_unit_count": 2,
+                    "high_priority_count": 1,
+                    "high_risk_count": 0,
+                    "capability_group_count": 3,
+                },
+                capability_groups=[],
+            )
+        )
+        service = RequirementAnalysisBackendService(orchestrator=orchestrator)
+        payload = RequirementAnalysisRunRequest.model_validate(
+            {
+                "settings": {
+                    "enabled": True,
+                    "provider_kind": "openai_compatible",
+                    "provider_name": "openai",
+                    "model": "gpt-5.4",
+                    "api_base": "https://api.openai.com/v1",
+                    "api_key": "secret",
+                },
+                "input": {
+                    "task_id": "task_001",
+                    "mode": "repo_chat",
+                    "user_prompt": "制作论坛网站",
+                    "repo_root": "/workspace/project",
+                    "workspace_summary": {},
+                    "execution_constraints": {},
+                },
+            }
+        )
+
+        events: list[dict] = []
+
+        async def collect_event(event: dict) -> None:
+            events.append(event)
+
+        result = asyncio.run(service.stream_run(payload, collect_event))
+
+        self.assertEqual(result["analysis_summary"]["capability_group_count"], 1)
+        self.assertEqual(result["capability_groups"][0]["story_ids"], ["S1", "S2"])
+        result_events = [event for event in events if event.get("type") == "result"]
+        self.assertEqual(result_events[0]["data"]["capability_groups"][0]["story_ids"], ["S1", "S2"])

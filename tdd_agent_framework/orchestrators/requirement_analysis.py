@@ -553,6 +553,7 @@ class RequirementAnalysisOrchestrator:
             requirement_spec=result.requirement_spec,
             story_units=result.story_units,
             analysis_summary=result.analysis_summary,
+            capability_groups=result.capability_groups,
             warnings=result.warnings,
             quality_checks=result.quality_checks,
             verification=verification,

@@ -48,6 +48,19 @@ const statusTextOfRequirementPackage = (value: string) => {
   }
 }
 
+const safeArray = <T,>(value: T[] | null | undefined): T[] => (
+  Array.isArray(value) ? value : []
+)
+
+const splitIntoDisplayGroups = <T,>(items: T[], groupCount: number): T[][] => {
+  const normalizedGroupCount = Math.max(1, Math.min(groupCount, items.length || 1))
+  const groups = Array.from({ length: normalizedGroupCount }, () => [] as T[])
+  items.forEach((item, index) => {
+    groups[Math.min(normalizedGroupCount - 1, Math.floor(index * normalizedGroupCount / Math.max(1, items.length)))].push(item)
+  })
+  return groups
+}
+
 export const AiIdeBridgePanel = () => {
   const bridge = useAiIdeBridge()
   const [draftPrompt, setDraftPrompt] = useState('')
@@ -59,6 +72,7 @@ export const AiIdeBridgePanel = () => {
   const [draftRequirementApiKey, setDraftRequirementApiKey] = useState('')
   const [isComposing, setIsComposing] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const promptTextareaRef = React.useRef<HTMLTextAreaElement | null>(null)
   const {
     panel,
     latestNotification,
@@ -92,13 +106,27 @@ export const AiIdeBridgePanel = () => {
     testCodeRepairIsRunning,
   } = bridge.uiState
 
-  const promptValue = isEditing || isComposing ? draftPrompt : panel.composer.prompt
+  const promptValue = draftPrompt
+  const lastSyncedPanelPromptRef = React.useRef(panel.composer.prompt)
 
   React.useEffect(() => {
+    const nextPrompt = panel.composer.prompt
+    if (lastSyncedPanelPromptRef.current === nextPrompt) {
+      return
+    }
+    lastSyncedPanelPromptRef.current = nextPrompt
     if (!isEditing && !isComposing) {
-      setDraftPrompt(panel.composer.prompt)
+      setDraftPrompt(nextPrompt)
     }
   }, [isComposing, isEditing, panel.composer.prompt])
+
+  const syncPromptToBridge = (nextPrompt: string) => {
+    lastSyncedPanelPromptRef.current = nextPrompt
+    setDraftPrompt(nextPrompt)
+    bridge.setPrompt(nextPrompt)
+  }
+
+  const getCurrentPromptInput = () => promptTextareaRef.current?.value ?? draftPrompt
 
   React.useEffect(() => {
     setDraftRequirementSettings({
@@ -148,8 +176,76 @@ export const AiIdeBridgePanel = () => {
     () => toRequirementAnalysisAgentSettingsDisplayPayload(requirementAnalysisSettings),
     [requirementAnalysisSettings],
   )
-  const requirementCapabilityGroups = requirementAnalysisResult?.capability_groups ?? []
+  const requirementStoryUnits = safeArray(requirementAnalysisResult?.story_units)
+  const alternateRequirementCapabilityGroups = (
+    requirementAnalysisResult as { capabilityGroups?: typeof requirementAnalysisResult.capability_groups } | null | undefined
+  )?.capabilityGroups
+  const requirementAnalysisSummary = requirementAnalysisResult?.analysis_summary ?? {
+    capability_group_count: safeArray(
+      safeArray(requirementAnalysisResult?.capability_groups).length > 0
+        ? requirementAnalysisResult?.capability_groups
+        : alternateRequirementCapabilityGroups,
+    ).length,
+    story_unit_count: requirementStoryUnits.length,
+  }
+  const requirementCapabilityGroups = safeArray(
+    safeArray(requirementAnalysisResult?.capability_groups).length > 0
+      ? requirementAnalysisResult?.capability_groups
+      : alternateRequirementCapabilityGroups,
+  )
+  const requirementStoryGroups = useMemo(() => {
+    if (!requirementAnalysisResult) {
+      return []
+    }
+
+    const storyById = new Map(requirementStoryUnits.map((storyUnit) => [storyUnit.id, storyUnit]))
+    const groupedStoryIds = new Set<string>()
+    const groups = requirementCapabilityGroups.map((group) => {
+      const stories = safeArray(group.story_ids)
+        .map((storyId) => storyById.get(storyId))
+        .filter((storyUnit): storyUnit is NonNullable<ReturnType<typeof storyById.get>> => Boolean(storyUnit))
+
+      stories.forEach((storyUnit) => groupedStoryIds.add(storyUnit.id))
+
+      return {
+        ...group,
+        stories,
+      }
+    })
+
+    const ungroupedStories = requirementStoryUnits.filter((storyUnit) => !groupedStoryIds.has(storyUnit.id))
+    if (groups.length === 0 && requirementAnalysisSummary.capability_group_count > 1 && ungroupedStories.length > 0) {
+      return splitIntoDisplayGroups(ungroupedStories, requirementAnalysisSummary.capability_group_count).map((stories, index) => ({
+        id: `__derived_capability_group_${index + 1}__`,
+        title: `功能组 ${index + 1}`,
+        goal: '当前结果提供了功能组数量，但未携带可展示的分组明细；这里按 story 顺序临时分组展示。',
+        scope: [],
+        story_ids: stories.map((storyUnit) => storyUnit.id),
+        priority: stories.some((storyUnit) => storyUnit.priority === 'high') ? 'high' : 'medium',
+        stories,
+      }))
+    }
+    if (ungroupedStories.length > 0 || groups.length === 0) {
+      groups.push({
+        id: '__ungrouped_stories__',
+        title: groups.length === 0 ? 'Story 列表' : '未分组 Story',
+        goal: groups.length === 0 ? '以下按当前 story 顺序展示，后续可继续补充分组结构。' : '以下 story 暂未归入现有功能组，可在后续优化中补齐归属。',
+        scope: [],
+        story_ids: ungroupedStories.map((storyUnit) => storyUnit.id),
+        priority: 'medium',
+        stories: ungroupedStories,
+      })
+    }
+
+    return groups
+  }, [requirementAnalysisResult, requirementAnalysisSummary.capability_group_count, requirementCapabilityGroups, requirementStoryUnits])
   const compositionVerification = requirementAnalysisResult?.composition_verification ?? null
+  const compositionCoverageAssessment = compositionVerification?.coverage_assessment ?? {
+    covers_primary_user_goal: false,
+    covers_permission_constraints: false,
+    covers_failure_handling: false,
+    covers_end_to_end_flow: false,
+  }
   const requirementVerification = requirementAnalysisResult?.verification ?? {
     status: 'unknown',
     summary: '暂无验证结果',
@@ -162,8 +258,8 @@ export const AiIdeBridgePanel = () => {
       story_granularity: 0,
     },
   }
-  const requirementVerificationIssues = requirementVerification.issues ?? []
-  const requirementHistory = requirementAnalysisResult?.history ?? []
+  const requirementVerificationIssues = safeArray(requirementVerification.issues)
+  const requirementHistory = safeArray(requirementAnalysisResult?.history)
   const verificationGateSummary = requirementAnalysisResult?.verification_gate_summary ?? null
   const userReviewGuidance = requirementAnalysisResult?.user_review_guidance ?? null
   const requirementPackageStatus = requirementAnalysisResult?.status ?? 'draft'
@@ -237,6 +333,63 @@ export const AiIdeBridgePanel = () => {
     && !testCodeExecutionResult.passed
   )
   const activeTestFiles = testCodeRepairResult?.test_files ?? testCodeGenerationResult?.test_files ?? []
+  const reviewSummaryPoints = safeArray(userReviewGuidance?.summary_points)
+  const reviewSuggestions = safeArray(userReviewGuidance?.suggestions)
+  const reviewClarificationQuestions = safeArray(userReviewGuidance?.clarification_questions)
+  const verificationCoverageMissing = safeArray(verificationGateSummary?.explicit_capability_coverage?.missing)
+  const verificationExplicitCoverage = verificationGateSummary?.explicit_capability_coverage ?? {
+    covered_count: 0,
+    required_count: 0,
+    missing: [],
+  }
+  const requirementSpec = requirementAnalysisResult?.requirement_spec ?? {
+    problem_statement: '',
+  }
+  const compositionMissingStoryTopics = safeArray(compositionVerification?.missing_story_topics)
+  const compositionIssues = safeArray(compositionVerification?.composition_issues)
+  const testCaseWarnings = safeArray(testCaseGenerationResult?.warnings)
+  const testCases = safeArray(testCaseGenerationResult?.test_cases)
+  const testCaseMissingItems = safeArray(testCaseGenerationResult?.completion_check?.missing_items)
+  const testCodeImplementationPlan = safeArray(testCodeGenerationResult?.implementation_plan)
+  const testCodeChangedFiles = safeArray(testCodeGenerationResult?.changed_files)
+  const testCodeWarnings = safeArray(testCodeGenerationResult?.warnings)
+  const testCodeFiles = safeArray(testCodeGenerationResult?.test_files)
+  const writtenTestFiles = safeArray(testCodeExecutionResult?.artifacts?.written_files)
+  const failedTests = safeArray(testCodeExecutionResult?.failed_tests)
+  const passedTests = safeArray(testCodeExecutionResult?.passed_tests)
+  const repairPlan = safeArray(testCodeRepairResult?.repair_plan)
+  const repairChangedFiles = safeArray(testCodeRepairResult?.changed_files)
+  const repairWarnings = safeArray(testCodeRepairResult?.warnings)
+  const repairTestFiles = safeArray(testCodeRepairResult?.test_files)
+  const panelPlanSteps = safeArray(panel.planSteps)
+  const panelLogs = safeArray(panel.logs)
+  const patchReviewFiles = safeArray(latestPatchReview?.files)
+  const testCaseCoverageSummary = testCaseGenerationResult?.coverage_summary ?? {
+    covered_story_count: 0,
+    total_story_count: 0,
+    total_test_case_count: 0,
+  }
+  const testCaseQualityChecks = testCaseGenerationResult?.quality_checks ?? {
+    has_inputs_and_expected_results: false,
+    covers_all_stories: false,
+    has_boundary_cases: false,
+    has_negative_cases: false,
+  }
+  const testCodeQualityChecks = testCodeGenerationResult?.quality_checks ?? {
+    has_test_file_content: false,
+    all_files_are_tests: false,
+    covers_all_input_test_cases: false,
+    changed_files_match_generated_files: false,
+  }
+  const repairQualityChecks = testCodeRepairResult?.quality_checks ?? {
+    has_test_file_content: false,
+    covers_all_original_files: false,
+    keeps_test_scope: false,
+  }
+  const executionEvaluation = testCodeExecutionResult?.evaluation ?? {
+    decision: 'unknown',
+    failure_summary: null,
+  }
   const lastRequirementAnalysisEvent =
     requirementAnalysisEvents.length > 0
       ? requirementAnalysisEvents[requirementAnalysisEvents.length - 1]
@@ -544,7 +697,11 @@ export const AiIdeBridgePanel = () => {
               复制配置 JSON
             </button>
             <button
-              onClick={() => { void bridge.runRequirementAnalysis(promptValue) }}
+              onClick={() => {
+                const nextPrompt = getCurrentPromptInput()
+                syncPromptToBridge(nextPrompt)
+                void bridge.runRequirementAnalysis(nextPrompt)
+              }}
               disabled={requirementAnalysisIsRunning || !requirementAnalysisSettingsSummary.isConfigured}
               style={{
                 ...buttonStyle,
@@ -662,7 +819,7 @@ export const AiIdeBridgePanel = () => {
             包状态：{statusTextOfRequirementPackage(requirementAnalysisResult.status)} · 迭代轮次：{requirementAnalysisResult.iteration_count}
           </div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
-            {requirementAnalysisResult.requirement_spec.problem_statement}
+            {requirementSpec.problem_statement}
           </div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
             验证结论：{requirementVerification.status} · {requirementVerification.summary}
@@ -673,11 +830,11 @@ export const AiIdeBridgePanel = () => {
                 验证门禁摘要
               </div>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                阻塞问题 {verificationGateSummary.blocking_issue_count} · 非阻塞建议 {verificationGateSummary.nonblocking_suggestion_count} · 显式能力覆盖 {verificationGateSummary.explicit_capability_coverage.covered_count}/{verificationGateSummary.explicit_capability_coverage.required_count}
+                阻塞问题 {verificationGateSummary.blocking_issue_count} · 非阻塞建议 {verificationGateSummary.nonblocking_suggestion_count} · 显式能力覆盖 {verificationExplicitCoverage.covered_count}/{verificationExplicitCoverage.required_count}
               </div>
-              {verificationGateSummary.explicit_capability_coverage.missing.length > 0 && (
+              {verificationCoverageMissing.length > 0 && (
                 <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                  缺失能力：{verificationGateSummary.explicit_capability_coverage.missing.join('、')}
+                  缺失能力：{verificationCoverageMissing.join('、')}
                 </div>
               )}
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
@@ -687,37 +844,37 @@ export const AiIdeBridgePanel = () => {
           )}
           {userReviewGuidance && (
             <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {userReviewGuidance.summary_points.length > 0 && (
+              {reviewSummaryPoints.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
                     快速概要
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {userReviewGuidance.summary_points.map((item) => (
+                    {reviewSummaryPoints.map((item) => (
                       <li key={item}>{item}</li>
                     ))}
                   </ul>
                 </div>
               )}
-              {userReviewGuidance.suggestions.length > 0 && (
+              {reviewSuggestions.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
                     审核建议
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {userReviewGuidance.suggestions.map((item) => (
+                    {reviewSuggestions.map((item) => (
                       <li key={item}>{item}</li>
                     ))}
                   </ul>
                 </div>
               )}
-              {userReviewGuidance.clarification_questions.length > 0 && (
+              {reviewClarificationQuestions.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
                     建议你直接回答的问题
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {userReviewGuidance.clarification_questions.map((item) => (
+                    {reviewClarificationQuestions.map((item) => (
                       <li key={item}>{item}</li>
                     ))}
                   </ul>
@@ -731,32 +888,123 @@ export const AiIdeBridgePanel = () => {
             </div>
           )}
           <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
-            Capability 组数量：{requirementAnalysisResult.analysis_summary.capability_group_count ?? requirementCapabilityGroups.length} · 用户故事数量：{requirementAnalysisResult.analysis_summary.story_unit_count}
+            Capability 组数量：{requirementAnalysisSummary.capability_group_count ?? requirementCapabilityGroups.length} · 用户故事数量：{requirementAnalysisSummary.story_unit_count ?? requirementStoryUnits.length}
           </div>
-          {requirementCapabilityGroups.length > 0 && (
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
-                Capability 分组
+          {requirementStoryGroups.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 12, marginBottom: 2, color: 'var(--vscode-input-foreground)' }}>
+                Story 审核树：默认只展示功能组，展开后可查看 story 标题和正文。
               </div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                {requirementCapabilityGroups.map((group) => (
-                  <li key={group.id}>
-                    {group.title} · {(group.story_ids ?? []).length} 个用户故事
-                  </li>
-                ))}
-              </ul>
+              {requirementStoryGroups.map((group) => (
+                <details
+                  key={group.id}
+                  style={{
+                    border: '1px solid var(--vscode-panel-border)',
+                    borderRadius: 10,
+                    padding: '8px 10px',
+                    background: 'rgba(255, 255, 255, 0.025)',
+                  }}
+                >
+                  <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                    {group.title} · {group.stories.length} 个 Story
+                  </summary>
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {group.goal && (
+                      <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', lineHeight: 1.6 }}>
+                        {group.goal}
+                      </div>
+                    )}
+                    {safeArray(group.scope).length > 0 && (
+                      <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', lineHeight: 1.6 }}>
+                        范围：{safeArray(group.scope).join('、')}
+                      </div>
+                    )}
+                    {group.stories.map((storyUnit) => (
+                      <details
+                        key={storyUnit.id}
+                        style={{
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: 8,
+                          padding: '7px 9px',
+                          background: 'rgba(255, 255, 255, 0.018)',
+                        }}
+                      >
+                        <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--vscode-editor-foreground)' }}>
+                          <span style={{ fontWeight: 600 }}>{storyUnit.title}</span>
+                          <span style={{ color: 'var(--vscode-input-foreground)', marginLeft: 6 }}>
+                            {storyUnit.id} · {storyUnit.priority}
+                          </span>
+                        </summary>
+                        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, lineHeight: 1.65, color: 'var(--vscode-input-foreground)' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>Story 正文</div>
+                            <div>
+                              {storyUnit.narrative || `作为${storyUnit.as_a}，当${storyUnit.when_context}时，我希望${storyUnit.i_want}${storyUnit.so_that ? `，从而${storyUnit.so_that}` : ''}。`}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>业务目标</div>
+                            <div>{storyUnit.business_outcome || storyUnit.goal}</div>
+                          </div>
+                          {safeArray(storyUnit.scope).length > 0 && (
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>范围</div>
+                              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                {safeArray(storyUnit.scope).map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {safeArray(storyUnit.acceptance_criteria).length > 0 && (
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>验收标准</div>
+                              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                {safeArray(storyUnit.acceptance_criteria).map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {safeArray(storyUnit.test_focus).length > 0 && (
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>测试关注点</div>
+                              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                {safeArray(storyUnit.test_focus).map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {safeArray(storyUnit.dependencies).length > 0 && (
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>依赖 Story</div>
+                              <div>{safeArray(storyUnit.dependencies).join('、')}</div>
+                            </div>
+                          )}
+                          {!isRequirementResultAccepted && (
+                            <button
+                              onClick={() => setSelectedStoryId(storyUnit.id)}
+                              disabled={requirementAnalysisIsRunning}
+                              style={{
+                                ...buttonStyle,
+                                alignSelf: 'flex-start',
+                                padding: '5px 9px',
+                                fontSize: 12,
+                                opacity: requirementAnalysisIsRunning ? 0.55 : 1,
+                              }}
+                            >
+                              反馈此 Story
+                            </button>
+                          )}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </details>
+              ))}
             </div>
           )}
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-            {requirementAnalysisResult.story_units.map((storyUnit) => (
-              <li key={storyUnit.id}>
-                <div style={{ fontWeight: 600 }}>{storyUnit.title}</div>
-                <div>
-                  {storyUnit.narrative || `As a ${storyUnit.as_a}, I want ${storyUnit.i_want}${storyUnit.so_that ? `, so that ${storyUnit.so_that}` : ''}.`}
-                </div>
-              </li>
-            ))}
-          </ul>
           {requirementVerificationIssues.length > 0 && (
             <div style={{ marginTop: 10 }}>
               <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
@@ -774,27 +1022,27 @@ export const AiIdeBridgePanel = () => {
           {compositionVerification && (
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                组合覆盖：主目标 {compositionVerification.coverage_assessment.covers_primary_user_goal ? '已覆盖' : '未覆盖'} · 权限 {compositionVerification.coverage_assessment.covers_permission_constraints ? '已覆盖' : '未覆盖'} · 失败处理 {compositionVerification.coverage_assessment.covers_failure_handling ? '已覆盖' : '未覆盖'} · 端到端 {compositionVerification.coverage_assessment.covers_end_to_end_flow ? '已覆盖' : '未覆盖'}
+                组合覆盖：主目标 {compositionCoverageAssessment.covers_primary_user_goal ? '已覆盖' : '未覆盖'} · 权限 {compositionCoverageAssessment.covers_permission_constraints ? '已覆盖' : '未覆盖'} · 失败处理 {compositionCoverageAssessment.covers_failure_handling ? '已覆盖' : '未覆盖'} · 端到端 {compositionCoverageAssessment.covers_end_to_end_flow ? '已覆盖' : '未覆盖'}
               </div>
-              {compositionVerification.missing_story_topics.length > 0 && (
+              {compositionMissingStoryTopics.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
                     缺失主题
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {compositionVerification.missing_story_topics.map((topic) => (
+                    {compositionMissingStoryTopics.map((topic) => (
                       <li key={topic}>{topic}</li>
                     ))}
                   </ul>
                 </div>
               )}
-              {compositionVerification.composition_issues.length > 0 && (
+              {compositionIssues.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
                     组合问题
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {compositionVerification.composition_issues.map((issue) => (
+                    {compositionIssues.map((issue) => (
                       <li key={issue.id}>
                         [{issue.severity}] {issue.message}
                       </li>
@@ -840,7 +1088,7 @@ export const AiIdeBridgePanel = () => {
                   style={inputStyle}
                 >
                   <option value=''>不指定，作为全局反馈</option>
-                  {requirementAnalysisResult.story_units.map((storyUnit) => (
+                  {requirementStoryUnits.map((storyUnit) => (
                     <option key={storyUnit.id} value={storyUnit.id}>
                       {storyUnit.id} · {storyUnit.title}
                     </option>
@@ -1072,7 +1320,7 @@ export const AiIdeBridgePanel = () => {
           {testCaseGenerationResult && (
             <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                覆盖摘要：已覆盖 {testCaseGenerationResult.coverage_summary.covered_story_count}/{testCaseGenerationResult.coverage_summary.total_story_count} 个 story，共 {testCaseGenerationResult.coverage_summary.total_test_case_count} 条测试用例。
+                覆盖摘要：已覆盖 {testCaseCoverageSummary.covered_story_count}/{testCaseCoverageSummary.total_story_count} 个 story，共 {testCaseCoverageSummary.total_test_case_count} 条测试用例。
               </div>
               <pre
                 style={{
@@ -1093,23 +1341,23 @@ export const AiIdeBridgePanel = () => {
               {testCaseGenerationResult.completion_check && (
                 <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', background: 'rgba(78, 161, 255, 0.10)', border: '1px solid rgba(78, 161, 255, 0.24)', borderRadius: 8, padding: '10px 12px', lineHeight: 1.6 }}>
                   完成度检查：{testCaseGenerationResult.completion_check.status} · {testCaseGenerationResult.completion_check.summary}
-                  {testCaseGenerationResult.completion_check.missing_items.length > 0 && (
+                  {testCaseMissingItems.length > 0 && (
                     <div style={{ marginTop: 6 }}>
-                      缺失项：{testCaseGenerationResult.completion_check.missing_items.join('、')}
+                      缺失项：{testCaseMissingItems.join('、')}
                     </div>
                   )}
                 </div>
               )}
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                质量检查：输入/预期 {testCaseGenerationResult.quality_checks.has_inputs_and_expected_results ? '通过' : '缺失'} · 覆盖全部 story {testCaseGenerationResult.quality_checks.covers_all_stories ? '通过' : '未通过'} · 边界 {testCaseGenerationResult.quality_checks.has_boundary_cases ? '通过' : '缺失'} · 负向 {testCaseGenerationResult.quality_checks.has_negative_cases ? '通过' : '缺失'}
+                质量检查：输入/预期 {testCaseQualityChecks.has_inputs_and_expected_results ? '通过' : '缺失'} · 覆盖全部 story {testCaseQualityChecks.covers_all_stories ? '通过' : '未通过'} · 边界 {testCaseQualityChecks.has_boundary_cases ? '通过' : '缺失'} · 负向 {testCaseQualityChecks.has_negative_cases ? '通过' : '缺失'}
               </div>
-              {testCaseGenerationResult.warnings.length > 0 && (
+              {testCaseWarnings.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
                     警告
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {testCaseGenerationResult.warnings.map((warning) => (
+                    {testCaseWarnings.map((warning) => (
                       <li key={warning}>{warning}</li>
                     ))}
                   </ul>
@@ -1120,7 +1368,7 @@ export const AiIdeBridgePanel = () => {
                   测试用例列表
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                  {testCaseGenerationResult.test_cases.map((testCase) => (
+                  {testCases.map((testCase) => (
                     <li key={testCase.id}>
                       <div style={{ fontWeight: 600 }}>{testCase.title}</div>
                       <div>{testCase.story_id} · {testCase.level} · {testCase.category} · 预期：{testCase.expected_result}</div>
@@ -1190,13 +1438,13 @@ export const AiIdeBridgePanel = () => {
           {testCodeGenerationResult && (
             <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                实现计划：{testCodeGenerationResult.implementation_plan.join(' -> ')}
+                实现计划：{testCodeImplementationPlan.join(' -> ')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                质量检查：文件内容 {testCodeGenerationResult.quality_checks.has_test_file_content ? '通过' : '缺失'} · 文件命名 {testCodeGenerationResult.quality_checks.all_files_are_tests ? '通过' : '需确认'} · 覆盖输入用例 {testCodeGenerationResult.quality_checks.covers_all_input_test_cases ? '通过' : '缺失'} · changed_files 对齐 {testCodeGenerationResult.quality_checks.changed_files_match_generated_files ? '通过' : '缺失'}
+                质量检查：文件内容 {testCodeQualityChecks.has_test_file_content ? '通过' : '缺失'} · 文件命名 {testCodeQualityChecks.all_files_are_tests ? '通过' : '需确认'} · 覆盖输入用例 {testCodeQualityChecks.covers_all_input_test_cases ? '通过' : '缺失'} · changed_files 对齐 {testCodeQualityChecks.changed_files_match_generated_files ? '通过' : '缺失'}
               </div>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                变更文件：{testCodeGenerationResult.changed_files.join('、')}
+                变更文件：{testCodeChangedFiles.join('、')}
               </div>
               <pre
                 style={{
@@ -1214,20 +1462,20 @@ export const AiIdeBridgePanel = () => {
               >
                 {testCodeGenerationResult.rationale}
               </pre>
-              {testCodeGenerationResult.warnings.length > 0 && (
+              {testCodeWarnings.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
                     警告
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {testCodeGenerationResult.warnings.map((warning) => (
+                    {testCodeWarnings.map((warning) => (
                       <li key={warning}>{warning}</li>
                     ))}
                   </ul>
                 </div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {testCodeGenerationResult.test_files.map((testFile) => (
+                {testCodeFiles.map((testFile) => (
                   <div
                     key={testFile.path}
                     style={{
@@ -1241,7 +1489,7 @@ export const AiIdeBridgePanel = () => {
                       {testFile.path}
                     </div>
                     <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
-                      {testFile.framework} · {testFile.language} · 覆盖 {testFile.related_test_case_ids.join('、')}
+                      {testFile.framework} · {testFile.language} · 覆盖 {safeArray(testFile.related_test_case_ids).join('、')}
                     </div>
                     <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
                       {testFile.purpose}
@@ -1326,19 +1574,19 @@ export const AiIdeBridgePanel = () => {
                 执行命令：{testCodeExecutionResult.command}
               </div>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                已写入文件：{testCodeExecutionResult.artifacts.written_files.join('、')}
+                已写入文件：{writtenTestFiles.join('、')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                决策：{testCodeExecutionResult.evaluation.decision} · {testCodeExecutionResult.evaluation.failure_summary ?? '本轮无失败摘要'}
+                决策：{executionEvaluation.decision} · {executionEvaluation.failure_summary ?? '本轮无失败摘要'}
               </div>
-              {testCodeExecutionResult.failed_tests.length > 0 && (
+              {failedTests.length > 0 && (
                 <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                  失败用例：{testCodeExecutionResult.failed_tests.join('、')}
+                  失败用例：{failedTests.join('、')}
                 </div>
               )}
-              {testCodeExecutionResult.passed_tests.length > 0 && (
+              {passedTests.length > 0 && (
                 <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                  通过用例：{testCodeExecutionResult.passed_tests.join('、')}
+                  通过用例：{passedTests.join('、')}
                 </div>
               )}
               {testCodeExecutionResult.workspace_diff && (
@@ -1393,13 +1641,13 @@ export const AiIdeBridgePanel = () => {
           {testCodeRepairResult && (
             <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                Repair 计划：{testCodeRepairResult.repair_plan.join(' -> ')}
+                Repair 计划：{repairPlan.join(' -> ')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                质量检查：文件内容 {testCodeRepairResult.quality_checks.has_test_file_content ? '通过' : '缺失'} · 覆盖原始文件 {testCodeRepairResult.quality_checks.covers_all_original_files ? '通过' : '未通过'} · 保持测试范围 {testCodeRepairResult.quality_checks.keeps_test_scope ? '通过' : '需确认'}
+                质量检查：文件内容 {repairQualityChecks.has_test_file_content ? '通过' : '缺失'} · 覆盖原始文件 {repairQualityChecks.covers_all_original_files ? '通过' : '未通过'} · 保持测试范围 {repairQualityChecks.keeps_test_scope ? '通过' : '需确认'}
               </div>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                修复文件：{testCodeRepairResult.changed_files.join('、')}
+                修复文件：{repairChangedFiles.join('、')}
               </div>
               <pre
                 style={{
@@ -1417,20 +1665,20 @@ export const AiIdeBridgePanel = () => {
               >
                 {testCodeRepairResult.reasoning_summary}
               </pre>
-              {testCodeRepairResult.warnings.length > 0 && (
+              {repairWarnings.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
                     Repair 警告
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {testCodeRepairResult.warnings.map((warning) => (
+                    {repairWarnings.map((warning) => (
                       <li key={warning}>{warning}</li>
                     ))}
                   </ul>
                 </div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {testCodeRepairResult.test_files.map((testFile) => (
+                {repairTestFiles.map((testFile) => (
                   <div
                     key={testFile.path}
                     style={{
@@ -1444,7 +1692,7 @@ export const AiIdeBridgePanel = () => {
                       {testFile.path}
                     </div>
                     <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
-                      {testFile.framework} · {testFile.language} · 覆盖 {testFile.related_test_case_ids.join('、')}
+                      {testFile.framework} · {testFile.language} · 覆盖 {safeArray(testFile.related_test_case_ids).join('、')}
                     </div>
                     <pre
                       style={{
@@ -1486,22 +1734,21 @@ export const AiIdeBridgePanel = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.8, color: 'var(--vscode-input-foreground)' }}>AI IDE Bridge</div>
           <textarea
+            ref={promptTextareaRef}
             value={promptValue}
             onFocus={() => {
               setIsEditing(true)
-              setDraftPrompt(panel.composer.prompt)
             }}
             onBlur={(event) => {
               const nextValue = event.currentTarget.value
               setIsEditing(false)
-              setDraftPrompt(nextValue)
-              bridge.setPrompt(nextValue)
+              syncPromptToBridge(nextValue)
             }}
             onChange={(event) => {
               const nextValue = event.target.value
               setDraftPrompt(nextValue)
               if (!isComposing) {
-                bridge.setPrompt(nextValue)
+                syncPromptToBridge(nextValue)
               }
             }}
             onCompositionStart={() => {
@@ -1511,7 +1758,7 @@ export const AiIdeBridgePanel = () => {
               const nextValue = event.currentTarget.value
               setIsComposing(false)
               setDraftPrompt(nextValue)
-              bridge.setPrompt(nextValue)
+              syncPromptToBridge(nextValue)
             }}
             placeholder='输入你的任务，例如：修复当前失败的测试'
             style={{
@@ -1578,11 +1825,11 @@ export const AiIdeBridgePanel = () => {
         </div>
       )}
 
-      {panel.planSteps.length > 0 && (
+      {panelPlanSteps.length > 0 && (
         <div style={sectionStyle}>
           <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>计划</div>
           <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-            {panel.planSteps.map((step, index) => (
+            {panelPlanSteps.map((step, index) => (
               <li key={`${index}_${step}`}>{step}</li>
             ))}
           </ol>
@@ -1594,18 +1841,18 @@ export const AiIdeBridgePanel = () => {
           <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>补丁预览</div>
           <div style={{ fontSize: 12, marginBottom: 6 }}>{latestPatchReview.summary}</div>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-            {latestPatchReview.files.map((file) => (
+            {patchReviewFiles.map((file) => (
               <li key={file.path}>{file.title}</li>
             ))}
           </ul>
         </div>
       )}
 
-      {panel.logs.length > 0 && (
+      {panelLogs.length > 0 && (
         <div style={sectionStyle}>
           <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>日志</div>
           <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12, lineHeight: 1.6, color: 'var(--vscode-input-foreground)' }}>
-            {panel.logs.join('')}
+            {panelLogs.join('')}
           </pre>
         </div>
       )}

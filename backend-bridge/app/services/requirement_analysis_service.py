@@ -65,7 +65,7 @@ class RequirementAnalysisBackendService:
             ),
         )
         result = await self.orchestrator.run(settings, analysis_input)
-        return asdict(result)
+        return self._normalize_result_payload(asdict(result))
 
     async def stream_run(
         self,
@@ -142,7 +142,7 @@ class RequirementAnalysisBackendService:
                 analysis_input,
                 progress_callback=emit_progress,
             )
-            result_payload = asdict(result)
+            result_payload = self._normalize_result_payload(asdict(result))
             result_message = {
                 "paused_content_verified": "需求内容验证已通过，等待用户审核后进入组合验证",
                 "paused_converged": "需求分析已收敛，等待用户决定是否接受或继续优化",
@@ -189,3 +189,99 @@ class RequirementAnalysisBackendService:
         if not data.get("author_role"):
             data["author_role"] = "user"
         return data
+
+    def _normalize_result_payload(self, payload: dict) -> dict:
+        story_units = payload.get("story_units")
+        if not isinstance(story_units, list):
+            story_units = []
+            payload["story_units"] = story_units
+
+        capability_groups = payload.get("capability_groups")
+        if not isinstance(capability_groups, list):
+            capability_groups = []
+
+        story_ids = [
+            story.get("id")
+            for story in story_units
+            if isinstance(story, dict) and isinstance(story.get("id"), str) and story.get("id")
+        ]
+        valid_story_ids = set(story_ids)
+        normalized_groups: list[dict] = []
+        for index, group in enumerate(capability_groups):
+            if not isinstance(group, dict):
+                continue
+            raw_group_story_ids = group.get("story_ids")
+            raw_story_id_values = raw_group_story_ids if isinstance(raw_group_story_ids, list) else []
+            group_story_ids = [
+                story_id
+                for story_id in raw_story_id_values
+                if isinstance(story_id, str) and story_id in valid_story_ids
+            ]
+            if not group_story_ids:
+                continue
+            normalized_groups.append(
+                {
+                    "id": str(group.get("id") or f"capability_group_{index + 1}"),
+                    "title": str(group.get("title") or f"功能组 {index + 1}"),
+                    "goal": str(group.get("goal") or "覆盖当前需求中的一组相关 user story。"),
+                    "scope": group.get("scope") if isinstance(group.get("scope"), list) else [],
+                    "story_ids": group_story_ids,
+                    "priority": str(group.get("priority") or "medium"),
+                }
+            )
+
+        covered_story_ids = {
+            story_id
+            for group in normalized_groups
+            for story_id in group["story_ids"]
+        }
+        uncovered_story_ids = [story_id for story_id in story_ids if story_id not in covered_story_ids]
+        if uncovered_story_ids:
+            normalized_groups.append(
+                {
+                    "id": "capability_group_unassigned",
+                    "title": "未分组 Story",
+                    "goal": "兜底承载尚未归入显式功能组的 user story，保证前端始终可以按组展示。",
+                    "scope": [],
+                    "story_ids": uncovered_story_ids,
+                    "priority": "high"
+                    if any(
+                        isinstance(story, dict)
+                        and story.get("id") in uncovered_story_ids
+                        and story.get("priority") == "high"
+                        for story in story_units
+                    )
+                    else "medium",
+                }
+            )
+        if not normalized_groups and story_ids:
+            normalized_groups.append(
+                {
+                    "id": "capability_group_1",
+                    "title": "整体需求分组",
+                    "goal": "在缺少显式功能组明细时保留最小分层结构，保证前端可以按功能组展示。",
+                    "scope": [],
+                    "story_ids": story_ids,
+                    "priority": "high"
+                    if any(isinstance(story, dict) and story.get("priority") == "high" for story in story_units)
+                    else "medium",
+                }
+            )
+
+        payload["capability_groups"] = normalized_groups
+        analysis_summary = payload.get("analysis_summary")
+        if isinstance(analysis_summary, dict):
+            analysis_summary["capability_group_count"] = len(normalized_groups)
+            analysis_summary["story_unit_count"] = len(story_units)
+        else:
+            payload["analysis_summary"] = {
+                "story_unit_count": len(story_units),
+                "high_priority_count": sum(
+                    1 for story in story_units if isinstance(story, dict) and story.get("priority") == "high"
+                ),
+                "high_risk_count": sum(
+                    1 for story in story_units if isinstance(story, dict) and story.get("risk") == "high"
+                ),
+                "capability_group_count": len(normalized_groups),
+            }
+        return payload

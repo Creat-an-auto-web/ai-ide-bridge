@@ -73,14 +73,23 @@ export const toTestCodeGenerationSettingsPayload = (
   timeout_seconds: settings.timeoutSeconds,
 })
 
+const safeArray = <T>(value: T[] | null | undefined): T[] => (
+  Array.isArray(value) ? value : []
+)
+
 export const buildTestCodeGenerationWorkflowDraft = (
   requirementResult: RequirementAnalysisResultPayload,
   testCaseResult: TestCaseGenerationResultPayload,
 ): string => {
   const lines: string[] = []
+  const testCases = safeArray(testCaseResult.test_cases)
+  const requirementSpec = requirementResult.requirement_spec ?? {
+    product_goal: '',
+    problem_statement: '',
+  }
   lines.push('Test Code Workflow Draft')
-  lines.push(`目标：把 ${testCaseResult.test_cases.length} 条概念性测试用例转换成可执行测试代码草案。`)
-  lines.push(`需求目标：${requirementResult.requirement_spec.product_goal}`)
+  lines.push(`目标：把 ${testCases.length} 条概念性测试用例转换成可执行测试代码草案。`)
+  lines.push(`需求目标：${requirementSpec.product_goal}`)
   lines.push('转换原则：')
   lines.push('1. 只生成测试代码，不生成生产实现代码。')
   lines.push('2. 保留测试用例中的输入、步骤、预期结果，不要反向修改测试目标。')
@@ -93,7 +102,7 @@ export const buildTestCodeGenerationWorkflowDraft = (
   lines.push('- 参数化用例')
   lines.push('- 断言结构')
   lines.push('输入测试用例：')
-  testCaseResult.test_cases.forEach((testCase, index) => {
+  testCases.forEach((testCase, index) => {
     lines.push(
       `${index + 1}. ${testCase.id} | ${testCase.title} | ${testCase.level} | ${testCase.category} | 预期：${testCase.expected_result}`,
     )
@@ -108,11 +117,11 @@ export const toTestCodeGenerationInputPayload = (
   prompt: string,
 ): TestCodeGenerationRunInputPayload => ({
   task_id: requirementResult.task_id,
-  user_prompt: prompt.trim() || requirementResult.requirement_spec.problem_statement,
+  user_prompt: prompt.trim() || requirementResult.requirement_spec?.problem_statement || '',
   plan: planDraft.trim() || null,
-  story_units: requirementResult.story_units,
+  story_units: safeArray(requirementResult.story_units),
   test_plan: testCaseResult.test_plan,
-  test_cases: testCaseResult.test_cases,
+  test_cases: safeArray(testCaseResult.test_cases),
   execution_constraints: {
     max_test_files: 4,
     prefer_existing_test_stack: true,
