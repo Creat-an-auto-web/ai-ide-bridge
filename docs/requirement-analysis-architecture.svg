@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1080" viewBox="0 0 1800 1080" role="img" aria-labelledby="title desc">
+  <title id="title">需求分析阶段三会话多智能体架构图</title>
+  <desc id="desc">全中文架构图，展示需求分析阶段由故事生成、单条验证、组合验证三个会话智能体构成，并通过用户审核形成闭环。</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e9f2ff" stroke-width="1"/>
+      <path d="M 12 0 L 12 24 M 0 12 L 24 12" fill="none" stroke="#f4f9ff" stroke-width="1"/>
+    </pattern>
+    <marker id="arrow" markerWidth="6" markerHeight="6" refX="0.75" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0.75 0.9 L 5.25 3 L 0.75 5.1 z" fill="#0c5cad"/>
+    </marker>
+    <style>
+      .title { font: 700 28px "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif; fill: #ffffff; }
+      .lane { font: 700 18px "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif; fill: #ffffff; }
+      .big { font: 700 24px "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif; fill: #08345f; }
+      .mid { font: 700 18px "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif; fill: #08345f; }
+      .text { font: 600 16px "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif; fill: #0d3b66; }
+      .white { font: 700 16px "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif; fill: #ffffff; }
+      .arrow { stroke: #0c5cad; stroke-width: 4; fill: none; marker-end: url(#arrow); stroke-linejoin: round; stroke-linecap: round; }
+      .line { stroke: #0c5cad; stroke-width: 4; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1080" fill="#fbfdff"/>
+  <rect width="1800" height="1080" fill="url(#grid)"/>
+
+  <rect x="455" y="34" width="890" height="76" rx="8" fill="#4aa3f0"/>
+  <text x="900" y="82" class="title" text-anchor="middle">需求分析阶段三会话多智能体架构</text>
+
+  <rect x="70" y="160" width="160" height="58" rx="2" fill="#b772f2"/>
+  <text x="150" y="197" class="lane" text-anchor="middle">输入层</text>
+  <rect x="70" y="320" width="160" height="58" rx="2" fill="#b772f2"/>
+  <text x="150" y="357" class="lane" text-anchor="middle">编排层</text>
+  <rect x="70" y="520" width="160" height="58" rx="2" fill="#b772f2"/>
+  <text x="150" y="557" class="lane" text-anchor="middle">会话层</text>
+  <rect x="70" y="760" width="160" height="58" rx="2" fill="#b772f2"/>
+  <text x="150" y="797" class="lane" text-anchor="middle">审核层</text>
+  <rect x="70" y="920" width="160" height="58" rx="2" fill="#b772f2"/>
+  <text x="150" y="957" class="lane" text-anchor="middle">结果层</text>
+
+  <rect x="270" y="148" width="1260" height="86" rx="8" fill="#97cdfb"/>
+  <rect x="315" y="169" width="230" height="44" rx="4" fill="#238fe8"/>
+  <text x="430" y="197" class="white" text-anchor="middle">原始需求</text>
+  <rect x="590" y="169" width="230" height="44" rx="4" fill="#238fe8"/>
+  <text x="705" y="197" class="white" text-anchor="middle">项目上下文</text>
+  <rect x="865" y="169" width="230" height="44" rx="4" fill="#238fe8"/>
+  <text x="980" y="197" class="white" text-anchor="middle">模型配置</text>
+  <rect x="1140" y="169" width="230" height="44" rx="4" fill="#238fe8"/>
+  <text x="1255" y="197" class="white" text-anchor="middle">用户反馈</text>
+
+  <path d="M 900 234 L 900 280" class="arrow"/>
+
+  <rect x="270" y="298" width="1260" height="100" rx="8" fill="#97cdfb"/>
+  <text x="900" y="338" class="big" text-anchor="middle">需求分析编排器</text>
+  <text x="900" y="372" class="text" text-anchor="middle">选择会话目标，保存轮次上下文，控制暂停与回流</text>
+
+  <path d="M 900 398 L 900 444" class="line"/>
+  <path d="M 460 444 L 1340 444" class="line"/>
+  <path d="M 460 444 L 460 468" class="arrow"/>
+  <path d="M 900 444 L 900 468" class="arrow"/>
+  <path d="M 1340 444 L 1340 468" class="arrow"/>
+
+  <rect x="280" y="486" width="360" height="190" rx="10" fill="#fff8c4" stroke="#f4cf58" stroke-width="3"/>
+  <text x="460" y="530" class="big" text-anchor="middle">故事生成会话</text>
+  <rect x="330" y="558" width="260" height="42" rx="20" fill="#ffc88f" stroke="#0b2948" stroke-width="3"/>
+  <text x="460" y="585" class="mid" text-anchor="middle">生成需求结构</text>
+  <rect x="330" y="616" width="260" height="42" rx="20" fill="#ffc88f" stroke="#0b2948" stroke-width="3"/>
+  <text x="460" y="643" class="mid" text-anchor="middle">拆分中文故事</text>
+
+  <rect x="720" y="486" width="360" height="190" rx="10" fill="#fff8c4" stroke="#f4cf58" stroke-width="3"/>
+  <text x="900" y="530" class="big" text-anchor="middle">单条验证会话</text>
+  <rect x="770" y="558" width="260" height="42" rx="20" fill="#ffc88f" stroke="#0b2948" stroke-width="3"/>
+  <text x="900" y="585" class="mid" text-anchor="middle">检查故事质量</text>
+  <rect x="770" y="616" width="260" height="42" rx="20" fill="#ffc88f" stroke="#0b2948" stroke-width="3"/>
+  <text x="900" y="643" class="mid" text-anchor="middle">输出修订建议</text>
+
+  <rect x="1160" y="486" width="360" height="190" rx="10" fill="#fff8c4" stroke="#f4cf58" stroke-width="3"/>
+  <text x="1340" y="530" class="big" text-anchor="middle">组合验证会话</text>
+  <rect x="1210" y="558" width="260" height="42" rx="20" fill="#ffc88f" stroke="#0b2948" stroke-width="3"/>
+  <text x="1340" y="585" class="mid" text-anchor="middle">检查业务闭环</text>
+  <rect x="1210" y="616" width="260" height="42" rx="20" fill="#ffc88f" stroke="#0b2948" stroke-width="3"/>
+  <text x="1340" y="643" class="mid" text-anchor="middle">输出覆盖结论</text>
+
+  <path d="M 640 581 L 702 581" class="arrow"/>
+  <path d="M 1080 581 L 1142 581" class="arrow"/>
+
+  <path d="M 460 676 L 460 720" class="line"/>
+  <path d="M 900 676 L 900 720" class="line"/>
+  <path d="M 1340 676 L 1340 720" class="line"/>
+  <path d="M 460 720 L 1340 720" class="line"/>
+  <path d="M 900 720 L 900 730" class="arrow"/>
+
+  <rect x="530" y="748" width="740" height="96" rx="8" fill="#97cdfb"/>
+  <text x="900" y="786" class="big" text-anchor="middle">用户审核暂停点</text>
+  <text x="900" y="820" class="text" text-anchor="middle">查看故事树，补充需求，选择故事反馈，或接受当前结果</text>
+
+  <path d="M 530 796 L 430 796 L 430 694" class="arrow"/>
+  <path d="M 1270 796 L 1370 796 L 1370 694" class="arrow"/>
+
+  <path d="M 900 844 L 900 886" class="arrow"/>
+
+  <rect x="270" y="904" width="1260" height="110" rx="8" fill="#97cdfb"/>
+  <rect x="320" y="936" width="240" height="48" rx="4" fill="#238fe8"/>
+  <text x="440" y="967" class="white" text-anchor="middle">需求说明</text>
+  <rect x="610" y="936" width="240" height="48" rx="4" fill="#238fe8"/>
+  <text x="730" y="967" class="white" text-anchor="middle">能力分组</text>
+  <rect x="900" y="936" width="240" height="48" rx="4" fill="#238fe8"/>
+  <text x="1020" y="967" class="white" text-anchor="middle">用户故事</text>
+  <rect x="1190" y="936" width="240" height="48" rx="4" fill="#2dbd73"/>
+  <text x="1310" y="967" class="white" text-anchor="middle">进入测试用例生成</text>
+
+  <rect x="1565" y="486" width="165" height="190" rx="8" fill="#c7ff8d" stroke="#0b2948" stroke-width="3"/>
+  <text x="1648" y="535" class="mid" text-anchor="middle">三道门禁</text>
+  <text x="1648" y="575" class="text" text-anchor="middle">结构合格</text>
+  <text x="1648" y="615" class="text" text-anchor="middle">单条可用</text>
+  <text x="1648" y="655" class="text" text-anchor="middle">组合闭环</text>
+</svg>

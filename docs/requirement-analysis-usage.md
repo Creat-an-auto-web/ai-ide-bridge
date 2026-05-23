@@ -16,6 +16,7 @@
 本文面向项目使用者和开发者，不替代设计文档。设计细节请参考：
 
 - [需求分析流程图](./requirement-analysis-flow.png)
+- [需求分析阶段架构图](./requirement-analysis-architecture.md)
 - [注册登录网站流程实例](./requirement-analysis-login-flow-example.md)
 - [测试用例生成 Workflow Draft](./test-case-generation-workflow-draft.md)
 - [User Story 标准](./requirement-analysis-user-story-standard.md)
