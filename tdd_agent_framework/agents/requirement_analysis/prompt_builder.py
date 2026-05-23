@@ -130,6 +130,17 @@ class RequirementAnalysisPromptBuilder:
                     if analysis_input.story_feedback is not None
                     else None
                 ),
+                "story_feedbacks": [
+                    {
+                        "feedback_id": feedback.feedback_id,
+                        "kind": feedback.kind,
+                        "story_id": feedback.story_id,
+                        "feedback_type": feedback.feedback_type,
+                        "feedback_text": feedback.feedback_text,
+                        "expected_action": feedback.expected_action,
+                    }
+                    for feedback in analysis_input.story_feedbacks
+                ],
             },
             "revision_context": {
                 "previous_verification_summary": analysis_input.previous_verification_summary,
@@ -208,13 +219,15 @@ class RequirementAnalysisPromptBuilder:
             "12. 一条 story 只能表达一个主要用户目标，不能把多个独立能力揉进同一条。\n"
             "13. 对复杂需求优先做能力域分组，不要一次性平铺出无层次的大量 story。\n"
             "14. 如果输入里提供了 user_feedback，必须显式吸收这些反馈；对 story_feedback 要优先修订对应 story 或将其拆分/改写。\n"
-            "15. 如果输入里提供了 global_feedback，必要时同步修正 requirement_spec 的 scope、out_of_scope、constraints 和 acceptance_criteria。\n"
-            "16. 不要返回验证器或组合验证器风格的结果；禁止只返回 status、summary、issues、revision_guidance、coverage_assessment 这类审查结论对象。\n"
-            "17. 你的输出必须同时包含 requirement_spec、capability_groups、story_units 三个顶层字段，缺一不可。\n\n"
-            "18. 当 analysis_goal 为 composition_revision 时，必须以 previous_analysis_result 中已有 story 为基线，围绕 revision_context 和上一轮 composition_verification 做增删改；不要无视上一版结果从零重写。\n"
-            "19. 如果上一轮 composition_verification.status 为 revise 或 blocked，应优先修复端到端闭环、缺失能力、story 依赖冲突、重复或割裂的 story。\n"
-            "20. 如果上一轮 composition_verification.status 为 pass，则这是组合增强优化：不要推翻已通过闭环，应在保持通过结果稳定的前提下，补强边界场景、跨 story 一致性、验收标准和集成测试可验证性。\n"
-            "21. composition_revision 必要时可以新增、合并、拆分或改写 story，但必须保持所有 story 单条仍可测试。\n\n"
+            "15. 如果输入里提供了 story_feedbacks，则必须逐条处理每个 feedback 对应的 story_id；允许对这些目标 story 拆分、改写或补充，但不得把未被反馈的 story 一并重写。\n"
+            "16. 非目标 story 必须保持语义、结构、编号和覆盖边界稳定；如果确实需要改动非目标 story，必须在输出中显式说明原因，并确保改动只发生在最小必要范围内。\n"
+            "17. 如果输入里提供了 global_feedback，必要时同步修正 requirement_spec 的 scope、out_of_scope、constraints 和 acceptance_criteria。\n"
+            "18. 不要返回验证器或组合验证器风格的结果；禁止只返回 status、summary、issues、revision_guidance、coverage_assessment 这类审查结论对象。\n"
+            "19. 你的输出必须同时包含 requirement_spec、capability_groups、story_units 三个顶层字段，缺一不可。\n\n"
+            "20. 当 analysis_goal 为 composition_revision 时，必须以 previous_analysis_result 中已有 story 为基线，围绕 revision_context 和上一轮 composition_verification 做增删改；不要无视上一版结果从零重写。\n"
+            "21. 如果上一轮 composition_verification.status 为 revise 或 blocked，应优先修复端到端闭环、缺失能力、story 依赖冲突、重复或割裂的 story。\n"
+            "22. 如果上一轮 composition_verification.status 为 pass，则这是组合增强优化：不要推翻已通过闭环，应在保持通过结果稳定的前提下，补强边界场景、跨 story 一致性、验收标准和集成测试可验证性。\n"
+            "23. composition_revision 必要时可以新增、合并、拆分或改写 story，但必须保持所有 story 单条仍可测试。\n\n"
             f"输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
             "输出最小结构示意：\n"
             f"{json.dumps(output_shape, ensure_ascii=False, separators=(',', ':'))}\n\n"

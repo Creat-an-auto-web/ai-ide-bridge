@@ -65,7 +65,7 @@ export const AiIdeBridgePanel = () => {
   const bridge = useAiIdeBridge()
   const [draftPrompt, setDraftPrompt] = useState('')
   const [feedbackText, setFeedbackText] = useState('')
-  const [selectedStoryId, setSelectedStoryId] = useState('')
+  const [selectedStoryIds, setSelectedStoryIds] = useState<string[]>([])
   const [draftRequirementSettings, setDraftRequirementSettings] = useState<RequirementAnalysisAgentSettings>(
     createDefaultRequirementAnalysisSettings(),
   )
@@ -364,6 +364,11 @@ export const AiIdeBridgePanel = () => {
   const panelPlanSteps = safeArray(panel.planSteps)
   const panelLogs = safeArray(panel.logs)
   const patchReviewFiles = safeArray(latestPatchReview?.files)
+  const modelReviewIssueCount = requirementVerificationIssues.length + compositionIssues.length
+  const compositionRevisionGuidance = safeArray(compositionVerification?.revision_guidance)
+  const modelReviewSuggestionCount = reviewSuggestions.length
+  const modelReviewCompositionSuggestionCount = compositionRevisionGuidance.length
+  const modelReviewQuestionCount = reviewClarificationQuestions.length
   const testCaseCoverageSummary = testCaseGenerationResult?.coverage_summary ?? {
     covered_story_count: 0,
     total_story_count: 0,
@@ -416,7 +421,7 @@ export const AiIdeBridgePanel = () => {
 
   const resetFeedbackDraft = () => {
     setFeedbackText('')
-    setSelectedStoryId('')
+    setSelectedStoryIds([])
   }
 
   return (
@@ -696,27 +701,6 @@ export const AiIdeBridgePanel = () => {
             >
               复制配置 JSON
             </button>
-            <button
-              onClick={() => {
-                const nextPrompt = getCurrentPromptInput()
-                syncPromptToBridge(nextPrompt)
-                void bridge.runRequirementAnalysis(nextPrompt)
-              }}
-              disabled={requirementAnalysisIsRunning || !requirementAnalysisSettingsSummary.isConfigured}
-              style={{
-                ...buttonStyle,
-                background:
-                  requirementAnalysisIsRunning || !requirementAnalysisSettingsSummary.isConfigured
-                    ? 'rgba(255, 255, 255, 0.03)'
-                    : 'rgba(92, 196, 137, 0.18)',
-                opacity:
-                  requirementAnalysisIsRunning || !requirementAnalysisSettingsSummary.isConfigured
-                    ? 0.55
-                    : 1,
-              }}
-            >
-              {requirementAnalysisIsRunning ? '需求分析运行中' : '运行需求分析'}
-            </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', opacity: 0.86 }}>
@@ -821,72 +805,164 @@ export const AiIdeBridgePanel = () => {
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
             {requirementSpec.problem_statement}
           </div>
-          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
-            验证结论：{requirementVerification.status} · {requirementVerification.summary}
-          </div>
-          {verificationGateSummary && (
-            <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
-                验证门禁摘要
-              </div>
+          <details
+            style={{
+              border: '1px solid var(--vscode-panel-border)',
+              borderRadius: 10,
+              padding: '8px 10px',
+              marginBottom: 10,
+              background: 'rgba(255, 255, 255, 0.02)',
+            }}
+          >
+            <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+              模型审查过程 · 单条验证 {requirementVerification.status}
+              {compositionVerification ? ` · 组合验证 ${compositionVerification.status}` : ''}
+              {modelReviewIssueCount > 0 ? ` · 审查问题 ${modelReviewIssueCount}` : ''}
+              {modelReviewSuggestionCount > 0 ? ` · 审核建议 ${modelReviewSuggestionCount}` : ''}
+              {modelReviewCompositionSuggestionCount > 0 ? ` · 组合修订建议 ${modelReviewCompositionSuggestionCount}` : ''}
+              {modelReviewQuestionCount > 0 ? ` · 待澄清 ${modelReviewQuestionCount}` : ''}
+            </summary>
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                阻塞问题 {verificationGateSummary.blocking_issue_count} · 非阻塞建议 {verificationGateSummary.nonblocking_suggestion_count} · 显式能力覆盖 {verificationExplicitCoverage.covered_count}/{verificationExplicitCoverage.required_count}
+                验证结论：{requirementVerification.status} · {requirementVerification.summary}
               </div>
-              {verificationCoverageMissing.length > 0 && (
-                <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                  缺失能力：{verificationCoverageMissing.join('、')}
+              {verificationGateSummary && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                    验证门禁摘要
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                    阻塞问题 {verificationGateSummary.blocking_issue_count} · 非阻塞建议 {verificationGateSummary.nonblocking_suggestion_count} · 显式能力覆盖 {verificationExplicitCoverage.covered_count}/{verificationExplicitCoverage.required_count}
+                  </div>
+                  {verificationCoverageMissing.length > 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                      缺失能力：{verificationCoverageMissing.join('、')}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                    放行/暂停原因：{verificationGateSummary.decision_reason}
+                  </div>
                 </div>
               )}
-              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                放行/暂停原因：{verificationGateSummary.decision_reason}
-              </div>
-            </div>
-          )}
-          {userReviewGuidance && (
-            <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {reviewSummaryPoints.length > 0 && (
+              {userReviewGuidance && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {reviewSummaryPoints.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                        快速概要
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                        {reviewSummaryPoints.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {reviewSuggestions.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                        审核建议
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                        {reviewSuggestions.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {reviewClarificationQuestions.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                        建议你直接回答的问题
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                        {reviewClarificationQuestions.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              {compositionVerification && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                    组合验证：{compositionVerification.status} · {compositionVerification.summary}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                    组合覆盖：主目标 {compositionCoverageAssessment.covers_primary_user_goal ? '已覆盖' : '未覆盖'} · 权限 {compositionCoverageAssessment.covers_permission_constraints ? '已覆盖' : '未覆盖'} · 失败处理 {compositionCoverageAssessment.covers_failure_handling ? '已覆盖' : '未覆盖'} · 端到端 {compositionCoverageAssessment.covers_end_to_end_flow ? '已覆盖' : '未覆盖'}
+                  </div>
+                  {compositionMissingStoryTopics.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                        缺失主题
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                        {compositionMissingStoryTopics.map((topic) => (
+                          <li key={topic}>{topic}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {compositionIssues.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                        组合问题
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                        {compositionIssues.map((issue) => (
+                          <li key={issue.id}>
+                            [{issue.severity}] {issue.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {compositionRevisionGuidance.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                        组合修订建议
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                        {compositionRevisionGuidance.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              {requirementVerificationIssues.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
-                    快速概要
+                  <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                    验证问题
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {reviewSummaryPoints.map((item) => (
-                      <li key={item}>{item}</li>
+                    {requirementVerificationIssues.map((issue) => (
+                      <li key={issue.id}>
+                        [{issue.severity}] {issue.message}
+                      </li>
                     ))}
                   </ul>
                 </div>
               )}
-              {reviewSuggestions.length > 0 && (
+              {requirementHistory.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
-                    审核建议
+                  <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
+                    迭代历史
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {reviewSuggestions.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {reviewClarificationQuestions.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 12, marginBottom: 6, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
-                    建议你直接回答的问题
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {reviewClarificationQuestions.map((item) => (
-                      <li key={item}>{item}</li>
+                    {requirementHistory.map((item) => (
+                      <li key={`iteration_${item.iteration}`}>
+                        第 {item.iteration} 轮 · 验证 {item.verification_status} · 问题数 {item.issue_count}
+                        {item.composition_verification_status ? ` · 组合 ${item.composition_verification_status} / ${item.composition_issue_count}` : ''}
+                      </li>
                     ))}
                   </ul>
                 </div>
               )}
             </div>
-          )}
-          {compositionVerification && (
-            <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
-              组合验证：{compositionVerification.status} · {compositionVerification.summary}
-            </div>
-          )}
+          </details>
           <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
             Capability 组数量：{requirementAnalysisSummary.capability_group_count ?? requirementCapabilityGroups.length} · 用户故事数量：{requirementAnalysisSummary.story_unit_count ?? requirementStoryUnits.length}
           </div>
@@ -984,7 +1060,13 @@ export const AiIdeBridgePanel = () => {
                           )}
                           {!isRequirementResultAccepted && (
                             <button
-                              onClick={() => setSelectedStoryId(storyUnit.id)}
+                              onClick={() => {
+                                setSelectedStoryIds((prev) => (
+                                  prev.includes(storyUnit.id)
+                                    ? prev
+                                    : [...prev, storyUnit.id]
+                                ))
+                              }}
                               disabled={requirementAnalysisIsRunning}
                               style={{
                                 ...buttonStyle,
@@ -994,7 +1076,7 @@ export const AiIdeBridgePanel = () => {
                                 opacity: requirementAnalysisIsRunning ? 0.55 : 1,
                               }}
                             >
-                              反馈此 Story
+                              选择此 Story 反馈
                             </button>
                           )}
                         </div>
@@ -1003,68 +1085,6 @@ export const AiIdeBridgePanel = () => {
                   </div>
                 </details>
               ))}
-            </div>
-          )}
-          {requirementVerificationIssues.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
-                验证问题
-              </div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                {requirementVerificationIssues.map((issue) => (
-                  <li key={issue.id}>
-                    [{issue.severity}] {issue.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {compositionVerification && (
-            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                组合覆盖：主目标 {compositionCoverageAssessment.covers_primary_user_goal ? '已覆盖' : '未覆盖'} · 权限 {compositionCoverageAssessment.covers_permission_constraints ? '已覆盖' : '未覆盖'} · 失败处理 {compositionCoverageAssessment.covers_failure_handling ? '已覆盖' : '未覆盖'} · 端到端 {compositionCoverageAssessment.covers_end_to_end_flow ? '已覆盖' : '未覆盖'}
-              </div>
-              {compositionMissingStoryTopics.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
-                    缺失主题
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {compositionMissingStoryTopics.map((topic) => (
-                      <li key={topic}>{topic}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {compositionIssues.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
-                    组合问题
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                    {compositionIssues.map((issue) => (
-                      <li key={issue.id}>
-                        [{issue.severity}] {issue.message}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-          {requirementHistory.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
-                迭代历史
-              </div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
-                {requirementHistory.map((item) => (
-                  <li key={`iteration_${item.iteration}`}>
-                    第 {item.iteration} 轮 · 验证 {item.verification_status} · 问题数 {item.issue_count}
-                    {item.composition_verification_status ? ` · 组合 ${item.composition_verification_status} / ${item.composition_issue_count}` : ''}
-                  </li>
-                ))}
-              </ul>
             </div>
           )}
           {isRequirementResultAccepted && (
@@ -1078,22 +1098,39 @@ export const AiIdeBridgePanel = () => {
                 继续完善需求分析
               </div>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)', opacity: 0.82 }}>
-                可以追加全局需求说明，或选择一条 story 给出定向反馈。未选择 story 时会作为全局反馈处理。
+                可以追加全局需求说明，或勾选一条或多条 story 给出定向反馈。未勾选 story 时会作为全局反馈处理。
               </div>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
-                <span>选择要反馈的 Story（可选）</span>
-                <select
-                  value={selectedStoryId}
-                  onChange={(event) => setSelectedStoryId(event.target.value)}
-                  style={inputStyle}
-                >
-                  <option value=''>不指定，作为全局反馈</option>
-                  {requirementStoryUnits.map((storyUnit) => (
-                    <option key={storyUnit.id} value={storyUnit.id}>
-                      {storyUnit.id} · {storyUnit.title}
-                    </option>
-                  ))}
-                </select>
+                <span>选择要反馈的 Story（可多选）</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, border: '1px solid var(--vscode-panel-border)', borderRadius: 8, padding: 10, background: 'rgba(255, 255, 255, 0.02)', maxHeight: 220, overflow: 'auto' }}>
+                  {requirementStoryUnits.map((storyUnit) => {
+                    const checked = selectedStoryIds.includes(storyUnit.id)
+                    return (
+                      <label key={storyUnit.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, lineHeight: 1.5, cursor: 'pointer' }}>
+                        <input
+                          type='checkbox'
+                          checked={checked}
+                          onChange={(event) => {
+                            setSelectedStoryIds((prev) => (
+                              event.target.checked
+                                ? [...new Set([...prev, storyUnit.id])]
+                                : prev.filter((storyId) => storyId !== storyUnit.id)
+                            ))
+                          }}
+                          disabled={requirementAnalysisIsRunning}
+                          style={{ marginTop: 2 }}
+                        />
+                        <span>
+                          <span style={{ fontWeight: 600 }}>{storyUnit.id}</span>
+                          <span style={{ opacity: 0.8 }}> · {storyUnit.title}</span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                  {requirementStoryUnits.length === 0 && (
+                    <div style={{ fontSize: 12, opacity: 0.72 }}>当前没有可选 Story。</div>
+                  )}
+                </div>
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
                 <span>追加说明或反馈意见</span>
@@ -1114,7 +1151,8 @@ export const AiIdeBridgePanel = () => {
                     if (!requirementAnalysisResult || !feedbackText.trim()) {
                       return
                     }
-                    const globalFeedback = selectedStoryId
+                    const selectedStories = requirementStoryUnits.filter((storyUnit) => selectedStoryIds.includes(storyUnit.id))
+                    const globalFeedback = selectedStories.length > 0
                       ? null
                       : {
                         feedback_id: `gfb_${Date.now()}`,
@@ -1131,25 +1169,23 @@ export const AiIdeBridgePanel = () => {
                         expected_action: 'refine_existing_stories' as const,
                         created_at: new Date().toISOString(),
                       }
-                    const storyFeedback = selectedStoryId
-                      ? {
-                        feedback_id: `sfb_${Date.now()}`,
-                        package_id: requirementAnalysisResult.package_id,
-                        task_id: requirementAnalysisResult.task_id,
-                        kind: 'story_feedback' as const,
-                        author_role: 'user',
-                        story_id: selectedStoryId,
-                        feedback_type: 'wording_issue' as const,
-                        feedback_text: feedbackText.trim(),
-                        expected_action: 'refine_existing_stories' as const,
-                        created_at: new Date().toISOString(),
-                      }
-                      : null
+                    const storyFeedbacks = selectedStories.map((storyUnit, index) => ({
+                      feedback_id: `sfb_${Date.now()}_${index}`,
+                      package_id: requirementAnalysisResult.package_id,
+                      task_id: requirementAnalysisResult.task_id,
+                      kind: 'story_feedback' as const,
+                      author_role: 'user',
+                      story_id: storyUnit.id,
+                      feedback_type: 'wording_issue' as const,
+                      feedback_text: feedbackText.trim(),
+                      expected_action: 'refine_existing_stories' as const,
+                      created_at: new Date().toISOString(),
+                    }))
 
                     void bridge.continueRequirementAnalysisWithFeedback({
-                      appendedPrompt: selectedStoryId ? null : feedbackText.trim(),
+                      appendedPrompt: selectedStories.length > 0 ? null : feedbackText.trim(),
                       globalFeedback,
-                      storyFeedback,
+                      storyFeedbacks,
                     })
                     resetFeedbackDraft()
                   }}
@@ -1773,6 +1809,27 @@ export const AiIdeBridgePanel = () => {
             }}
           />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                const nextPrompt = getCurrentPromptInput()
+                syncPromptToBridge(nextPrompt)
+                void bridge.runRequirementAnalysis(nextPrompt)
+              }}
+              disabled={requirementAnalysisIsRunning || !requirementAnalysisSettingsSummary.isConfigured}
+              style={{
+                ...buttonStyle,
+                background:
+                  requirementAnalysisIsRunning || !requirementAnalysisSettingsSummary.isConfigured
+                    ? 'rgba(255, 255, 255, 0.03)'
+                    : 'rgba(92, 196, 137, 0.18)',
+                opacity:
+                  requirementAnalysisIsRunning || !requirementAnalysisSettingsSummary.isConfigured
+                    ? 0.55
+                    : 1,
+              }}
+            >
+              {requirementAnalysisIsRunning ? '需求分析运行中' : '运行需求分析'}
+            </button>
             <button
               onClick={() => { void bridge.run() }}
               disabled={!panel.composer.canRun}

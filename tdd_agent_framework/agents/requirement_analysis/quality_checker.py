@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 import re
 
 from .models import (
@@ -57,6 +57,7 @@ class RequirementAnalysisQualityChecker:
             warnings,
         )
         self._validate_story_units(analysis_input, result.story_units, warnings)
+        self._validate_revision_stability(analysis_input, result.story_units)
 
         quality_checks = QualityChecks(
             has_clear_scope=bool(result.requirement_spec.scope)
@@ -241,6 +242,78 @@ class RequirementAnalysisQualityChecker:
             warnings.append(
                 f"story {story.id} may contain multiple goals; confirm whether it should be split",
             )
+
+    def _validate_revision_stability(
+        self,
+        analysis_input: RequirementAnalysisInput,
+        story_units: list[StoryUnit],
+    ) -> None:
+        target_story_ids = self._feedback_target_story_ids(analysis_input)
+        if not target_story_ids:
+            return
+        snapshot = analysis_input.previous_analysis_result
+        if not isinstance(snapshot, dict):
+            return
+        raw_previous_story_units = snapshot.get("story_units")
+        if not isinstance(raw_previous_story_units, list) or not raw_previous_story_units:
+            return
+
+        previous_story_units = [
+            StoryUnit.from_dict(item)
+            for item in raw_previous_story_units
+            if isinstance(item, dict)
+        ]
+        previous_by_id = {story.id: story for story in previous_story_units}
+        current_by_id = {story.id: story for story in story_units}
+
+        non_target_previous_ids = [
+            story_id for story_id in previous_by_id.keys()
+            if story_id not in target_story_ids
+        ]
+        missing_non_target_ids = [
+            story_id for story_id in non_target_previous_ids
+            if story_id not in current_by_id
+        ]
+        if missing_non_target_ids:
+            raise RequirementAnalysisValidationError(
+                f"non-target story ids were removed during revision: {sorted(missing_non_target_ids)}",
+            )
+
+        changed_non_target_ids = [
+            story_id for story_id in non_target_previous_ids
+            if self._story_signature(previous_by_id[story_id]) != self._story_signature(current_by_id[story_id])
+        ]
+        if changed_non_target_ids:
+            raise RequirementAnalysisValidationError(
+                f"non-target story ids were changed during revision: {sorted(changed_non_target_ids)}",
+            )
+
+        unexpected_new_ids = [
+            story_id for story_id in current_by_id.keys()
+            if story_id not in previous_by_id and story_id not in target_story_ids
+        ]
+        if unexpected_new_ids:
+            raise RequirementAnalysisValidationError(
+                f"non-target story ids were added during revision: {sorted(unexpected_new_ids)}",
+            )
+
+    def _feedback_target_story_ids(self, analysis_input: RequirementAnalysisInput) -> list[str]:
+        target_story_ids: list[str] = []
+        seen: set[str] = set()
+        for feedback in analysis_input.story_feedbacks:
+            if feedback.story_id not in seen:
+                seen.add(feedback.story_id)
+                target_story_ids.append(feedback.story_id)
+        if analysis_input.story_feedback is not None and analysis_input.story_feedback.story_id not in seen:
+            target_story_ids.append(analysis_input.story_feedback.story_id)
+        return target_story_ids
+
+    def _story_signature(self, story: StoryUnit) -> tuple[tuple[str, object], ...]:
+        return tuple(
+            (key, value)
+            for key, value in asdict(story).items()
+            if key != "narrative"
+        )
 
     def _matches_user_story_narrative(self, story: StoryUnit) -> bool:
         expected = StoryUnit._build_narrative(

@@ -11,6 +11,7 @@ from tdd_agent_framework.agents.requirement_analysis import (
     build_requirement_analysis_service,
 )
 from tdd_agent_framework.agents.requirement_analysis.prompt_builder import RequirementAnalysisPromptBuilder
+from tdd_agent_framework.agents.requirement_feedback import StoryFeedback
 
 
 class RequirementAnalysisSettingsTest(unittest.TestCase):
@@ -106,6 +107,51 @@ class RequirementAnalysisSettingsTest(unittest.TestCase):
         self.assertIn("输出最小结构示意", prompt)
         self.assertIn("输出完整 json 示例", prompt)
 
+    def test_prompt_builder_includes_multiple_story_feedbacks(self) -> None:
+        builder = RequirementAnalysisPromptBuilder()
+        analysis_input = RequirementAnalysisInput(
+            task_id="task_001",
+            mode="repo_chat",
+            user_prompt="分析复杂需求",
+            repo_root="/workspace/project",
+            workspace_summary=WorkspaceSummary(
+                languages=["python"],
+                frameworks=["pytest"],
+                key_modules=["app", "tests"],
+            ),
+            story_feedbacks=[
+                StoryFeedback.from_dict(
+                    {
+                        "feedback_id": "sfb_001",
+                        "task_id": "task_001",
+                        "kind": "story_feedback",
+                        "story_id": "S1",
+                        "feedback_type": "wording_issue",
+                        "feedback_text": "优化第一条 story。",
+                        "expected_action": "refine_existing_stories",
+                    },
+                ),
+                StoryFeedback.from_dict(
+                    {
+                        "feedback_id": "sfb_002",
+                        "task_id": "task_001",
+                        "kind": "story_feedback",
+                        "story_id": "S2",
+                        "feedback_type": "granularity_issue",
+                        "feedback_text": "拆分第二条 story。",
+                        "expected_action": "split_story",
+                    },
+                ),
+            ],
+            execution_constraints=ExecutionConstraints(),
+        )
+
+        prompt = builder.build_user_prompt(analysis_input)
+
+        self.assertIn('"story_feedbacks"', prompt)
+        self.assertIn('"story_id": "S1"', prompt)
+        self.assertIn('"story_id": "S2"', prompt)
+
     def test_requirement_analysis_input_from_dict_truncates_large_context_fields(self) -> None:
         analysis_input = RequirementAnalysisInput.from_dict(
             {
@@ -139,6 +185,49 @@ class RequirementAnalysisSettingsTest(unittest.TestCase):
         self.assertEqual(len(analysis_input.revision_focus), 8)
         self.assertEqual(len(analysis_input.git_diff_summary), 4000)
         self.assertEqual(len(analysis_input.previous_verification_summary), 1200)
+
+    def test_requirement_analysis_input_from_dict_parses_multiple_story_feedbacks(self) -> None:
+        analysis_input = RequirementAnalysisInput.from_dict(
+            {
+                "task_id": "task_001",
+                "mode": "repo_chat",
+                "user_prompt": "分析复杂需求",
+                "repo_root": "/workspace/project",
+                "workspace_summary": {},
+                "story_feedbacks": [
+                    {
+                        "feedback_id": "sfb_001",
+                        "task_id": "task_001",
+                        "package_id": "task_001",
+                        "kind": "story_feedback",
+                        "author_role": "user",
+                        "story_id": "S1",
+                        "feedback_type": "wording_issue",
+                        "feedback_text": "优化 story 描述。",
+                    },
+                    {
+                        "feedback_id": "sfb_002",
+                        "task_id": "task_001",
+                        "package_id": "task_001",
+                        "kind": "story_feedback",
+                        "author_role": "user",
+                        "story_id": "S2",
+                        "feedback_type": "granularity_issue",
+                        "feedback_text": "拆分这条 story。",
+                    },
+                ],
+                "execution_constraints": {
+                    "disallow_new_dependencies": True,
+                    "preserve_public_api": True,
+                    "max_capability_groups": 6,
+                    "max_story_units": 24,
+                },
+            },
+        )
+
+        self.assertEqual(len(analysis_input.story_feedbacks), 2)
+        self.assertEqual(analysis_input.story_feedbacks[0].story_id, "S1")
+        self.assertEqual(analysis_input.story_feedbacks[1].story_id, "S2")
 
     def test_execution_constraints_allow_null_limits(self) -> None:
         constraints = ExecutionConstraints.from_dict(

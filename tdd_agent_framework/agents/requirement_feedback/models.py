@@ -100,14 +100,31 @@ class StoryFeedback:
     def from_dict(cls, data: dict[str, Any]) -> "StoryFeedback":
         if not isinstance(data, dict):
             raise ValueError("story_feedback must be an object")
+        task_id = _require_str(data.get("task_id"), "story_feedback.task_id")
+        package_id_value = data.get("package_id")
+        package_id = (
+            _require_str(package_id_value, "story_feedback.package_id")
+            if package_id_value is not None
+            else task_id
+        )
+        author_role_value = data.get("author_role")
+        author_role = (
+            _require_str(author_role_value, "story_feedback.author_role")
+            if author_role_value is not None
+            else "user"
+        )
         return cls(
             feedback_id=_require_str(data.get("feedback_id"), "story_feedback.feedback_id"),
-            package_id=_require_str(data.get("package_id"), "story_feedback.package_id"),
-            task_id=_require_str(data.get("task_id"), "story_feedback.task_id"),
-            kind=_require_str(data.get("kind"), "story_feedback.kind"),
-            author_role=_require_str(data.get("author_role"), "story_feedback.author_role"),
+            package_id=package_id,
+            task_id=task_id,
+            kind=_require_str(data.get("kind"), "story_feedback.kind")
+            if data.get("kind") is not None
+            else "story_feedback",
+            author_role=author_role,
             story_id=_require_str(data.get("story_id"), "story_feedback.story_id"),
-            feedback_type=_require_str(data.get("feedback_type"), "story_feedback.feedback_type"),
+            feedback_type=_require_str(data.get("feedback_type"), "story_feedback.feedback_type")
+            if data.get("feedback_type") is not None
+            else "wording_issue",
             feedback_text=_require_str(data.get("feedback_text"), "story_feedback.feedback_text"),
             expected_action=(
                 _require_str(data.get("expected_action"), "story_feedback.expected_action")
@@ -133,4 +150,16 @@ def feedback_to_revision_focus(
         focus.append(
             f"针对 {story_feedback.story_id}：{story_feedback.feedback_text}"
         )
+    return focus
+
+
+def feedbacks_to_revision_focus(
+    global_feedback: GlobalFeedback | None = None,
+    story_feedbacks: list[StoryFeedback] | None = None,
+) -> list[str]:
+    focus: list[str] = []
+    if global_feedback is not None:
+        focus.append(global_feedback.feedback_text)
+    for feedback in story_feedbacks or []:
+        focus.append(f"针对 {feedback.story_id}：{feedback.feedback_text}")
     return focus

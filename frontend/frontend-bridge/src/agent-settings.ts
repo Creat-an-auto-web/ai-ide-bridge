@@ -72,6 +72,7 @@ export interface RequirementAnalysisRunInputPayload {
   git_diff_summary: string
   global_feedback?: GlobalFeedbackPayload | null
   story_feedback?: StoryFeedbackPayload | null
+  story_feedbacks?: StoryFeedbackPayload[] | null
   revision_focus: string[]
   previous_verification_summary: string | null
   analysis_goal: 'content_review' | 'composition_review' | 'composition_revision'

@@ -107,6 +107,7 @@ class RequirementAnalysisInputPayload(BaseModel):
     git_diff_summary: str = ""
     global_feedback: RequirementAnalysisGlobalFeedbackPayload | None = None
     story_feedback: RequirementAnalysisStoryFeedbackPayload | None = None
+    story_feedbacks: list[RequirementAnalysisStoryFeedbackPayload] | None = Field(default_factory=list)
     revision_focus: list[str] = Field(default_factory=list)
     previous_verification_summary: str | None = None
     iteration: int = 1

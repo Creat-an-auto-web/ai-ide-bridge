@@ -163,6 +163,7 @@ class RequirementAnalysisInput:
     git_diff_summary: str | None = None
     global_feedback: GlobalFeedback | None = None
     story_feedback: StoryFeedback | None = None
+    story_feedbacks: list[StoryFeedback] = field(default_factory=list)
     revision_focus: list[str] = field(default_factory=list)
     previous_verification_summary: str | None = None
     iteration: int = 1
@@ -211,6 +212,15 @@ class RequirementAnalysisInput:
                 if data.get("story_feedback") is not None
                 else None
             ),
+            story_feedbacks=[
+                StoryFeedback.from_dict(item)
+                for item in (
+                    data.get("story_feedbacks")
+                    if isinstance(data.get("story_feedbacks"), list)
+                    else []
+                )
+                if item is not None
+            ],
             revision_focus=_truncate_list(
                 _optional_list_of_display_str(data.get("revision_focus"), "revision_focus"),
                 cls.max_revision_focus,

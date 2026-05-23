@@ -119,6 +119,7 @@ interface RequirementAnalysisContinuationOptions {
   appendedPrompt?: string | null
   globalFeedback?: GlobalFeedbackPayload | null
   storyFeedback?: StoryFeedbackPayload | null
+  storyFeedbacks?: StoryFeedbackPayload[] | null
   analysisGoal?: 'content_review' | 'composition_review' | 'composition_revision'
 }
 
@@ -129,6 +130,7 @@ const cloneContinuationOptions = (
   appendedPrompt: options.appendedPrompt ?? null,
   globalFeedback: options.globalFeedback ?? null,
   storyFeedback: options.storyFeedback ?? null,
+  storyFeedbacks: options.storyFeedbacks ? [...options.storyFeedbacks] : null,
   analysisGoal: options.analysisGoal ?? 'content_review',
 })
 
@@ -506,30 +508,49 @@ const toContinuationRevisionFocus = (
   previousResult: RequirementAnalysisResultPayload | null | undefined,
   globalFeedback?: GlobalFeedbackPayload | null,
   storyFeedback?: StoryFeedbackPayload | null,
+  storyFeedbacks?: StoryFeedbackPayload[] | null,
 ): string[] => {
   const focus: string[] = []
+  const seen = new Set<string>()
+  const pushUnique = (value: string | null | undefined) => {
+    const normalized = value?.trim()
+    if (!normalized || seen.has(normalized)) {
+      return
+    }
+    seen.add(normalized)
+    focus.push(normalized)
+  }
   const compositionVerification = previousResult?.composition_verification
   const revisionGuidance = safeArray(compositionVerification?.revision_guidance)
   const missingStoryTopics = safeArray(compositionVerification?.missing_story_topics)
   const compositionIssues = safeArray(compositionVerification?.composition_issues)
   if (revisionGuidance.length) {
-    focus.push(...revisionGuidance)
+    revisionGuidance.forEach(pushUnique)
   }
   if (missingStoryTopics.length) {
-    focus.push(...missingStoryTopics.map((topic) => `补充缺失的组合能力：${topic}`))
+    missingStoryTopics.forEach((topic) => pushUnique(`补充缺失的组合能力：${topic}`))
   }
   if (compositionIssues.length) {
-    focus.push(...compositionIssues.map((issue) => issue.suggested_action || issue.message))
+    compositionIssues.forEach((issue) => pushUnique(issue.suggested_action || issue.message))
   }
   if (compositionVerification?.status === 'pass' && focus.length === 0) {
-    focus.push('在不破坏当前已通过组合闭环的前提下，继续增强端到端流程覆盖、边界场景、跨 story 依赖一致性和集成测试可验证性。')
+    pushUnique('在不破坏当前已通过组合闭环的前提下，继续增强端到端流程覆盖、边界场景、跨 story 依赖一致性和集成测试可验证性。')
   }
   if (globalFeedback?.feedback_text?.trim()) {
-    focus.push(globalFeedback.feedback_text.trim())
+    pushUnique(globalFeedback.feedback_text.trim())
   }
-  if (storyFeedback?.feedback_text?.trim() && storyFeedback.story_id?.trim()) {
-    focus.push(`针对 ${storyFeedback.story_id.trim()}：${storyFeedback.feedback_text.trim()}`)
-  }
+  const effectiveStoryFeedbacks = (
+    storyFeedbacks?.length
+      ? storyFeedbacks
+      : storyFeedback
+        ? [storyFeedback]
+        : []
+  )
+  effectiveStoryFeedbacks.forEach((feedback) => {
+    if (feedback.feedback_text?.trim() && feedback.story_id?.trim()) {
+      pushUnique(`针对 ${feedback.story_id.trim()}：${feedback.feedback_text.trim()}`)
+    }
+  })
   if (focus.length > 0) {
     return focus
   }
@@ -596,10 +617,18 @@ const toRequirementAnalysisInputPayload = async (
     git_diff_summary: trimTextTail(context.gitDiff, REQUIREMENT_ANALYSIS_MAX_GIT_DIFF_CHARS),
     global_feedback: options.globalFeedback ?? null,
     story_feedback: options.storyFeedback ?? null,
+    story_feedbacks: (
+      options.storyFeedbacks?.length
+        ? options.storyFeedbacks
+        : options.storyFeedback
+          ? [options.storyFeedback]
+          : []
+    ),
     revision_focus: toContinuationRevisionFocus(
       previousResult,
       options.globalFeedback,
       options.storyFeedback,
+      options.storyFeedbacks,
     ),
     previous_verification_summary:
       trimTextHead(

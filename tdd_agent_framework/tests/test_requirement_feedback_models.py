@@ -6,6 +6,7 @@ from tdd_agent_framework.agents.requirement_feedback import (
     GlobalFeedback,
     StoryFeedback,
     feedback_to_revision_focus,
+    feedbacks_to_revision_focus,
 )
 
 
@@ -83,6 +84,56 @@ class RequirementFeedbackModelsTest(unittest.TestCase):
             [
                 "补充权限控制相关 stories。",
                 "针对 story_export_selected_records：拆分导出成功路径与权限控制。",
+            ],
+        )
+
+    def test_feedbacks_to_revision_focus_maps_multiple_story_feedbacks(self) -> None:
+        global_feedback = GlobalFeedback.from_dict(
+            {
+                "feedback_id": "gfb_001",
+                "package_id": "reqpkg_001",
+                "task_id": "task_001",
+                "kind": "global_feedback",
+                "author_role": "user",
+                "feedback_type": "scope_adjustment",
+                "feedback_text": "补充权限控制相关 stories。",
+            }
+        )
+        story_feedbacks = [
+            StoryFeedback.from_dict(
+                {
+                    "feedback_id": "sfb_001",
+                    "package_id": "reqpkg_001",
+                    "task_id": "task_001",
+                    "kind": "story_feedback",
+                    "author_role": "user",
+                    "story_id": "story_export_selected_records",
+                    "feedback_type": "granularity_issue",
+                    "feedback_text": "拆分导出成功路径与权限控制。",
+                }
+            ),
+            StoryFeedback.from_dict(
+                {
+                    "feedback_id": "sfb_002",
+                    "package_id": "reqpkg_001",
+                    "task_id": "task_001",
+                    "kind": "story_feedback",
+                    "author_role": "user",
+                    "story_id": "story_export_audit_log",
+                    "feedback_type": "wording_issue",
+                    "feedback_text": "把描述改成更贴近真实审计场景。",
+                }
+            ),
+        ]
+
+        focus = feedbacks_to_revision_focus(global_feedback, story_feedbacks)
+
+        self.assertEqual(
+            focus,
+            [
+                "补充权限控制相关 stories。",
+                "针对 story_export_selected_records：拆分导出成功路径与权限控制。",
+                "针对 story_export_audit_log：把描述改成更贴近真实审计场景。",
             ],
         )
 

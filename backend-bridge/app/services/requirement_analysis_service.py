@@ -55,6 +55,10 @@ class RequirementAnalysisBackendService:
                 if payload.input.story_feedback is not None
                 else None
             ),
+            story_feedbacks=[
+                StoryFeedback.from_dict(story_feedback)
+                for story_feedback in self._normalize_story_feedbacks(payload)
+            ],
             revision_focus=list(payload.input.revision_focus),
             previous_verification_summary=payload.input.previous_verification_summary,
             iteration=payload.input.iteration,
@@ -128,6 +132,10 @@ class RequirementAnalysisBackendService:
                     if payload.input.story_feedback is not None
                     else None
                 ),
+                story_feedbacks=[
+                    StoryFeedback.from_dict(story_feedback)
+                    for story_feedback in self._normalize_story_feedbacks(payload)
+                ],
                 revision_focus=list(payload.input.revision_focus),
                 previous_verification_summary=payload.input.previous_verification_summary,
                 iteration=payload.input.iteration,
@@ -189,6 +197,26 @@ class RequirementAnalysisBackendService:
         if not data.get("author_role"):
             data["author_role"] = "user"
         return data
+
+    def _normalize_story_feedbacks(self, payload: RequirementAnalysisRunRequest) -> list[dict]:
+        feedbacks = list(payload.input.story_feedbacks or [])
+        if payload.input.story_feedback is not None:
+            feedbacks = [payload.input.story_feedback, *feedbacks]
+        normalized: list[dict] = []
+        seen_feedback_ids: set[str] = set()
+        for feedback in feedbacks:
+            data = feedback.model_dump()
+            feedback_id = str(data.get("feedback_id") or "")
+            if feedback_id and feedback_id in seen_feedback_ids:
+                continue
+            if feedback_id:
+                seen_feedback_ids.add(feedback_id)
+            if not data.get("package_id"):
+                data["package_id"] = payload.input.task_id
+            if not data.get("author_role"):
+                data["author_role"] = "user"
+            normalized.append(data)
+        return normalized
 
     def _normalize_result_payload(self, payload: dict) -> dict:
         story_units = payload.get("story_units")

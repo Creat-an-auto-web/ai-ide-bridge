@@ -99,6 +99,108 @@ class RequirementAnalysisBackendServiceTest(unittest.TestCase):
         self.assertEqual(result["status"], "paused_converged")
         self.assertTrue(any(event.get("type") == "result" for event in events))
 
+    def test_stream_run_accepts_multiple_story_feedbacks(self) -> None:
+        orchestrator = AsyncMock()
+        orchestrator.run = AsyncMock(return_value=FakeResult())
+        service = RequirementAnalysisBackendService(orchestrator=orchestrator)
+        payload = RequirementAnalysisRunRequest.model_validate(
+            {
+                "settings": {
+                    "enabled": True,
+                    "provider_kind": "openai_compatible",
+                    "provider_name": "openai",
+                    "model": "gpt-5.4",
+                    "api_base": "https://api.openai.com/v1",
+                    "api_key": "secret",
+                },
+                "input": {
+                    "task_id": "task_001",
+                    "mode": "repo_chat",
+                    "user_prompt": "继续优化当前需求分析。",
+                    "repo_root": "/workspace/project",
+                    "workspace_summary": {},
+                    "story_feedbacks": [
+                        {
+                            "feedback_id": "sfb_1",
+                            "task_id": "task_001",
+                            "story_id": "S1",
+                            "feedback_type": "wording_issue",
+                            "feedback_text": "优化第一条 story。",
+                        },
+                        {
+                            "feedback_id": "sfb_2",
+                            "task_id": "task_001",
+                            "story_id": "S2",
+                            "feedback_type": "granularity_issue",
+                            "feedback_text": "拆分第二条 story。",
+                        },
+                    ],
+                    "execution_constraints": {},
+                },
+            }
+        )
+
+        events: list[dict] = []
+
+        async def collect_event(event: dict) -> None:
+            events.append(event)
+
+        asyncio.run(service.stream_run(payload, collect_event))
+
+        analysis_input = orchestrator.run.await_args.args[1]
+        self.assertEqual(len(analysis_input.story_feedbacks), 2)
+        self.assertEqual(
+            [feedback.story_id for feedback in analysis_input.story_feedbacks],
+            ["S1", "S2"],
+        )
+        self.assertTrue(any(event.get("type") == "result" for event in events))
+
+    def test_stream_run_backfills_story_feedback_package_id_and_author(self) -> None:
+        orchestrator = AsyncMock()
+        orchestrator.run = AsyncMock(return_value=FakeResult())
+        service = RequirementAnalysisBackendService(orchestrator=orchestrator)
+        payload = RequirementAnalysisRunRequest.model_validate(
+            {
+                "settings": {
+                    "enabled": True,
+                    "provider_kind": "openai_compatible",
+                    "provider_name": "openai",
+                    "model": "gpt-5.4",
+                    "api_base": "https://api.openai.com/v1",
+                    "api_key": "secret",
+                },
+                "input": {
+                    "task_id": "task_001",
+                    "mode": "repo_chat",
+                    "user_prompt": "继续优化当前需求分析。",
+                    "repo_root": "/workspace/project",
+                    "workspace_summary": {},
+                    "story_feedbacks": [
+                        {
+                            "feedback_id": "sfb_1",
+                            "task_id": "task_001",
+                            "story_id": "S1",
+                            "feedback_type": "wording_issue",
+                            "feedback_text": "优化第一条 story。",
+                        },
+                    ],
+                    "execution_constraints": {},
+                },
+            }
+        )
+
+        events: list[dict] = []
+
+        async def collect_event(event: dict) -> None:
+            events.append(event)
+
+        asyncio.run(service.stream_run(payload, collect_event))
+
+        analysis_input = orchestrator.run.await_args.args[1]
+        self.assertEqual(analysis_input.story_feedbacks[0].package_id, "task_001")
+        self.assertEqual(analysis_input.story_feedbacks[0].author_role, "user")
+        self.assertTrue(any(event.get("type") == "result" for event in events))
+
     def test_stream_run_result_always_includes_capability_group_details(self) -> None:
         orchestrator = AsyncMock()
         orchestrator.run = AsyncMock(

@@ -3,6 +3,7 @@ from .models import (
     GlobalFeedback,
     StoryFeedback,
     feedback_to_revision_focus,
+    feedbacks_to_revision_focus,
 )
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "GlobalFeedback",
     "StoryFeedback",
     "feedback_to_revision_focus",
+    "feedbacks_to_revision_focus",
 ]
