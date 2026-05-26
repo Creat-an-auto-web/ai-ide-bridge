@@ -260,6 +260,13 @@ export const AiIdeBridgePanel = () => {
   }
   const requirementVerificationIssues = safeArray(requirementVerification.issues)
   const requirementHistory = safeArray(requirementAnalysisResult?.history)
+  const storyDependencyGraph = requirementAnalysisResult?.story_dependency_graph ?? null
+  const storyDependencyNodes = safeArray(storyDependencyGraph?.nodes)
+  const storyDependencyEdges = safeArray(storyDependencyGraph?.edges)
+  const storyDependencyEntryIds = safeArray(storyDependencyGraph?.entry_story_ids)
+  const storyDependencyTerminalIds = safeArray(storyDependencyGraph?.terminal_story_ids)
+  const storyDependencyWarnings = safeArray(storyDependencyGraph?.warnings)
+  const storyRelationships = safeArray(requirementAnalysisResult?.story_relationships)
   const verificationGateSummary = requirementAnalysisResult?.verification_gate_summary ?? null
   const userReviewGuidance = requirementAnalysisResult?.user_review_guidance ?? null
   const requirementPackageStatus = requirementAnalysisResult?.status ?? 'draft'
@@ -966,6 +973,83 @@ export const AiIdeBridgePanel = () => {
           <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--vscode-input-foreground)' }}>
             Capability 组数量：{requirementAnalysisSummary.capability_group_count ?? requirementCapabilityGroups.length} · 用户故事数量：{requirementAnalysisSummary.story_unit_count ?? requirementStoryUnits.length}
           </div>
+          {(storyDependencyNodes.length > 0 || storyDependencyEdges.length > 0 || storyRelationships.length > 0) && (
+            <details
+              style={{
+                border: '1px solid var(--vscode-panel-border)',
+                borderRadius: 10,
+                padding: '8px 10px',
+                marginBottom: 10,
+                background: 'rgba(255, 255, 255, 0.02)',
+              }}
+            >
+              <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                故事依赖图 · 节点 {storyDependencyNodes.length} · 依赖 {storyDependencyEdges.length} · 关系 {storyRelationships.length}
+                {storyDependencyGraph?.is_dag === false ? ' · 非 DAG' : ''}
+              </summary>
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12, lineHeight: 1.65, color: 'var(--vscode-input-foreground)' }}>
+                <div>
+                  <div style={{ fontWeight: 600, color: 'var(--vscode-editor-foreground)', marginBottom: 4 }}>
+                    入口与终点
+                  </div>
+                  <div>
+                    入口故事：{storyDependencyEntryIds.length > 0 ? storyDependencyEntryIds.join('、') : '暂无'}
+                  </div>
+                  <div>
+                    终点故事：{storyDependencyTerminalIds.length > 0 ? storyDependencyTerminalIds.join('、') : '暂无'}
+                  </div>
+                </div>
+                {storyDependencyEdges.length > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 600, color: 'var(--vscode-editor-foreground)', marginBottom: 4 }}>
+                      严格依赖边
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {storyDependencyEdges.map((edge, index) => {
+                        const fromStoryId = edge.from ?? edge.from_story_id ?? ''
+                        const toStoryId = edge.to ?? edge.to_story_id ?? ''
+                        return (
+                          <li key={`${fromStoryId}_${toStoryId}_${edge.type}_${index}`}>
+                            {fromStoryId} → {toStoryId} · {edge.type}：{edge.reason}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )}
+                {storyRelationships.length > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 600, color: 'var(--vscode-editor-foreground)', marginBottom: 4 }}>
+                      非严格关系
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {storyRelationships.map((relationship, index) => {
+                        const sourceStoryId = relationship.source ?? relationship.source_story_id ?? ''
+                        const targetStoryId = relationship.target ?? relationship.target_story_id ?? ''
+                        return (
+                          <li key={`${sourceStoryId}_${targetStoryId}_${relationship.type}_${index}`}>
+                            {sourceStoryId} → {targetStoryId} · {relationship.type}：{relationship.reason}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )}
+                {storyDependencyWarnings.length > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 600, color: 'var(--vscode-editor-foreground)', marginBottom: 4 }}>
+                      依赖图提示
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {storyDependencyWarnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </details>
+          )}
           {requirementStoryGroups.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ fontSize: 12, marginBottom: 2, color: 'var(--vscode-input-foreground)' }}>
