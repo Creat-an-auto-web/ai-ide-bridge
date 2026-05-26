@@ -1,0 +1,23 @@
+docs/requirement-analysis-architecture.svg
+  s_36820f65476812::t_647462eaa7ba8a 31-35,37,39,53-61,80
+  s_36820f65476812::t_d74b79ea48124f 87
+  s_36820f65476812::t_d6ba48d0d1b25b 92-97
+  s_36820f65476812::t_2338fd52a050ff 42-51
+  s_36820f65476812::t_f6039a60e1cb0d 41,62-79,91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8b0e74cc7211046aa5b3d5410bfa2f2b2f2cda2f",
+  "prompts": {},
+  "sessions": {
+    "s_36820f65476812": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e145e-f0d7-72f1-8845-0d0497267262",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Rcb725 <ricebean725@gmail.com>"
+    }
+  }
+}
