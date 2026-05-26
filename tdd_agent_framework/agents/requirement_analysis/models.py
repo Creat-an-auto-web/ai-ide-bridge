@@ -436,6 +436,143 @@ class CapabilityGroup:
         )
 
 
+ALLOWED_STORY_DEPENDENCY_EDGE_TYPES = {
+    "business_precondition",
+    "state_precondition",
+    "data_precondition",
+    "permission_precondition",
+    "workflow_sequence",
+}
+
+ALLOWED_STORY_RELATIONSHIP_TYPES = {
+    "integration_composition",
+    "alternative_path",
+    "extends_behavior",
+    "guards_behavior",
+}
+
+
+@dataclass(frozen=True)
+class StoryDependencyGraphNode:
+    story_id: str
+    title: str
+    capability_group_id: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "StoryDependencyGraphNode":
+        if not isinstance(data, dict):
+            raise ValueError("story_dependency_graph.nodes item must be an object")
+        return cls(
+            story_id=_require_str(data.get("story_id"), "story_dependency_graph.node.story_id"),
+            title=_require_str(data.get("title"), "story_dependency_graph.node.title"),
+            capability_group_id=_optional_str(
+                data.get("capability_group_id"),
+                "story_dependency_graph.node.capability_group_id",
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class StoryDependencyGraphEdge:
+    from_story_id: str
+    to_story_id: str
+    type: str
+    reason: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "StoryDependencyGraphEdge":
+        if not isinstance(data, dict):
+            raise ValueError("story_dependency_graph.edges item must be an object")
+        raw_type = _require_str(data.get("type"), "story_dependency_graph.edge.type")
+        if raw_type not in ALLOWED_STORY_DEPENDENCY_EDGE_TYPES:
+            raise ValueError(
+                "story_dependency_graph.edge.type must be one of "
+                f"{sorted(ALLOWED_STORY_DEPENDENCY_EDGE_TYPES)}",
+            )
+        return cls(
+            from_story_id=_require_str(
+                data.get("from") if data.get("from") is not None else data.get("from_story_id"),
+                "story_dependency_graph.edge.from",
+            ),
+            to_story_id=_require_str(
+                data.get("to") if data.get("to") is not None else data.get("to_story_id"),
+                "story_dependency_graph.edge.to",
+            ),
+            type=raw_type,
+            reason=_require_str(data.get("reason"), "story_dependency_graph.edge.reason"),
+        )
+
+
+@dataclass(frozen=True)
+class StoryDependencyGraph:
+    nodes: list[StoryDependencyGraphNode] = field(default_factory=list)
+    edges: list[StoryDependencyGraphEdge] = field(default_factory=list)
+    entry_story_ids: list[str] = field(default_factory=list)
+    terminal_story_ids: list[str] = field(default_factory=list)
+    is_dag: bool = True
+    warnings: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "StoryDependencyGraph":
+        if data is None:
+            return cls()
+        if not isinstance(data, dict):
+            raise ValueError("story_dependency_graph must be an object")
+        raw_nodes = data.get("nodes", [])
+        raw_edges = data.get("edges", [])
+        if not isinstance(raw_nodes, list):
+            raise ValueError("story_dependency_graph.nodes must be a list")
+        if not isinstance(raw_edges, list):
+            raise ValueError("story_dependency_graph.edges must be a list")
+        return cls(
+            nodes=[StoryDependencyGraphNode.from_dict(item) for item in raw_nodes],
+            edges=[StoryDependencyGraphEdge.from_dict(item) for item in raw_edges],
+            entry_story_ids=_optional_list_of_str(
+                data.get("entry_story_ids"),
+                "story_dependency_graph.entry_story_ids",
+            ),
+            terminal_story_ids=_optional_list_of_str(
+                data.get("terminal_story_ids"),
+                "story_dependency_graph.terminal_story_ids",
+            ),
+            is_dag=bool(data.get("is_dag", True)),
+            warnings=_optional_list_of_display_str(
+                data.get("warnings"),
+                "story_dependency_graph.warnings",
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class StoryRelationship:
+    source_story_id: str
+    target_story_id: str
+    type: str
+    reason: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "StoryRelationship":
+        if not isinstance(data, dict):
+            raise ValueError("story_relationship must be an object")
+        raw_type = _require_str(data.get("type"), "story_relationship.type")
+        if raw_type not in ALLOWED_STORY_RELATIONSHIP_TYPES:
+            raise ValueError(
+                f"story_relationship.type must be one of {sorted(ALLOWED_STORY_RELATIONSHIP_TYPES)}",
+            )
+        return cls(
+            source_story_id=_require_str(
+                data.get("source") if data.get("source") is not None else data.get("source_story_id"),
+                "story_relationship.source",
+            ),
+            target_story_id=_require_str(
+                data.get("target") if data.get("target") is not None else data.get("target_story_id"),
+                "story_relationship.target",
+            ),
+            type=raw_type,
+            reason=_require_str(data.get("reason"), "story_relationship.reason"),
+        )
+
+
 @dataclass(frozen=True)
 class AnalysisSummary:
     story_unit_count: int
@@ -460,6 +597,8 @@ class RequirementAnalysisResult:
     warnings: list[str]
     quality_checks: QualityChecks
     capability_groups: list[CapabilityGroup] = field(default_factory=list)
+    story_dependency_graph: StoryDependencyGraph = field(default_factory=StoryDependencyGraph)
+    story_relationships: list[StoryRelationship] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -589,6 +728,8 @@ class RequirementAnalysisPackage:
     story_units: list[StoryUnit]
     analysis_summary: AnalysisSummary
     capability_groups: list[CapabilityGroup]
+    story_dependency_graph: StoryDependencyGraph
+    story_relationships: list[StoryRelationship]
     warnings: list[str]
     quality_checks: QualityChecks
     verification: RequirementVerificationResult

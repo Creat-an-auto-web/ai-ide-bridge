@@ -50,6 +50,8 @@ export interface TestCaseGenerationRunInputPayload {
   user_prompt: string
   plan: string | null
   story_units: TestCaseGenerationStoryUnitPayload[]
+  story_dependency_graph?: RequirementAnalysisResultPayload['story_dependency_graph']
+  story_relationships?: RequirementAnalysisResultPayload['story_relationships']
   execution_constraints: TestCaseGenerationExecutionConstraintsPayload
 }
 
@@ -140,6 +142,8 @@ export const buildTestCaseGenerationWorkflowDraft = (
   const storyUnits = safeArray(result.story_units)
   const capabilityTitles = safeArray(result.capability_groups).map((group) => group.title)
   const integrationScenarios = safeArray(result.composition_verification?.integration_test_scenarios)
+  const dependencyEdges = safeArray(result.story_dependency_graph?.edges)
+  const storyRelationships = safeArray(result.story_relationships)
   const requiredBehaviors = uniqueNonEmptyStrings([
     ...safeArray(requirementSpec.acceptance_criteria),
     ...storyUnits.flatMap((story) => safeArray(story.acceptance_criteria)),
@@ -172,6 +176,24 @@ export const buildTestCaseGenerationWorkflowDraft = (
     lines.push('建议保留的端到端场景：')
     integrationScenarios.forEach((scenario, index) => {
       lines.push(`${index + 1}. ${scenario.title} -> ${scenario.expected_outcome}`)
+    })
+  }
+
+  if (dependencyEdges.length > 0) {
+    lines.push('Story 依赖顺序：')
+    dependencyEdges.forEach((edge, index) => {
+      const from = edge.from ?? edge.from_story_id ?? ''
+      const to = edge.to ?? edge.to_story_id ?? ''
+      lines.push(`${index + 1}. ${from} -> ${to}：${edge.reason}`)
+    })
+  }
+
+  if (storyRelationships.length > 0) {
+    lines.push('Story 组合关系：')
+    storyRelationships.forEach((relationship, index) => {
+      const source = relationship.source ?? relationship.source_story_id ?? ''
+      const target = relationship.target ?? relationship.target_story_id ?? ''
+      lines.push(`${index + 1}. ${source} -> ${target}：${relationship.type}，${relationship.reason}`)
     })
   }
 
@@ -217,6 +239,8 @@ export const toTestCaseGenerationInputPayload = (
     test_focus: safeArray(story.test_focus),
     implementation_hints: safeArray(story.implementation_hints),
   })),
+  story_dependency_graph: result.story_dependency_graph,
+  story_relationships: safeArray(result.story_relationships),
   execution_constraints: {
     max_test_cases_per_story: 6,
     require_boundary_cases: true,

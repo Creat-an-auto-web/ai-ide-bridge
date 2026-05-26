@@ -29,6 +29,8 @@ class TestCaseGenerationPromptBuilder:
                 }
                 for story in generation_input.story_units
             ],
+            "story_dependency_graph": generation_input.story_dependency_graph,
+            "story_relationships": generation_input.story_relationships,
             "execution_constraints": {
                 "max_test_cases_per_story": generation_input.execution_constraints.max_test_cases_per_story,
                 "require_boundary_cases": generation_input.execution_constraints.require_boundary_cases,

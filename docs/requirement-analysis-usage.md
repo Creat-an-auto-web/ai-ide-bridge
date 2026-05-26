@@ -17,6 +17,7 @@
 
 - [需求分析流程图](./requirement-analysis-flow.png)
 - [需求分析阶段架构图](./requirement-analysis-architecture.md)
+- [故事依赖图交付物](./requirement-analysis-story-graph.md)
 - [注册登录网站流程实例](./requirement-analysis-login-flow-example.md)
 - [测试用例生成 Workflow Draft](./test-case-generation-workflow-draft.md)
 - [User Story 标准](./requirement-analysis-user-story-standard.md)

@@ -148,6 +148,33 @@ export interface RequirementAnalysisResultPayload {
     story_ids: string[]
     priority: string
   }>
+  story_dependency_graph?: {
+    nodes: Array<{
+      story_id: string
+      title: string
+      capability_group_id?: string | null
+    }>
+    edges: Array<{
+      from?: string
+      to?: string
+      from_story_id?: string
+      to_story_id?: string
+      type: string
+      reason: string
+    }>
+    entry_story_ids: string[]
+    terminal_story_ids: string[]
+    is_dag: boolean
+    warnings: string[]
+  }
+  story_relationships?: Array<{
+    source?: string
+    target?: string
+    source_story_id?: string
+    target_story_id?: string
+    type: string
+    reason: string
+  }>
   warnings: string[]
   quality_checks: {
     has_clear_scope: boolean

@@ -69,6 +69,8 @@ class TestCaseGenerationInput:
     user_prompt: str | None = None
     plan: str | None = None
     story_units: list[StoryUnit] = field(default_factory=list)
+    story_dependency_graph: dict[str, Any] | None = None
+    story_relationships: list[dict[str, Any]] = field(default_factory=list)
     execution_constraints: TestCaseGenerationConstraints = field(
         default_factory=TestCaseGenerationConstraints,
     )
@@ -85,6 +87,20 @@ class TestCaseGenerationInput:
             user_prompt=_optional_str(data.get("user_prompt"), "user_prompt"),
             plan=_optional_str(data.get("plan"), "plan"),
             story_units=[StoryUnit.from_dict(item) for item in raw_story_units],
+            story_dependency_graph=(
+                data.get("story_dependency_graph")
+                if isinstance(data.get("story_dependency_graph"), dict)
+                else None
+            ),
+            story_relationships=[
+                item
+                for item in (
+                    data.get("story_relationships")
+                    if isinstance(data.get("story_relationships"), list)
+                    else []
+                )
+                if isinstance(item, dict)
+            ],
             execution_constraints=TestCaseGenerationConstraints.from_dict(
                 data.get("execution_constraints"),
             ),

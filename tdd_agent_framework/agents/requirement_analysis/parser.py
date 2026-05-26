@@ -8,6 +8,10 @@ from .models import (
     RequirementAnalysisInput,
     RequirementAnalysisResult,
     RequirementSpec,
+    StoryDependencyGraph,
+    StoryDependencyGraphEdge,
+    StoryDependencyGraphNode,
+    StoryRelationship,
     StoryUnit,
     build_analysis_summary,
 )
@@ -44,6 +48,8 @@ class RequirementAnalysisParser:
         ]
         story_units = [StoryUnit.from_dict(item) for item in raw_story_units]
         capability_groups = self._parse_capability_groups(payload, story_units, requirement_spec)
+        story_dependency_graph = self._parse_story_dependency_graph(payload, story_units, capability_groups)
+        story_relationships = self._parse_story_relationships(payload)
 
         warnings = payload.get("warnings", [])
         if not isinstance(warnings, list):
@@ -61,6 +67,8 @@ class RequirementAnalysisParser:
                 story_count_within_limit=False,
             ),
             capability_groups=capability_groups,
+            story_dependency_graph=story_dependency_graph,
+            story_relationships=story_relationships,
         )
 
     def _contains_requirement_analysis_fields(self, payload: dict) -> bool:
@@ -525,6 +533,64 @@ class RequirementAnalysisParser:
         normalized["story_ids"] = referenced_story_ids
         normalized["priority"] = self._normalize_level(normalized.get("priority"), default="medium")
         return normalized
+
+    def _parse_story_dependency_graph(
+        self,
+        payload: dict,
+        story_units: list[StoryUnit],
+        capability_groups: list[CapabilityGroup],
+    ) -> StoryDependencyGraph:
+        raw_graph = payload.get("story_dependency_graph") or payload.get("storyDependencyGraph")
+        if isinstance(raw_graph, dict):
+            return StoryDependencyGraph.from_dict(raw_graph)
+
+        story_to_group: dict[str, str] = {}
+        for group in capability_groups:
+            for story_id in group.story_ids:
+                story_to_group.setdefault(story_id, group.id)
+
+        nodes = [
+            StoryDependencyGraphNode(
+                story_id=story.id,
+                title=story.title,
+                capability_group_id=story_to_group.get(story.id),
+            )
+            for story in story_units
+        ]
+        edges: list[StoryDependencyGraphEdge] = []
+        story_ids = {story.id for story in story_units}
+        for story in story_units:
+            for dependency_id in story.dependencies:
+                if dependency_id not in story_ids:
+                    continue
+                edges.append(
+                    StoryDependencyGraphEdge(
+                        from_story_id=dependency_id,
+                        to_story_id=story.id,
+                        type="business_precondition",
+                        reason=f"{story.title} 依赖 {dependency_id} 对应故事先成立。",
+                    )
+                )
+
+        outgoing = {edge.from_story_id for edge in edges}
+        incoming = {edge.to_story_id for edge in edges}
+        all_story_ids = [story.id for story in story_units]
+        return StoryDependencyGraph(
+            nodes=nodes,
+            edges=edges,
+            entry_story_ids=[story_id for story_id in all_story_ids if story_id not in incoming],
+            terminal_story_ids=[story_id for story_id in all_story_ids if story_id not in outgoing],
+            is_dag=True,
+            warnings=[],
+        )
+
+    def _parse_story_relationships(self, payload: dict) -> list[StoryRelationship]:
+        raw_relationships = payload.get("story_relationships") or payload.get("storyRelationships")
+        if raw_relationships is None:
+            return []
+        if not isinstance(raw_relationships, list):
+            raise ValueError("story_relationships must be a list")
+        return [StoryRelationship.from_dict(item) for item in raw_relationships]
 
     def _normalize_string_list(self, value: object) -> list[str]:
         if not isinstance(value, list):

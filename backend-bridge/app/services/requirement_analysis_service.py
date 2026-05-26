@@ -297,6 +297,15 @@ class RequirementAnalysisBackendService:
             )
 
         payload["capability_groups"] = normalized_groups
+        payload["story_dependency_graph"] = self._normalize_story_dependency_graph(
+            payload.get("story_dependency_graph"),
+            story_units,
+            normalized_groups,
+        )
+        payload["story_relationships"] = self._normalize_story_relationships(
+            payload.get("story_relationships"),
+            valid_story_ids,
+        )
         analysis_summary = payload.get("analysis_summary")
         if isinstance(analysis_summary, dict):
             analysis_summary["capability_group_count"] = len(normalized_groups)
@@ -313,3 +322,108 @@ class RequirementAnalysisBackendService:
                 "capability_group_count": len(normalized_groups),
             }
         return payload
+
+    def _normalize_story_dependency_graph(
+        self,
+        raw_graph: object,
+        story_units: list,
+        capability_groups: list[dict],
+    ) -> dict:
+        story_ids = [
+            story.get("id")
+            for story in story_units
+            if isinstance(story, dict) and isinstance(story.get("id"), str) and story.get("id")
+        ]
+        valid_story_ids = set(story_ids)
+        story_by_id = {
+            story.get("id"): story
+            for story in story_units
+            if isinstance(story, dict) and isinstance(story.get("id"), str) and story.get("id")
+        }
+        story_to_group: dict[str, str] = {}
+        for group in capability_groups:
+            if not isinstance(group, dict):
+                continue
+            group_id = str(group.get("id") or "")
+            for story_id in group.get("story_ids", []):
+                if isinstance(story_id, str) and story_id and group_id:
+                    story_to_group.setdefault(story_id, group_id)
+
+        raw_edges = raw_graph.get("edges") if isinstance(raw_graph, dict) else None
+        edges: list[dict] = []
+        if isinstance(raw_edges, list):
+            for edge in raw_edges:
+                if not isinstance(edge, dict):
+                    continue
+                from_story_id = edge.get("from") or edge.get("from_story_id")
+                to_story_id = edge.get("to") or edge.get("to_story_id")
+                if from_story_id in valid_story_ids and to_story_id in valid_story_ids and from_story_id != to_story_id:
+                    edges.append(
+                        {
+                            "from": from_story_id,
+                            "to": to_story_id,
+                            "type": str(edge.get("type") or "business_precondition"),
+                            "reason": str(edge.get("reason") or "后续 story 依赖前置 story 成立。"),
+                        }
+                    )
+        if not edges:
+            for story in story_units:
+                if not isinstance(story, dict):
+                    continue
+                story_id = story.get("id")
+                raw_dependencies = story.get("dependencies")
+                if not isinstance(story_id, str) or not isinstance(raw_dependencies, list):
+                    continue
+                for dependency_id in raw_dependencies:
+                    if dependency_id in valid_story_ids and dependency_id != story_id:
+                        edges.append(
+                            {
+                                "from": dependency_id,
+                                "to": story_id,
+                                "type": "business_precondition",
+                                "reason": f"{story.get('title') or story_id} 依赖 {dependency_id} 对应故事先成立。",
+                            }
+                        )
+
+        outgoing = {edge["from"] for edge in edges}
+        incoming = {edge["to"] for edge in edges}
+        return {
+            "nodes": [
+                {
+                    "story_id": story_id,
+                    "title": str(story_by_id.get(story_id, {}).get("title") or story_id),
+                    "capability_group_id": story_to_group.get(story_id),
+                }
+                for story_id in story_ids
+            ],
+            "edges": edges,
+            "entry_story_ids": [story_id for story_id in story_ids if story_id not in incoming],
+            "terminal_story_ids": [story_id for story_id in story_ids if story_id not in outgoing],
+            "is_dag": True,
+            "warnings": [],
+        }
+
+    def _normalize_story_relationships(
+        self,
+        raw_relationships: object,
+        valid_story_ids: set[str],
+    ) -> list[dict]:
+        if not isinstance(raw_relationships, list):
+            return []
+        relationships: list[dict] = []
+        for relationship in raw_relationships:
+            if not isinstance(relationship, dict):
+                continue
+            source = relationship.get("source") or relationship.get("source_story_id")
+            target = relationship.get("target") or relationship.get("target_story_id")
+            if source not in valid_story_ids or target not in valid_story_ids or source == target:
+                continue
+            relationships.append(
+                {
+                    "source": source,
+                    "target": target,
+                    "type": str(relationship.get("type") or "integration_composition"),
+                    "reason": str(relationship.get("reason") or "相关 story 需要在测试场景中联合考虑。"),
+                }
+            )
+        return relationships

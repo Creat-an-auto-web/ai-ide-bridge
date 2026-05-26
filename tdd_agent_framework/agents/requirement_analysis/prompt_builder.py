@@ -66,6 +66,21 @@ class RequirementAnalysisPromptBuilder:
                 "implementation_hints": ["优先复用现有筛选逻辑，避免重复定义导出范围"],
             }
         ],
+        "story_dependency_graph": {
+            "nodes": [
+                {
+                    "story_id": "S1",
+                    "title": "任务列表用户可以导出当前筛选结果用于汇报和离线分析",
+                    "capability_group_id": "CG1",
+                }
+            ],
+            "edges": [],
+            "entry_story_ids": ["S1"],
+            "terminal_story_ids": ["S1"],
+            "is_dag": True,
+            "warnings": [],
+        },
+        "story_relationships": [],
     }
 
     def build_system_prompt(self) -> str:
@@ -201,6 +216,35 @@ class RequirementAnalysisPromptBuilder:
                     "implementation_hints": ["..."],
                 }
             ],
+            "story_dependency_graph": {
+                "nodes": [
+                    {
+                        "story_id": "...",
+                        "title": "...",
+                        "capability_group_id": "...",
+                    }
+                ],
+                "edges": [
+                    {
+                        "from": "...",
+                        "to": "...",
+                        "type": "business_precondition|state_precondition|data_precondition|permission_precondition|workflow_sequence",
+                        "reason": "...",
+                    }
+                ],
+                "entry_story_ids": ["..."],
+                "terminal_story_ids": ["..."],
+                "is_dag": True,
+                "warnings": ["..."],
+            },
+            "story_relationships": [
+                {
+                    "source": "...",
+                    "target": "...",
+                    "type": "integration_composition|alternative_path|extends_behavior|guards_behavior",
+                    "reason": "...",
+                }
+            ],
         }
         return (
             "请基于下面输入生成结果。\n"
@@ -228,6 +272,10 @@ class RequirementAnalysisPromptBuilder:
             "21. 如果上一轮 composition_verification.status 为 revise 或 blocked，应优先修复端到端闭环、缺失能力、story 依赖冲突、重复或割裂的 story。\n"
             "22. 如果上一轮 composition_verification.status 为 pass，则这是组合增强优化：不要推翻已通过闭环，应在保持通过结果稳定的前提下，补强边界场景、跨 story 一致性、验收标准和集成测试可验证性。\n"
             "23. composition_revision 必要时可以新增、合并、拆分或改写 story，但必须保持所有 story 单条仍可测试。\n\n"
+            "24. 必须输出 story_dependency_graph，表示严格前置/顺序依赖；它必须是有向无环图，边方向为 from 前置 story -> to 后续 story。\n"
+            "25. story_dependency_graph.edges.type 只能使用 business_precondition、state_precondition、data_precondition、permission_precondition、workflow_sequence。\n"
+            "26. 组合、替代、扩展、保护等非严格前置关系不要放入 DAG，必须放入 story_relationships。\n"
+            "27. story_relationships.type 只能使用 integration_composition、alternative_path、extends_behavior、guards_behavior。\n\n"
             f"输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
             "输出最小结构示意：\n"
             f"{json.dumps(output_shape, ensure_ascii=False, separators=(',', ':'))}\n\n"

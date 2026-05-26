@@ -14,6 +14,10 @@ from tdd_agent_framework.agents.requirement_analysis import (
     RequirementAnalysisResult,
     RequirementSpec,
     RequirementVerificationResult,
+    StoryDependencyGraph,
+    StoryDependencyGraphEdge,
+    StoryDependencyGraphNode,
+    StoryRelationship,
     StoryUnit,
     QualityChecks,
     AnalysisSummary,
@@ -554,6 +558,8 @@ class RequirementAnalysisOrchestrator:
             story_units=result.story_units,
             analysis_summary=result.analysis_summary,
             capability_groups=result.capability_groups,
+            story_dependency_graph=result.story_dependency_graph,
+            story_relationships=result.story_relationships,
             warnings=result.warnings,
             quality_checks=result.quality_checks,
             verification=verification,
@@ -791,7 +797,7 @@ class RequirementAnalysisOrchestrator:
             quality_checks=QualityChecks(
                 has_clear_scope=False,
                 has_testable_ac=False,
-                dependency_graph_valid=False,
+                dependency_graph_valid=True,
                 story_count_within_limit=False,
             ),
             capability_groups=[
@@ -804,6 +810,21 @@ class RequirementAnalysisOrchestrator:
                     priority="high",
                 )
             ],
+            story_dependency_graph=StoryDependencyGraph(
+                nodes=[
+                    StoryDependencyGraphNode(
+                        story_id="format_invalid_placeholder",
+                        title=story_unit.title,
+                        capability_group_id="format_invalid_group",
+                    )
+                ],
+                edges=[],
+                entry_story_ids=["format_invalid_placeholder"],
+                terminal_story_ids=["format_invalid_placeholder"],
+                is_dag=True,
+                warnings=["格式失败占位结果没有真实 story 依赖图。"],
+            ),
+            story_relationships=[],
         )
         return self._build_package(
             task_id=analysis_input.task_id,
@@ -849,6 +870,12 @@ class RequirementAnalysisOrchestrator:
         )
         warnings = [str(item) for item in snapshot.get("warnings", [])] if isinstance(snapshot.get("warnings"), list) else []
         warnings.extend(capability_group_warnings)
+        story_dependency_graph = self._story_dependency_graph_from_snapshot(
+            snapshot,
+            story_units,
+            capability_groups,
+        )
+        story_relationships = self._story_relationships_from_snapshot(snapshot)
         return RequirementAnalysisResult(
             requirement_spec=requirement_spec,
             story_units=story_units,
@@ -861,7 +888,76 @@ class RequirementAnalysisOrchestrator:
             warnings=warnings,
             quality_checks=quality_checks,
             capability_groups=capability_groups,
+            story_dependency_graph=story_dependency_graph,
+            story_relationships=story_relationships,
         )
+
+    def _story_dependency_graph_from_snapshot(
+        self,
+        snapshot: dict[str, object],
+        story_units: list[StoryUnit],
+        capability_groups: list[CapabilityGroup],
+    ) -> StoryDependencyGraph:
+        raw_graph = snapshot.get("story_dependency_graph")
+        if not isinstance(raw_graph, dict):
+            raw_graph = snapshot.get("storyDependencyGraph")
+        if isinstance(raw_graph, dict):
+            try:
+                return StoryDependencyGraph.from_dict(raw_graph)
+            except ValueError:
+                pass
+        story_to_group: dict[str, str] = {}
+        for group in capability_groups:
+            for story_id in group.story_ids:
+                story_to_group.setdefault(story_id, group.id)
+        nodes = [
+            StoryDependencyGraphNode(
+                story_id=story.id,
+                title=story.title,
+                capability_group_id=story_to_group.get(story.id),
+            )
+            for story in story_units
+        ]
+        story_ids = {story.id for story in story_units}
+        edges = [
+            StoryDependencyGraphEdge(
+                from_story_id=dependency_id,
+                to_story_id=story.id,
+                type="business_precondition",
+                reason=f"{story.title} 依赖 {dependency_id} 对应故事先成立。",
+            )
+            for story in story_units
+            for dependency_id in story.dependencies
+            if dependency_id in story_ids
+        ]
+        outgoing = {edge.from_story_id for edge in edges}
+        incoming = {edge.to_story_id for edge in edges}
+        all_story_ids = [story.id for story in story_units]
+        return StoryDependencyGraph(
+            nodes=nodes,
+            edges=edges,
+            entry_story_ids=[story_id for story_id in all_story_ids if story_id not in incoming],
+            terminal_story_ids=[story_id for story_id in all_story_ids if story_id not in outgoing],
+            is_dag=True,
+            warnings=[],
+        )
+
+    def _story_relationships_from_snapshot(
+        self,
+        snapshot: dict[str, object],
+    ) -> list[StoryRelationship]:
+        raw_relationships = snapshot.get("story_relationships")
+        if not isinstance(raw_relationships, list):
+            raw_relationships = snapshot.get("storyRelationships")
+        if not isinstance(raw_relationships, list):
+            return []
+        relationships: list[StoryRelationship] = []
+        for item in raw_relationships:
+            try:
+                relationships.append(StoryRelationship.from_dict(item))
+            except ValueError:
+                continue
+        return relationships
 
     def _capability_groups_from_snapshot(
         self,

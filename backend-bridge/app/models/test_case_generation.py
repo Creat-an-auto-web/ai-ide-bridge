@@ -74,6 +74,8 @@ class TestCaseGenerationInputPayload(BaseModel):
     user_prompt: str | None = None
     plan: str | None = None
     story_units: list[StoryUnitPayload] = Field(default_factory=list)
+    story_dependency_graph: dict | None = None
+    story_relationships: list[dict] = Field(default_factory=list)
     execution_constraints: TestCaseGenerationExecutionConstraintsPayload = Field(
         default_factory=TestCaseGenerationExecutionConstraintsPayload,
     )

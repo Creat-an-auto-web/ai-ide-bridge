@@ -57,13 +57,15 @@ class RequirementAnalysisQualityChecker:
             warnings,
         )
         self._validate_story_units(analysis_input, result.story_units, warnings)
+        dependency_graph_valid = self._validate_story_dependency_graph(result)
+        self._validate_story_relationships(result)
         self._validate_revision_stability(analysis_input, result.story_units)
 
         quality_checks = QualityChecks(
             has_clear_scope=bool(result.requirement_spec.scope)
             and not set(result.requirement_spec.scope).intersection(result.requirement_spec.out_of_scope),
             has_testable_ac=self._has_testable_ac(result),
-            dependency_graph_valid=True,
+            dependency_graph_valid=dependency_graph_valid,
             story_count_within_limit=(
                 analysis_input.execution_constraints.max_story_units is None
                 or len(result.story_units) <= analysis_input.execution_constraints.max_story_units
@@ -382,6 +384,71 @@ class RequirementAnalysisQualityChecker:
 
         for story_id in adjacency:
             visit(story_id)
+
+    def _validate_story_dependency_graph(self, result: RequirementAnalysisResult) -> bool:
+        story_ids = {story.id for story in result.story_units}
+        graph = result.story_dependency_graph
+        node_ids = {node.story_id for node in graph.nodes}
+        if node_ids != story_ids:
+            raise RequirementAnalysisValidationError(
+                "story_dependency_graph.nodes must match story_units ids",
+            )
+        known_group_ids = {group.id for group in result.capability_groups}
+        unknown_group_ids = {
+            node.capability_group_id
+            for node in graph.nodes
+            if node.capability_group_id is not None and node.capability_group_id not in known_group_ids
+        }
+        if unknown_group_ids:
+            raise RequirementAnalysisValidationError(
+                f"story_dependency_graph nodes reference unknown capability groups: {sorted(unknown_group_ids)}",
+            )
+        adjacency: dict[str, list[str]] = {story_id: [] for story_id in story_ids}
+        for edge in graph.edges:
+            if edge.from_story_id not in story_ids or edge.to_story_id not in story_ids:
+                raise RequirementAnalysisValidationError(
+                    "story_dependency_graph.edges must reference existing story ids",
+                )
+            if edge.from_story_id == edge.to_story_id:
+                raise RequirementAnalysisValidationError("story_dependency_graph.edges cannot self-reference")
+            adjacency[edge.from_story_id].append(edge.to_story_id)
+
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(node: str) -> None:
+            if node in visited:
+                return
+            if node in visiting:
+                raise RequirementAnalysisValidationError("story_dependency_graph must be a DAG")
+            visiting.add(node)
+            for next_node in adjacency[node]:
+                visit(next_node)
+            visiting.remove(node)
+            visited.add(node)
+
+        for story_id in adjacency:
+            visit(story_id)
+
+        if not graph.is_dag:
+            raise RequirementAnalysisValidationError("story_dependency_graph.is_dag must be true")
+        invalid_entry_ids = set(graph.entry_story_ids).difference(story_ids)
+        invalid_terminal_ids = set(graph.terminal_story_ids).difference(story_ids)
+        if invalid_entry_ids or invalid_terminal_ids:
+            raise RequirementAnalysisValidationError(
+                "story_dependency_graph entry/terminal story ids must reference existing story ids",
+            )
+        return True
+
+    def _validate_story_relationships(self, result: RequirementAnalysisResult) -> None:
+        story_ids = {story.id for story in result.story_units}
+        for relationship in result.story_relationships:
+            if relationship.source_story_id not in story_ids or relationship.target_story_id not in story_ids:
+                raise RequirementAnalysisValidationError(
+                    "story_relationships must reference existing story ids",
+                )
+            if relationship.source_story_id == relationship.target_story_id:
+                raise RequirementAnalysisValidationError("story_relationships cannot self-reference")
 
     def _has_testable_ac(self, result: RequirementAnalysisResult) -> bool:
         requirement_ac = all(len(item.strip()) >= 8 for item in result.requirement_spec.acceptance_criteria)

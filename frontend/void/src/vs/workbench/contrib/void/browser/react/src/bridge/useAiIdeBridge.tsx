@@ -194,6 +194,8 @@ const toPreviousAnalysisResultSnapshot = (
     capability_groups: normalizeCapabilityGroupsForSnapshot(previousResult),
     warnings: previousResult.warnings,
     quality_checks: previousResult.quality_checks,
+    story_dependency_graph: previousResult.story_dependency_graph,
+    story_relationships: previousResult.story_relationships,
     verification: previousResult.verification,
     composition_verification: previousResult.composition_verification ?? null,
   }
