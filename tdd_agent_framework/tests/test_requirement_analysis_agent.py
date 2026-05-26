@@ -348,6 +348,124 @@ class RequirementAnalysisAgentTest(unittest.TestCase):
         self.assertEqual(result.story_units[0].risk, "medium")
         self.assertEqual(result.capability_groups[0].story_ids, ["S1"])
 
+    def test_tolerates_malformed_optional_story_graph_fields(self) -> None:
+        payload = {
+        "requirement_spec": {
+            "task_id": "task_001",
+            "version": 1,
+            "problem_statement": "论坛需要支持用户注册登录和发帖。",
+            "product_goal": "让论坛访客成为注册用户并发布主题内容。",
+            "scope": ["注册登录", "发布帖子"],
+            "out_of_scope": [],
+            "constraints": [],
+            "assumptions": [],
+            "interfaces_or_contracts": [],
+            "acceptance_criteria": [
+                "访客可以完成注册登录",
+                "已登录用户可以发布帖子",
+                "未登录用户不能发布帖子",
+            ],
+            "decomposition_strategy": "按身份建立和内容发布拆分",
+        },
+        "capability_groups": [
+            {
+                "id": "CG1",
+                "title": "身份与发帖",
+                "goal": "支撑论坛用户完成登录后发帖",
+                "scope": ["注册登录", "发布帖子"],
+                "story_ids": ["S1", "S2"],
+                "priority": "高",
+            }
+        ],
+        "story_units": [
+            {
+                "id": "S1",
+                "story_kind": "普通用户",
+                "title": "论坛访客可以注册并登录账号以参与社区",
+                "as_a": "论坛访客",
+                "when_context": "我希望从访客身份开始参与论坛互动",
+                "i_want": "注册并登录自己的论坛账号",
+                "so_that": "我可以获得发布内容和参与互动的身份",
+                "narrative": "作为论坛访客，当我希望从访客身份开始参与论坛互动时，我希望注册并登录自己的论坛账号，从而我可以获得发布内容和参与互动的身份。",
+                "scope": "注册登录",
+                "acceptance_criteria": [
+                    "给定访客提交有效注册信息，当注册成功时，那么系统会创建账号",
+                    "给定账号已经创建，当用户登录成功时，那么系统会建立登录态",
+                    "给定登录信息无效，当用户尝试登录时，那么系统会给出失败反馈",
+                ],
+                "priority": "高",
+                "risk": "中",
+            },
+            {
+                "id": "S2",
+                "story_kind": "user_outcome",
+                "title": "已登录论坛用户可以发布帖子分享主题内容",
+                "as_a": "已登录论坛用户",
+                "when_context": "我已经登录并准备发起一个新的论坛主题",
+                "i_want": "发布包含标题和正文的帖子",
+                "so_that": "我可以把想讨论的内容展示给社区成员",
+                "narrative": "作为已登录论坛用户，当我已经登录并准备发起一个新的论坛主题时，我希望发布包含标题和正文的帖子，从而我可以把想讨论的内容展示给社区成员。",
+                "scope": ["发布帖子"],
+                "acceptance_criteria": [
+                    "给定用户已登录，当提交有效帖子内容时，那么系统会创建帖子",
+                    "给定帖子创建成功，当其他用户浏览论坛时，那么可以看到该帖子",
+                    "给定用户未登录，当尝试发布帖子时，那么系统会阻止发布并提示登录",
+                ],
+                "dependencies": ["S1"],
+                "priority": "medium",
+                "risk": "low",
+                "test_focus": [],
+            },
+        ],
+        "story_dependency_graph": {
+            "nodes": [{"story_id": "unknown", "title": "错误节点"}],
+            "edges": [
+                {
+                    "from": "S1",
+                    "to": "S2",
+                    "type": "depends_on",
+                    "reason": "新 API 使用了非约定枚举",
+                }
+            ],
+            "entry_story_ids": ["unknown"],
+            "terminal_story_ids": ["S2"],
+            "is_dag": True,
+        },
+        "story_relationships": [
+            {
+                "source": "S1",
+                "target": "S2",
+                "type": "composition",
+                "reason": "新 API 使用了非约定枚举",
+            },
+            {
+                "source": "S1",
+                "target": "S2",
+                "type": "integration_composition",
+                "reason": "登录身份与发帖路径组合形成论坛主流程。",
+            },
+        ],
+        }
+        provider = FakeProvider(payload)
+        agent = RequirementAnalysisAgent(
+            provider=provider,
+            model_target=ModelTarget(provider="openai", model="gpt-5.4"),
+        )
+
+        result = asyncio.run(agent.run(make_input(), AgentRunContext(task_id="task_001")))
+
+        self.assertEqual(result.analysis_summary.story_unit_count, 2)
+        self.assertEqual(result.story_units[0].scope, ["注册登录", "发布帖子"])
+        self.assertEqual(result.story_units[0].priority, "high")
+        self.assertEqual(result.story_units[0].risk, "medium")
+        self.assertEqual(result.story_units[0].story_kind, "user_outcome")
+        self.assertEqual(result.story_dependency_graph.nodes[0].story_id, "S1")
+        self.assertEqual(result.story_dependency_graph.edges[0].from_story_id, "S1")
+        self.assertEqual(result.story_dependency_graph.edges[0].to_story_id, "S2")
+        self.assertEqual(len(result.story_relationships), 1)
+        self.assertIn("story_dependency_graph 无法直接使用", "\n".join(result.warnings))
+        self.assertIn("已忽略 1 条", "\n".join(result.warnings))
+
     def test_unwraps_nested_result_payload(self) -> None:
         payload = {
         "result": {

@@ -59,6 +59,7 @@ class RequirementAnalysisSettingsPayload(BaseModel):
     enabled: bool = True
     provider_kind: str = "openai_compatible"
     provider_name: str = "zhipu"
+    wire_api: str = "chat_completions"
     model: str = Field(default_factory=lambda: _env_str("GLM_MODEL", "GLM-4.7-Flash"))
     api_base: str = Field(
         default_factory=lambda: _normalize_api_base(

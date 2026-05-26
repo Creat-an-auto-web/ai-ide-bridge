@@ -319,6 +319,8 @@ class RequirementAnalysisOrchestratorTest(unittest.TestCase):
         self.assertEqual(package.verification.status, "blocked")
         self.assertIn("story_units must be a non-empty list", package.verification.summary)
         self.assertEqual(package.story_units[0].id, "format_invalid_placeholder")
+        self.assertEqual(package.debug_payload["stage"], "story_generation")
+        self.assertIn("story_units must be a non-empty list", package.debug_payload["error"])
 
     def test_orchestrator_pauses_when_revision_never_converges(self) -> None:
         orchestrator = RequirementAnalysisOrchestrator()

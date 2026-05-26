@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import replace
+from dataclasses import asdict, replace
+import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -143,7 +144,12 @@ class RequirementAnalysisOrchestrator:
                     metadata={"orchestrator": self.name, "iteration": str(iteration)},
                 )
             except ValueError as error:
-                return self._build_format_invalid_package(working_input, error)
+                return self._build_format_invalid_package(
+                    working_input,
+                    error,
+                    stage="story_generation",
+                    iteration=iteration,
+                )
             await emit_progress(
                 progress_callback,
                 RunProgressEvent(
@@ -153,14 +159,22 @@ class RequirementAnalysisOrchestrator:
                     metadata={"iteration": iteration, "story_unit_count": len(latest_result.story_units)},
                 ),
             )
-            latest_verification = await verification_service.verify(
-                RequirementVerificationInput(
-                    analysis_input=working_input,
-                    analysis_result=latest_result,
+            try:
+                latest_verification = await verification_service.verify(
+                    RequirementVerificationInput(
+                        analysis_input=working_input,
+                        analysis_result=latest_result,
+                        iteration=iteration,
+                    ),
+                    metadata={"orchestrator": self.name, "iteration": str(iteration)},
+                )
+            except ValueError as error:
+                return self._build_format_invalid_package(
+                    working_input,
+                    error,
+                    stage="single_story_verification",
                     iteration=iteration,
-                ),
-                metadata={"orchestrator": self.name, "iteration": str(iteration)},
-            )
+                )
 
             await emit_progress(
                 progress_callback,
@@ -274,13 +288,21 @@ class RequirementAnalysisOrchestrator:
         latest_result = self._analysis_result_from_input_snapshot(analysis_input)
         latest_verification = self._content_review_passed_verification()
         iteration = max(1, analysis_input.iteration)
-        latest_composition_verification = await self._verify_composition(
-            settings,
-            analysis_input,
-            latest_result,
-            iteration,
-            progress_callback,
-        )
+        try:
+            latest_composition_verification = await self._verify_composition(
+                settings,
+                analysis_input,
+                latest_result,
+                iteration,
+                progress_callback,
+            )
+        except ValueError as error:
+            return self._build_format_invalid_package(
+                analysis_input,
+                error,
+                stage="composition_verification",
+                iteration=iteration,
+            )
         history = [
             RequirementAnalysisIteration(
                 iteration=iteration,
@@ -355,7 +377,12 @@ class RequirementAnalysisOrchestrator:
                 metadata={"orchestrator": self.name, "iteration": str(iteration), "analysis_goal": "composition_revision"},
             )
         except ValueError as error:
-            return self._build_format_invalid_package(enriched_input, error)
+            return self._build_format_invalid_package(
+                enriched_input,
+                error,
+                stage="composition_revision_generation",
+                iteration=iteration,
+            )
 
         await emit_progress(
             progress_callback,
@@ -366,14 +393,22 @@ class RequirementAnalysisOrchestrator:
                 metadata={"iteration": iteration, "story_unit_count": len(latest_result.story_units)},
             ),
         )
-        latest_verification = await verification_service.verify(
-            RequirementVerificationInput(
-                analysis_input=enriched_input,
-                analysis_result=latest_result,
+        try:
+            latest_verification = await verification_service.verify(
+                RequirementVerificationInput(
+                    analysis_input=enriched_input,
+                    analysis_result=latest_result,
+                    iteration=iteration,
+                ),
+                metadata={"orchestrator": self.name, "iteration": str(iteration), "analysis_goal": "composition_revision"},
+            )
+        except ValueError as error:
+            return self._build_format_invalid_package(
+                enriched_input,
+                error,
+                stage="single_story_verification_after_composition_revision",
                 iteration=iteration,
-            ),
-            metadata={"orchestrator": self.name, "iteration": str(iteration), "analysis_goal": "composition_revision"},
-        )
+            )
         await emit_progress(
             progress_callback,
             RunProgressEvent(
@@ -407,13 +442,21 @@ class RequirementAnalysisOrchestrator:
                 analysis_input=enriched_input,
             )
 
-        latest_composition_verification = await self._verify_composition(
-            settings,
-            enriched_input,
-            latest_result,
-            iteration,
-            progress_callback,
-        )
+        try:
+            latest_composition_verification = await self._verify_composition(
+                settings,
+                enriched_input,
+                latest_result,
+                iteration,
+                progress_callback,
+            )
+        except ValueError as error:
+            return self._build_format_invalid_package(
+                enriched_input,
+                error,
+                stage="composition_verification",
+                iteration=iteration,
+            )
         history = [
             RequirementAnalysisIteration(
                 iteration=iteration,
@@ -463,15 +506,20 @@ class RequirementAnalysisOrchestrator:
                 metadata={"iteration": iteration, "story_unit_count": len(latest_result.story_units)},
             ),
         )
-        latest_composition_verification = await composition_verification_service.verify(
-            RequirementCompositionVerificationInput(
-                analysis_input=analysis_input,
-                analysis_result=latest_result,
-                iteration=iteration,
-                session_id=f"{analysis_input.task_id}_composition_{iteration}",
-            ),
-            metadata={"orchestrator": self.name, "iteration": str(iteration)},
-        )
+        try:
+            latest_composition_verification = await composition_verification_service.verify(
+                RequirementCompositionVerificationInput(
+                    analysis_input=analysis_input,
+                    analysis_result=latest_result,
+                    iteration=iteration,
+                    session_id=f"{analysis_input.task_id}_composition_{iteration}",
+                ),
+                metadata={"orchestrator": self.name, "iteration": str(iteration)},
+            )
+        except ValueError as error:
+            raise ValueError(
+                f"composition_verification output invalid at iteration {iteration}: {error}"
+            ) from error
         await emit_progress(
             progress_callback,
             RunProgressEvent(
@@ -549,6 +597,7 @@ class RequirementAnalysisOrchestrator:
         composition_verification: RequirementCompositionVerificationResult | None,
         history: list[RequirementAnalysisIteration],
         analysis_input: RequirementAnalysisInput | None = None,
+        debug_payload: dict | None = None,
     ) -> RequirementAnalysisPackage:
         return RequirementAnalysisPackage(
             package_id=f"ra_pkg_{uuid4().hex[:8]}",
@@ -578,6 +627,7 @@ class RequirementAnalysisOrchestrator:
                 result,
                 verification,
             ),
+            debug_payload=debug_payload or {},
         )
 
     def _build_verification_gate_summary(
@@ -728,7 +778,20 @@ class RequirementAnalysisOrchestrator:
         self,
         analysis_input: RequirementAnalysisInput,
         error: ValueError,
+        *,
+        stage: str = "unknown",
+        iteration: int | None = None,
     ) -> RequirementAnalysisPackage:
+        stage_label = self._format_invalid_stage_label(stage)
+        iteration_label = f"第 {iteration} 轮" if iteration is not None else "当前轮次"
+        error_detail = f"{iteration_label} {stage_label} 输出未通过格式校验：{error}"
+        debug_payload = self._build_format_invalid_debug_payload(
+            error=error,
+            stage=stage,
+            stage_label=stage_label,
+            iteration=iteration,
+            analysis_input=analysis_input,
+        )
         requirement_spec = RequirementSpec(
             task_id=analysis_input.task_id,
             version=1,
@@ -736,7 +799,7 @@ class RequirementAnalysisOrchestrator:
             product_goal="等待用户重试或人工补充后重新生成标准需求分析结果。",
             scope=["格式校验失败后的人工介入"],
             out_of_scope=[],
-            constraints=[f"上一次需求分析输出未通过格式校验：{error}"],
+            constraints=[error_detail],
             assumptions=["当前结果不是可接受的需求分析产物，仅用于承载暂停状态。"],
             interfaces_or_contracts=[],
             acceptance_criteria=[
@@ -774,7 +837,7 @@ class RequirementAnalysisOrchestrator:
         )
         verification = RequirementVerificationResult(
             status="blocked",
-            summary=f"需求分析输出未通过格式校验：{error}",
+            summary=error_detail,
             issues=[],
             revision_guidance=["请重试需求分析，或补充更明确的需求说明后再生成。"],
             quality_score=VerificationQualityScore(
@@ -793,7 +856,12 @@ class RequirementAnalysisOrchestrator:
                 high_risk_count=0,
                 capability_group_count=1,
             ),
-            warnings=["需求分析模型输出格式无效，当前包仅用于暂停和人工介入。"],
+            warnings=[
+                "需求分析模型输出格式无效，当前包仅用于暂停和人工介入。",
+                f"失败环节：{stage_label}",
+                f"错误详情：{error}",
+                f"调试信息：{json.dumps(debug_payload, ensure_ascii=False, separators=(',', ':'))}",
+            ],
             quality_checks=QualityChecks(
                 has_clear_scope=False,
                 has_testable_ac=False,
@@ -842,7 +910,78 @@ class RequirementAnalysisOrchestrator:
                 )
             ],
             analysis_input=analysis_input,
+            debug_payload=debug_payload,
         )
+
+    def _build_format_invalid_debug_payload(
+        self,
+        *,
+        error: ValueError,
+        stage: str,
+        stage_label: str,
+        iteration: int | None,
+        analysis_input: RequirementAnalysisInput,
+    ) -> dict:
+        error_text = str(error)
+        failed_story = self._extract_failed_story_from_error(error_text)
+        return {
+            "stage": stage,
+            "stage_label": stage_label,
+            "iteration": iteration,
+            "analysis_goal": analysis_input.analysis_goal,
+            "error": error_text,
+            "failed_story": failed_story,
+            "previous_story_units": self._previous_story_units_debug_snapshot(analysis_input),
+        }
+
+    def _extract_failed_story_from_error(self, error_text: str) -> dict | None:
+        marker = "failed_story="
+        index = error_text.find(marker)
+        if index < 0:
+            return None
+        raw_json = error_text[index + len(marker):].strip()
+        try:
+            parsed = json.loads(raw_json)
+        except json.JSONDecodeError:
+            return {"raw": raw_json[:4000]}
+        return parsed if isinstance(parsed, dict) else {"raw": raw_json[:4000]}
+
+    def _previous_story_units_debug_snapshot(
+        self,
+        analysis_input: RequirementAnalysisInput,
+    ) -> list[dict]:
+        snapshot = analysis_input.previous_analysis_result
+        if not isinstance(snapshot, dict):
+            return []
+        raw_story_units = snapshot.get("story_units")
+        if not isinstance(raw_story_units, list):
+            return []
+        debug_units = []
+        for item in raw_story_units[:20]:
+            if not isinstance(item, dict):
+                continue
+            debug_units.append(
+                {
+                    "id": item.get("id"),
+                    "title": item.get("title"),
+                    "as_a": item.get("as_a") or item.get("actor"),
+                    "when_context": item.get("when_context") or item.get("context"),
+                    "i_want": item.get("i_want") or item.get("goal"),
+                    "so_that": item.get("so_that") or item.get("business_value"),
+                    "scope": item.get("scope"),
+                    "dependencies": item.get("dependencies"),
+                }
+            )
+        return debug_units
+
+    def _format_invalid_stage_label(self, stage: str) -> str:
+        return {
+            "story_generation": "story 生成会话",
+            "single_story_verification": "单条 story 验证会话",
+            "composition_revision_generation": "组合修订生成会话",
+            "single_story_verification_after_composition_revision": "组合修订后的单条 story 验证会话",
+            "composition_verification": "组合验证会话",
+        }.get(stage, stage or "未知会话")
 
     def _analysis_result_from_input_snapshot(
         self,

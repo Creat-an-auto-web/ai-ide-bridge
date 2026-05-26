@@ -21,6 +21,7 @@ class RequirementAnalysisSettingsTest(unittest.TestCase):
                 "enabled": True,
                 "provider_kind": "openai_compatible",
                 "provider_name": "openrouter",
+                "wire_api": "responses",
                 "model": "qwen/qwen3-32b",
                 "api_base": "https://openrouter.ai/api/v1",
                 "api_key": "secret-key",
@@ -34,6 +35,7 @@ class RequirementAnalysisSettingsTest(unittest.TestCase):
         public_view = RequirementAnalysisAgentSettingsView.from_settings(settings)
 
         self.assertEqual(settings.to_provider_config().api_base, "https://openrouter.ai/api/v1")
+        self.assertEqual(settings.to_provider_config().wire_api, "responses")
         self.assertEqual(settings.to_provider_config().max_request_seconds, 600)
         self.assertEqual(settings.to_model_target().model, "qwen/qwen3-32b")
         self.assertEqual(settings.to_generation_config().max_tokens, 3200)
@@ -45,7 +47,22 @@ class RequirementAnalysisSettingsTest(unittest.TestCase):
         self.assertIsNone(settings.later_round_max_story_units)
         self.assertTrue(public_view.has_api_key)
         self.assertEqual(public_view.provider_name, "openrouter")
+        self.assertEqual(public_view.wire_api, "responses")
         self.assertEqual(public_view.max_request_seconds, 600)
+
+    def test_settings_validation_rejects_unknown_wire_api(self) -> None:
+        with self.assertRaisesRegex(ValueError, "wire_api"):
+            RequirementAnalysisAgentSettings.from_dict(
+                {
+                    "enabled": True,
+                    "provider_kind": "openai_compatible",
+                    "provider_name": "openai",
+                    "wire_api": "legacy",
+                    "model": "gpt-5.5",
+                    "api_base": "https://vip.auto-code.net",
+                    "api_key": "secret-key",
+                },
+            )
 
     def test_build_service_rejects_disabled_agent(self) -> None:
         settings = RequirementAnalysisAgentSettings.from_dict(

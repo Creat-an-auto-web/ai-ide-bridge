@@ -259,6 +259,10 @@ export const AiIdeBridgePanel = () => {
     },
   }
   const requirementVerificationIssues = safeArray(requirementVerification.issues)
+  const requirementWarnings = safeArray(requirementAnalysisResult?.warnings)
+  const requirementDebugPayload = requirementAnalysisResult?.debug_payload ?? null
+  const requirementDebugFailedStory = requirementDebugPayload?.failed_story ?? null
+  const requirementDebugPreviousStories = safeArray(requirementDebugPayload?.previous_story_units)
   const requirementHistory = safeArray(requirementAnalysisResult?.history)
   const storyDependencyGraph = requirementAnalysisResult?.story_dependency_graph ?? null
   const storyDependencyNodes = safeArray(storyDependencyGraph?.nodes)
@@ -464,6 +468,20 @@ export const AiIdeBridgePanel = () => {
                 placeholder='例如：openai / openrouter / my-gateway'
                 style={inputStyle}
               />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+              <span>Wire API</span>
+              <select
+                value={draftRequirementSettings.wireApi}
+                onChange={(event) => updateRequirementSetting('wireApi', event.target.value as 'chat_completions' | 'responses')}
+                style={inputStyle}
+              >
+                <option value='chat_completions'>Chat Completions</option>
+                <option value='responses'>Responses</option>
+              </select>
+              <span style={{ opacity: 0.72 }}>
+                中转站配置写着 wire_api = responses 时请选择 Responses。
+              </span>
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
               <span>模型名称</span>
@@ -833,6 +851,61 @@ export const AiIdeBridgePanel = () => {
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
                 验证结论：{requirementVerification.status} · {requirementVerification.summary}
               </div>
+              {requirementPackageStatus === 'paused_format_invalid' && (
+                <details
+                  open
+                  style={{
+                    border: '1px solid var(--vscode-errorForeground)',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    background: 'rgba(255, 80, 80, 0.06)',
+                  }}
+                >
+                  <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--vscode-errorForeground)' }}>
+                    格式校验调试信息
+                    {requirementDebugPayload?.stage_label ? ` · ${requirementDebugPayload.stage_label}` : ''}
+                  </summary>
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {requirementDebugPayload?.error && (
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 11, lineHeight: 1.55, color: 'var(--vscode-errorForeground)' }}>
+                        {String(requirementDebugPayload.error)}
+                      </pre>
+                    )}
+                    {requirementDebugFailedStory && (
+                      <div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                          校验失败的 Story
+                        </div>
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 11, lineHeight: 1.55, color: 'var(--vscode-input-foreground)' }}>
+                          {JSON.stringify(requirementDebugFailedStory, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                    {requirementDebugPreviousStories.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                          上一轮 Story 快照
+                        </div>
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 11, lineHeight: 1.55, color: 'var(--vscode-input-foreground)' }}>
+                          {JSON.stringify(requirementDebugPreviousStories, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                    {requirementWarnings.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+                          后端警告
+                        </div>
+                        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                          {requirementWarnings.map((warning, index) => (
+                            <li key={`${warning}_${index}`}>{warning}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )}
               {verificationGateSummary && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>

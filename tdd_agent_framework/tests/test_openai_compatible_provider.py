@@ -79,6 +79,34 @@ class OpenAICompatibleProviderTest(unittest.TestCase):
         self.assertTrue(payload["stream"])
         self.assertNotIn("response_format", payload)
 
+    def test_build_payload_supports_responses_wire_api(self) -> None:
+        provider = OpenAICompatibleProvider(
+            ProviderConfig(
+                provider_name="auto-code",
+                api_base="https://vip.auto-code.net",
+                api_key="test-key",
+                wire_api="responses",
+            ),
+        )
+        provider_request = ProviderRequest(
+            agent_name="requirement_analysis",
+            task_id="task_001",
+            model_target=ModelTarget(provider="auto-code", model="gpt-5.5"),
+            system_prompt="system prompt with json output requirement",
+            messages=(ProviderMessage(role="user", content="return json please"),),
+            generation_config=GenerationConfig(temperature=0.1, max_tokens=1200),
+        )
+
+        payload = provider._build_payload(provider_request)
+
+        self.assertEqual(provider._request_path(), "/responses")
+        self.assertEqual(payload["model"], "gpt-5.5")
+        self.assertEqual(payload["max_output_tokens"], 1200)
+        self.assertFalse(payload["stream"])
+        self.assertEqual(payload["text"], {"format": {"type": "json_object"}})
+        self.assertEqual(payload["input"][0]["role"], "system")
+        self.assertEqual(payload["input"][0]["content"][0]["type"], "input_text")
+
     def test_extract_content_supports_string_message(self) -> None:
         raw_json = {
             "choices": [
@@ -103,6 +131,60 @@ class OpenAICompatibleProviderTest(unittest.TestCase):
         content = self.provider._extract_content(raw_json)
 
         self.assertEqual(json.loads(content), {"ok": True, "source": "output_text"})
+
+    def test_generate_posts_to_responses_endpoint(self) -> None:
+        provider = OpenAICompatibleProvider(
+            ProviderConfig(
+                provider_name="auto-code",
+                api_base="https://vip.auto-code.net",
+                api_key="test-key",
+                wire_api="responses",
+            ),
+        )
+        provider_request = ProviderRequest(
+            agent_name="requirement_analysis",
+            task_id="task_001",
+            model_target=ModelTarget(provider="auto-code", model="gpt-5.5"),
+            system_prompt="system prompt with json output requirement",
+            messages=(ProviderMessage(role="user", content="return json please"),),
+            generation_config=GenerationConfig(temperature=0.1, max_tokens=1200),
+        )
+        seen: dict[str, object] = {}
+
+        class StubStreamContext:
+            async def __aenter__(self):
+                return httpx.Response(
+                    200,
+                    headers={"content-type": "application/json"},
+                    json={"output_text": "{\"ok\": true}"},
+                    request=httpx.Request("POST", "https://vip.auto-code.net/responses"),
+                )
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        class StubClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            def stream(self, method, url, json, headers):
+                seen["method"] = method
+                seen["url"] = url
+                seen["payload"] = json
+                return StubStreamContext()
+
+        with patch("tdd_agent_framework.providers.openai_compatible.httpx.AsyncClient", StubClient):
+            response = asyncio.run(provider.generate(provider_request))
+
+        self.assertEqual(seen["url"], "https://vip.auto-code.net/responses")
+        self.assertEqual(response.parsed_json, {"ok": True})
+        self.assertEqual((seen["payload"] or {})["max_output_tokens"], 1200)
 
     def test_extract_content_supports_output_content_text_shape(self) -> None:
         raw_json = {
@@ -174,6 +256,32 @@ class OpenAICompatibleProviderTest(unittest.TestCase):
         summary = self.provider._summarize_error_body(body)
 
         self.assertEqual(summary, "html_title=xxsxx.fun | 524: A timeout occurred")
+
+    def test_read_response_reports_non_json_body_preview(self) -> None:
+        response = httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            content=b"<html><head><title>Gateway Error</title></head><body>bad gateway</body></html>",
+            request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+        )
+
+        with self.assertRaisesRegex(ProviderError, "provider returned non-json response body") as context:
+            asyncio.run(self.provider._read_response(response, agent_name="requirement_analysis"))
+
+        message = str(context.exception)
+        self.assertIn("content_type=text/html", message)
+        self.assertIn("html_title=Gateway Error", message)
+
+    def test_read_response_rejects_non_object_json_body(self) -> None:
+        response = httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=b"[]",
+            request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+        )
+
+        with self.assertRaisesRegex(ProviderError, "provider returned JSON but not an object"):
+            asyncio.run(self.provider._read_response(response, agent_name="requirement_analysis"))
 
     def test_retries_retryable_http_status_before_failing(self) -> None:
         provider_request = ProviderRequest(

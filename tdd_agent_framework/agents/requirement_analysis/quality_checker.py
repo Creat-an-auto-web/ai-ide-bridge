@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
+import json
 import re
 
 from .models import (
@@ -104,47 +105,50 @@ class RequirementAnalysisQualityChecker:
     ) -> None:
         seen_ids: set[str] = set()
         for story in story_units:
-            if story.id in seen_ids:
-                raise RequirementAnalysisValidationError(f"duplicate story id: {story.id}")
-            seen_ids.add(story.id)
-            if story.priority not in ALLOWED_LEVELS:
-                raise RequirementAnalysisValidationError(
-                    f"story priority must be one of {sorted(ALLOWED_LEVELS)}",
-                )
-            if story.risk not in ALLOWED_LEVELS:
-                raise RequirementAnalysisValidationError(
-                    f"story risk must be one of {sorted(ALLOWED_LEVELS)}",
-                )
-            if story.story_kind not in ALLOWED_STORY_KINDS:
-                raise RequirementAnalysisValidationError(
-                    f"story_kind must be one of {sorted(ALLOWED_STORY_KINDS)}: {story.id}",
-                )
-            if story.actor != story.as_a or story.goal != story.i_want or story.business_value != story.so_that:
-                raise RequirementAnalysisValidationError(
-                    f"story user story fields are inconsistent with legacy aliases: {story.id}",
-                )
-            if (
-                not story.narrative.startswith("作为")
-                or "，当" not in story.narrative
-                or "时，我希望" not in story.narrative
-            ):
-                raise RequirementAnalysisValidationError(
-                    f"story narrative must follow four-part user story format: {story.id}",
-                )
-            if story.so_that and "，从而" not in story.narrative:
-                raise RequirementAnalysisValidationError(
-                    f"story narrative must include so_that clause when provided: {story.id}",
-                )
-            if not self._matches_user_story_narrative(story):
-                raise RequirementAnalysisValidationError(
-                    f"story narrative must stay semantically aligned with structured fields: {story.id}",
-                )
-            self._validate_story_content(story, warnings)
-            overlap = set(story.scope).intersection(story.out_of_scope)
-            if overlap:
-                raise RequirementAnalysisValidationError(
-                    f"story scope conflicts with out_of_scope: {story.id}",
-                )
+            try:
+                if story.id in seen_ids:
+                    raise RequirementAnalysisValidationError(f"duplicate story id: {story.id}")
+                seen_ids.add(story.id)
+                if story.priority not in ALLOWED_LEVELS:
+                    raise RequirementAnalysisValidationError(
+                        f"story priority must be one of {sorted(ALLOWED_LEVELS)}",
+                    )
+                if story.risk not in ALLOWED_LEVELS:
+                    raise RequirementAnalysisValidationError(
+                        f"story risk must be one of {sorted(ALLOWED_LEVELS)}",
+                    )
+                if story.story_kind not in ALLOWED_STORY_KINDS:
+                    raise RequirementAnalysisValidationError(
+                        f"story_kind must be one of {sorted(ALLOWED_STORY_KINDS)}: {story.id}",
+                    )
+                if story.actor != story.as_a or story.goal != story.i_want or story.business_value != story.so_that:
+                    raise RequirementAnalysisValidationError(
+                        f"story user story fields are inconsistent with legacy aliases: {story.id}",
+                    )
+                if (
+                    not story.narrative.startswith("作为")
+                    or "，当" not in story.narrative
+                    or "时，我希望" not in story.narrative
+                ):
+                    raise RequirementAnalysisValidationError(
+                        f"story narrative must follow four-part user story format: {story.id}",
+                    )
+                if story.so_that and "，从而" not in story.narrative:
+                    raise RequirementAnalysisValidationError(
+                        f"story narrative must include so_that clause when provided: {story.id}",
+                    )
+                if not self._matches_user_story_narrative(story):
+                    raise RequirementAnalysisValidationError(
+                        f"story narrative must stay semantically aligned with structured fields: {story.id}",
+                    )
+                self._validate_story_content(story, warnings)
+                overlap = set(story.scope).intersection(story.out_of_scope)
+                if overlap:
+                    raise RequirementAnalysisValidationError(
+                        f"story scope conflicts with out_of_scope: {story.id}",
+                    )
+            except RequirementAnalysisValidationError as error:
+                raise self._story_validation_error(str(error), story) from error
             if len(story.title.strip()) < 4:
                 warnings.append(f"story {story.id} title is very short; confirm it is a real user capability")
             if len(story.acceptance_criteria) < 3 or len(story.acceptance_criteria) > 7:
@@ -329,6 +333,25 @@ class RequirementAnalysisQualityChecker:
     def _normalize_narrative_text(self, value: str) -> str:
         normalized = " ".join(value.strip().split())
         return normalized.rstrip(".。！？!？")
+
+    def _story_validation_error(
+        self,
+        message: str,
+        story: StoryUnit,
+    ) -> RequirementAnalysisValidationError:
+        snapshot = asdict(story)
+        expected_narrative = StoryUnit._build_narrative(
+            as_a=story.as_a,
+            when_context=story.when_context,
+            i_want=story.i_want,
+            so_that=story.so_that,
+        )
+        snapshot["expected_narrative"] = expected_narrative
+        snapshot["normalized_actual_narrative"] = self._normalize_narrative_text(story.narrative)
+        snapshot["normalized_expected_narrative"] = self._normalize_narrative_text(expected_narrative)
+        return RequirementAnalysisValidationError(
+            f"{message}; failed_story={json.dumps(snapshot, ensure_ascii=False, separators=(',', ':'))}"
+        )
 
     def _looks_like_technical_task(self, story: StoryUnit) -> bool:
         content = " ".join(

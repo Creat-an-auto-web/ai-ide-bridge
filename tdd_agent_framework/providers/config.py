@@ -12,3 +12,5 @@ class ProviderConfig:
     max_request_seconds: float = 900.0
     headers: dict[str, str] = field(default_factory=dict)
     chat_path: str = "/chat/completions"
+    responses_path: str = "/responses"
+    wire_api: str = "chat_completions"

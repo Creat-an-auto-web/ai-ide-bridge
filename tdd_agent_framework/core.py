@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import re
 from typing import Any, Awaitable, Callable, Generic, Protocol, TypeVar
 
 
@@ -120,8 +121,16 @@ async def emit_progress(
 def parse_json_object_from_text(text: str) -> dict[str, Any]:
     try:
         parsed = json.loads(text)
-    except json.JSONDecodeError:
-        parsed = _extract_first_json_object(text)
+    except json.JSONDecodeError as error:
+        try:
+            parsed = _extract_first_json_object(text)
+        except ValueError as fallback_error:
+            preview = _preview_text(text)
+            raise ValueError(
+                "provider output does not contain a parseable JSON object "
+                f"(json_error=line {error.lineno} column {error.colno}: {error.msg}, "
+                f"raw_preview={preview})"
+            ) from fallback_error
     if not isinstance(parsed, dict):
         raise ValueError("provider output must be a JSON object")
     return parsed
@@ -138,3 +147,12 @@ def _extract_first_json_object(text: str) -> Any:
             continue
         return parsed
     raise ValueError("provider output does not contain a parseable JSON object")
+
+
+def _preview_text(text: str, limit: int = 800) -> str:
+    normalized = re.sub(r"\s+", " ", text.strip())
+    if not normalized:
+        return "<empty>"
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3] + "..."

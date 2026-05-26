@@ -21,6 +21,7 @@ class FakeResult:
     story_units: list[dict] = field(default_factory=list)
     analysis_summary: dict = field(default_factory=dict)
     capability_groups: list[dict] = field(default_factory=list)
+    debug_payload: dict = field(default_factory=dict)
 
 
 class RequirementAnalysisBackendServiceTest(unittest.TestCase):
@@ -251,3 +252,57 @@ class RequirementAnalysisBackendServiceTest(unittest.TestCase):
         self.assertEqual(result["capability_groups"][0]["story_ids"], ["S1", "S2"])
         result_events = [event for event in events if event.get("type") == "result"]
         self.assertEqual(result_events[0]["data"]["capability_groups"][0]["story_ids"], ["S1", "S2"])
+
+    def test_stream_run_preserves_format_invalid_debug_payload(self) -> None:
+        orchestrator = AsyncMock()
+        orchestrator.run = AsyncMock(
+            return_value=FakeResult(
+                status="paused_format_invalid",
+                story_units=[{"id": "format_invalid_placeholder"}],
+                analysis_summary={
+                    "story_unit_count": 1,
+                    "high_priority_count": 1,
+                    "high_risk_count": 0,
+                    "capability_group_count": 1,
+                },
+                capability_groups=[
+                    {
+                        "id": "format_invalid_group",
+                        "title": "格式校验失败处理",
+                        "story_ids": ["format_invalid_placeholder"],
+                    }
+                ],
+                debug_payload={
+                    "stage": "story_generation",
+                    "stage_label": "story 生成会话",
+                    "error": "story risk must be one of ['high', 'low', 'medium']; failed_story={...}",
+                    "failed_story": {"id": "S1", "risk": "普通"},
+                },
+            )
+        )
+        service = RequirementAnalysisBackendService(orchestrator=orchestrator)
+        payload = RequirementAnalysisRunRequest.model_validate(
+            {
+                "settings": {
+                    "enabled": True,
+                    "provider_kind": "openai_compatible",
+                    "provider_name": "openai",
+                    "model": "gpt-5.4",
+                    "api_base": "https://api.openai.com/v1",
+                    "api_key": "secret",
+                },
+                "input": {
+                    "task_id": "task_001",
+                    "mode": "repo_chat",
+                    "user_prompt": "制作论坛网站",
+                    "repo_root": "/workspace/project",
+                    "workspace_summary": {},
+                    "execution_constraints": {},
+                },
+            }
+        )
+
+        result = asyncio.run(service.run(payload))
+
+        self.assertEqual(result["debug_payload"]["stage"], "story_generation")
+        self.assertEqual(result["debug_payload"]["failed_story"]["id"], "S1")

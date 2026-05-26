@@ -46,20 +46,26 @@ class RequirementAnalysisParser:
             self._normalize_story_unit(item, requirement_spec, index=index + 1)
             for index, item in enumerate(raw_story_units)
         ]
-        story_units = [StoryUnit.from_dict(item) for item in raw_story_units]
-        capability_groups = self._parse_capability_groups(payload, story_units, requirement_spec)
-        story_dependency_graph = self._parse_story_dependency_graph(payload, story_units, capability_groups)
-        story_relationships = self._parse_story_relationships(payload)
-
         warnings = payload.get("warnings", [])
         if not isinstance(warnings, list):
             raise ValueError("warnings must be a list of strings")
+        normalized_warnings = [str(item) for item in warnings]
+
+        story_units = [StoryUnit.from_dict(item) for item in raw_story_units]
+        capability_groups = self._parse_capability_groups(payload, story_units, requirement_spec)
+        story_dependency_graph = self._parse_story_dependency_graph(
+            payload,
+            story_units,
+            capability_groups,
+            normalized_warnings,
+        )
+        story_relationships = self._parse_story_relationships(payload, story_units, normalized_warnings)
 
         return RequirementAnalysisResult(
             requirement_spec=requirement_spec,
             story_units=story_units,
             analysis_summary=build_analysis_summary(story_units, capability_groups),
-            warnings=[str(item) for item in warnings],
+            warnings=normalized_warnings,
             quality_checks=QualityChecks(
                 has_clear_scope=False,
                 has_testable_ac=False,
@@ -285,10 +291,7 @@ class RequirementAnalysisParser:
             normalized.get("id"),
             default=f"S{index}",
         )
-        normalized["story_kind"] = self._first_non_empty_str(
-            normalized.get("story_kind"),
-            default="user_outcome",
-        )
+        normalized["story_kind"] = self._normalize_story_kind(normalized.get("story_kind"))
         normalized["as_a"] = actor
         normalized["actor"] = actor
         normalized["i_want"] = goal
@@ -300,34 +303,32 @@ class RequirementAnalysisParser:
             default=f"{actor}可以{goal}",
         )
 
-        if not self._has_non_empty_list(normalized.get("scope")):
-            fallback_scope = requirement_spec.scope[:3] if requirement_spec.scope else ["core_scope"]
-            normalized["scope"] = fallback_scope
+        fallback_scope = requirement_spec.scope[:3] if requirement_spec.scope else ["core_scope"]
+        normalized["scope"] = self._normalize_string_list(normalized.get("scope")) or fallback_scope
 
-        if normalized.get("out_of_scope") is None:
-            normalized["out_of_scope"] = []
+        normalized["out_of_scope"] = self._normalize_string_list(normalized.get("out_of_scope"))
 
-        if not self._has_non_empty_list(normalized.get("acceptance_criteria")):
-            normalized["acceptance_criteria"] = (
-                requirement_spec.acceptance_criteria[:3]
-                if requirement_spec.acceptance_criteria
-                else [
-                    f"给定{actor}处于目标场景，当发起{goal}时，那么系统返回可验证结果",
-                    "给定主路径执行成功，当业务结果产生时，那么用户可以观察到预期结果",
-                    "给定主路径执行失败，当系统无法完成能力时，那么用户可以获得明确失败反馈",
-                ]
-            )
+        normalized["acceptance_criteria"] = self._normalize_string_list(
+            normalized.get("acceptance_criteria"),
+        ) or (
+            requirement_spec.acceptance_criteria[:3]
+            if requirement_spec.acceptance_criteria
+            else [
+                f"给定{actor}处于目标场景，当发起{goal}时，那么系统返回可验证结果",
+                "给定主路径执行成功，当业务结果产生时，那么用户可以观察到预期结果",
+                "给定主路径执行失败，当系统无法完成能力时，那么用户可以获得明确失败反馈",
+            ]
+        )
 
-        if not self._has_non_empty_list(normalized.get("test_focus")):
+        test_focus = self._normalize_string_list(normalized.get("test_focus"))
+        if not test_focus:
             acceptance_criteria = normalized.get("acceptance_criteria")
-            if isinstance(acceptance_criteria, list):
-                fallback_focus = [str(value).strip() for value in acceptance_criteria if str(value).strip()][:3]
-            else:
-                fallback_focus = []
-            normalized["test_focus"] = fallback_focus or ["主路径验证"]
+            fallback_focus = [str(value).strip() for value in acceptance_criteria if str(value).strip()][:3]
+            test_focus = fallback_focus or ["主路径验证"]
+        normalized["test_focus"] = test_focus
 
-        if normalized.get("implementation_hints") is None:
-            normalized["implementation_hints"] = []
+        normalized["implementation_hints"] = self._normalize_string_list(normalized.get("implementation_hints"))
+        normalized["dependencies"] = self._normalize_string_list(normalized.get("dependencies"))
 
         if not isinstance(normalized.get("so_that"), str) or not str(normalized.get("so_that")).strip():
             business_value = normalized.get("business_value")
@@ -539,11 +540,35 @@ class RequirementAnalysisParser:
         payload: dict,
         story_units: list[StoryUnit],
         capability_groups: list[CapabilityGroup],
+        warnings: list[str],
     ) -> StoryDependencyGraph:
         raw_graph = payload.get("story_dependency_graph") or payload.get("storyDependencyGraph")
         if isinstance(raw_graph, dict):
-            return StoryDependencyGraph.from_dict(raw_graph)
+            try:
+                graph = StoryDependencyGraph.from_dict(raw_graph)
+                story_ids = {story.id for story in story_units}
+                node_ids = {node.story_id for node in graph.nodes}
+                group_ids = {group.id for group in capability_groups}
+                graph_usable = (
+                    node_ids == story_ids
+                    and self._graph_references_existing_entities(graph, story_ids, group_ids)
+                    and self._graph_is_dag(graph, story_ids)
+                )
+                if graph_usable:
+                    return graph
+                warnings.append("模型返回的 story_dependency_graph 与 story_units 不一致，已基于 story.dependencies 重新生成依赖图。")
+            except ValueError as error:
+                warnings.append(f"模型返回的 story_dependency_graph 无法直接使用，已降级为系统派生依赖图：{error}")
 
+        if raw_graph is not None and not isinstance(raw_graph, dict):
+            warnings.append("模型返回的 story_dependency_graph 不是对象，已基于 story.dependencies 重新生成依赖图。")
+        return self._derive_story_dependency_graph(story_units, capability_groups)
+
+    def _derive_story_dependency_graph(
+        self,
+        story_units: list[StoryUnit],
+        capability_groups: list[CapabilityGroup],
+    ) -> StoryDependencyGraph:
         story_to_group: dict[str, str] = {}
         for group in capability_groups:
             for story_id in group.story_ids:
@@ -584,13 +609,89 @@ class RequirementAnalysisParser:
             warnings=[],
         )
 
-    def _parse_story_relationships(self, payload: dict) -> list[StoryRelationship]:
+    def _graph_references_existing_entities(
+        self,
+        graph: StoryDependencyGraph,
+        story_ids: set[str],
+        group_ids: set[str],
+    ) -> bool:
+        valid_nodes = all(
+            node.capability_group_id is None or node.capability_group_id in group_ids
+            for node in graph.nodes
+        )
+        valid_edges = all(
+            edge.from_story_id in story_ids and edge.to_story_id in story_ids
+            and edge.from_story_id != edge.to_story_id
+            for edge in graph.edges
+        )
+        valid_entry_terminal = (
+            set(graph.entry_story_ids).issubset(story_ids)
+            and set(graph.terminal_story_ids).issubset(story_ids)
+        )
+        return valid_nodes and valid_edges and valid_entry_terminal and graph.is_dag
+
+    def _graph_is_dag(
+        self,
+        graph: StoryDependencyGraph,
+        story_ids: set[str],
+    ) -> bool:
+        adjacency: dict[str, list[str]] = {story_id: [] for story_id in story_ids}
+        for edge in graph.edges:
+            if edge.from_story_id not in adjacency or edge.to_story_id not in adjacency:
+                return False
+            adjacency[edge.from_story_id].append(edge.to_story_id)
+
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(node: str) -> bool:
+            if node in visited:
+                return True
+            if node in visiting:
+                return False
+            visiting.add(node)
+            for next_node in adjacency[node]:
+                if not visit(next_node):
+                    return False
+            visiting.remove(node)
+            visited.add(node)
+            return True
+
+        return all(visit(story_id) for story_id in story_ids)
+
+    def _parse_story_relationships(
+        self,
+        payload: dict,
+        story_units: list[StoryUnit],
+        warnings: list[str],
+    ) -> list[StoryRelationship]:
         raw_relationships = payload.get("story_relationships") or payload.get("storyRelationships")
         if raw_relationships is None:
             return []
         if not isinstance(raw_relationships, list):
-            raise ValueError("story_relationships must be a list")
-        return [StoryRelationship.from_dict(item) for item in raw_relationships]
+            warnings.append("模型返回的 story_relationships 不是数组，已忽略该非严格关系输出。")
+            return []
+
+        story_ids = {story.id for story in story_units}
+        relationships: list[StoryRelationship] = []
+        skipped_count = 0
+        for item in raw_relationships:
+            try:
+                relationship = StoryRelationship.from_dict(item)
+            except ValueError:
+                skipped_count += 1
+                continue
+            if (
+                relationship.source_story_id not in story_ids
+                or relationship.target_story_id not in story_ids
+                or relationship.source_story_id == relationship.target_story_id
+            ):
+                skipped_count += 1
+                continue
+            relationships.append(relationship)
+        if skipped_count:
+            warnings.append(f"已忽略 {skipped_count} 条无法匹配现有 story 或类型不合法的 story_relationships。")
+        return relationships
 
     def _normalize_string_list(self, value: object) -> list[str]:
         if not isinstance(value, list):
@@ -611,4 +712,31 @@ class RequirementAnalysisParser:
             lowered = value.strip().lower()
             if lowered in {"low", "medium", "high"}:
                 return lowered
+            if lowered in {"低", "低优先级", "低风险"}:
+                return "low"
+            if lowered in {"中", "中等", "中优先级", "中风险", "一般"}:
+                return "medium"
+            if lowered in {"高", "高优先级", "高风险", "重要"}:
+                return "high"
         return default
+
+    def _normalize_story_kind(self, value: object) -> str:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {
+                "user_outcome",
+                "admin_outcome",
+                "operator_outcome",
+                "compliance_guard",
+                "system_feedback",
+            }:
+                return normalized
+            if normalized in {"admin", "administrator", "管理端", "管理员"}:
+                return "admin_outcome"
+            if normalized in {"operator", "运营", "运营人员"}:
+                return "operator_outcome"
+            if normalized in {"compliance", "guard", "合规", "规则约束"}:
+                return "compliance_guard"
+            if normalized in {"feedback", "system", "系统反馈", "失败反馈"}:
+                return "system_feedback"
+        return "user_outcome"

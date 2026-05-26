@@ -39,7 +39,7 @@ class OpenAICompatibleProvider:
     async def generate(self, provider_request: ProviderRequest) -> ProviderResponse:
         payload = self._build_payload(provider_request)
         api_base = provider_request.model_target.api_base or self.config.api_base
-        url = api_base.rstrip("/") + self.config.chat_path
+        url = api_base.rstrip("/") + self._request_path()
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.config.api_key}",
@@ -58,6 +58,7 @@ class OpenAICompatibleProvider:
                     "provider_name": self.config.provider_name,
                     "model": provider_request.model_target.model,
                     "api_base": api_base,
+                    "wire_api": self.config.wire_api,
                 },
             ),
         )
@@ -185,6 +186,18 @@ class OpenAICompatibleProvider:
         )
 
     def _build_payload(self, provider_request: ProviderRequest) -> dict[str, Any]:
+        if self.config.wire_api == "responses":
+            return self._build_responses_payload(provider_request)
+        if self.config.wire_api != "chat_completions":
+            raise ProviderError(f"unsupported wire_api: {self.config.wire_api}")
+        return self._build_chat_completions_payload(provider_request)
+
+    def _request_path(self) -> str:
+        if self.config.wire_api == "responses":
+            return self.config.responses_path
+        return self.config.chat_path
+
+    def _build_chat_completions_payload(self, provider_request: ProviderRequest) -> dict[str, Any]:
         messages = [self._to_message("system", provider_request.system_prompt)]
         messages.extend(self._to_message(item.role, item.content) for item in provider_request.messages)
         payload: dict[str, Any] = {
@@ -196,6 +209,25 @@ class OpenAICompatibleProvider:
         }
         if provider_request.generation_config.response_format == "json_object":
             payload["response_format"] = {"type": "json_object"}
+        return payload
+
+    def _build_responses_payload(self, provider_request: ProviderRequest) -> dict[str, Any]:
+        input_messages = [
+            self._to_responses_message("system", provider_request.system_prompt),
+            *[
+                self._to_responses_message(item.role, item.content)
+                for item in provider_request.messages
+            ],
+        ]
+        payload: dict[str, Any] = {
+            "model": provider_request.model_target.model,
+            "input": input_messages,
+            "temperature": provider_request.generation_config.temperature,
+            "max_output_tokens": provider_request.generation_config.max_tokens,
+            "stream": False,
+        }
+        if provider_request.generation_config.response_format == "json_object":
+            payload["text"] = {"format": {"type": "json_object"}}
         return payload
 
     def _build_timeout(self, provider_request: ProviderRequest) -> httpx.Timeout:
@@ -214,6 +246,17 @@ class OpenAICompatibleProvider:
 
     def _to_message(self, role: str, content: str) -> dict[str, str]:
         return {"role": role, "content": content}
+
+    def _to_responses_message(self, role: str, content: str) -> dict[str, Any]:
+        return {
+            "role": role,
+            "content": [
+                {
+                    "type": "input_text",
+                    "text": content,
+                }
+            ],
+        }
 
     async def _emit_retry_progress(
         self,
@@ -336,7 +379,22 @@ class OpenAICompatibleProvider:
         content_type = response.headers.get("content-type", "")
         if "text/event-stream" not in content_type:
             body = await response.aread()
-            raw_json = json.loads(body.decode("utf-8"))
+            body_text = body.decode("utf-8", errors="replace")
+            try:
+                raw_json = json.loads(body_text)
+            except json.JSONDecodeError as error:
+                raise ProviderError(
+                    "provider returned non-json response body "
+                    f"(status={response.status_code}, content_type={content_type or 'unknown'}, "
+                    f"json_error=line {error.lineno} column {error.colno}: {error.msg}, "
+                    f"body_preview={self._summarize_error_body(body_text, limit=800)})"
+                ) from error
+            if not isinstance(raw_json, dict):
+                raise ProviderError(
+                    "provider returned JSON but not an object "
+                    f"(status={response.status_code}, content_type={content_type or 'unknown'}, "
+                    f"body_preview={self._summarize_error_body(body_text, limit=800)})"
+                )
             return raw_json, self._extract_content(raw_json)
 
         collected_text: list[str] = []

@@ -1,9 +1,11 @@
 export type RequirementAnalysisProviderKind = 'openai_compatible'
+export type RequirementAnalysisWireApi = 'chat_completions' | 'responses'
 
 export interface RequirementAnalysisAgentSettings {
   enabled: boolean
   providerKind: RequirementAnalysisProviderKind
   providerName: string
+  wireApi: RequirementAnalysisWireApi
   model: string
   apiBase: string
   apiKey: string
@@ -23,6 +25,7 @@ export interface RequirementAnalysisAgentSettingsSummary {
   enabled: boolean
   providerKind: RequirementAnalysisProviderKind
   providerName: string
+  wireApi: RequirementAnalysisWireApi
   model: string
   apiBase: string
   hasApiKey: boolean
@@ -33,6 +36,7 @@ export interface RequirementAnalysisAgentSettingsPayload {
   enabled: boolean
   provider_kind: RequirementAnalysisProviderKind
   provider_name: string
+  wire_api: RequirementAnalysisWireApi
   model: string
   api_base: string
   api_key: string
@@ -175,6 +179,15 @@ export interface RequirementAnalysisResultPayload {
     type: string
     reason: string
   }>
+  debug_payload?: {
+    stage?: string
+    stage_label?: string
+    iteration?: number | null
+    analysis_goal?: string
+    error?: string
+    failed_story?: Record<string, unknown> | null
+    previous_story_units?: Array<Record<string, unknown>>
+  }
   warnings: string[]
   quality_checks: {
     has_clear_scope: boolean
@@ -338,6 +351,7 @@ export const createDefaultRequirementAnalysisSettings = (): RequirementAnalysisA
   enabled: true,
   providerKind: 'openai_compatible',
   providerName: 'zhipu',
+  wireApi: 'chat_completions',
   model: 'GLM-4.7-Flash',
   apiBase: 'https://api.z.ai/api/paas/v4',
   apiKey: '485fb46f5e5d479e86c9aeb7a6935404.FKHeuhM9ai8RqLZm',
@@ -379,6 +393,10 @@ const toNonEmptyString = (value: unknown, fallback: string) => {
   return trimmed.length > 0 ? trimmed : fallback
 }
 
+const toWireApi = (value: unknown, fallback: RequirementAnalysisWireApi): RequirementAnalysisWireApi => (
+  value === 'responses' || value === 'chat_completions' ? value : fallback
+)
+
 export const normalizeRequirementAnalysisSettings = (
   value: unknown,
 ): RequirementAnalysisAgentSettings => {
@@ -392,6 +410,7 @@ export const normalizeRequirementAnalysisSettings = (
     enabled: typeof record.enabled === 'boolean' ? record.enabled : defaults.enabled,
     providerKind: 'openai_compatible',
     providerName: toNonEmptyString(record.providerName, defaults.providerName),
+    wireApi: toWireApi(record.wireApi, defaults.wireApi),
     model: typeof record.model === 'string' ? record.model.trim() : defaults.model,
     apiBase: toNonEmptyString(record.apiBase, defaults.apiBase),
     apiKey:
@@ -435,6 +454,7 @@ export const summarizeRequirementAnalysisSettings = (
   enabled: settings.enabled,
   providerKind: settings.providerKind,
   providerName: settings.providerName,
+  wireApi: settings.wireApi,
   model: settings.model,
   apiBase: settings.apiBase,
   hasApiKey: settings.apiKey.trim().length > 0,
@@ -452,6 +472,7 @@ export const toRequirementAnalysisAgentSettingsPayload = (
   enabled: settings.enabled,
   provider_kind: settings.providerKind,
   provider_name: settings.providerName,
+  wire_api: settings.wireApi,
   model: settings.model,
   api_base: settings.apiBase,
   api_key: settings.apiKey,

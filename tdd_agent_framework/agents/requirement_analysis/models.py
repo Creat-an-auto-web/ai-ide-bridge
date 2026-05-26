@@ -738,6 +738,7 @@ class RequirementAnalysisPackage:
     history: list[RequirementAnalysisIteration] = field(default_factory=list)
     verification_gate_summary: dict[str, Any] = field(default_factory=dict)
     user_review_guidance: dict[str, list[str]] = field(default_factory=dict)
+    debug_payload: dict[str, Any] = field(default_factory=dict)
 
 
 def _score_value(value: Any, field_name: str) -> int:
