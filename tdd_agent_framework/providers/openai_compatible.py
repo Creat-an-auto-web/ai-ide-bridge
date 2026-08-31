@@ -23,6 +23,10 @@ class ProviderError(RuntimeError):
     """Provider request failed."""
 
 
+class EmptyResponseOutputError(ProviderError):
+    """Responses API returned no generated text or tool output."""
+
+
 class OpenAICompatibleProvider:
     request_retry_attempts = 3
     request_retry_backoff_seconds = 1.5
@@ -107,6 +111,25 @@ class OpenAICompatibleProvider:
                         provider_request=provider_request,
                         attempt=attempt,
                     ),
+                ) from exc
+            except EmptyResponseOutputError as exc:
+                if attempt < self.request_retry_attempts:
+                    await self._emit_retry_progress(
+                        provider_request=provider_request,
+                        attempt=attempt,
+                        retry_reason="empty_responses_output",
+                        message=(
+                            "模型服务返回了空的 Responses 输出，"
+                            f"准备进行第 {attempt + 1} 次尝试"
+                        ),
+                    )
+                    await asyncio.sleep(self.request_retry_backoff_seconds * attempt)
+                    continue
+                raise ProviderError(
+                    "provider returned empty Responses API output after retries "
+                    f"while calling {provider_request.agent_name} model "
+                    f"{provider_request.model_target.model} at {url} "
+                    f"(attempt={attempt}/{self.request_retry_attempts}, detail={exc})",
                 ) from exc
             except (httpx.ConnectTimeout, httpx.ConnectError) as exc:
                 last_connect_error = exc
@@ -212,19 +235,15 @@ class OpenAICompatibleProvider:
         return payload
 
     def _build_responses_payload(self, provider_request: ProviderRequest) -> dict[str, Any]:
-        input_messages = [
-            self._to_responses_message("system", provider_request.system_prompt),
-            *[
-                self._to_responses_message(item.role, item.content)
-                for item in provider_request.messages
-            ],
-        ]
         payload: dict[str, Any] = {
             "model": provider_request.model_target.model,
-            "input": input_messages,
+            "instructions": provider_request.system_prompt,
+            "input": self._to_responses_input(provider_request.messages),
             "temperature": provider_request.generation_config.temperature,
             "max_output_tokens": provider_request.generation_config.max_tokens,
-            "stream": False,
+            "stream": True,
+            "store": False,
+            "tool_choice": "none",
         }
         if provider_request.generation_config.response_format == "json_object":
             payload["text"] = {"format": {"type": "json_object"}}
@@ -247,16 +266,12 @@ class OpenAICompatibleProvider:
     def _to_message(self, role: str, content: str) -> dict[str, str]:
         return {"role": role, "content": content}
 
-    def _to_responses_message(self, role: str, content: str) -> dict[str, Any]:
-        return {
-            "role": role,
-            "content": [
-                {
-                    "type": "input_text",
-                    "text": content,
-                }
-            ],
-        }
+    def _to_responses_input(self, messages: tuple[ProviderMessage, ...]) -> str:
+        parts = []
+        for message in messages:
+            role = message.role.strip() or "user"
+            parts.append(f"{role}: {message.content}")
+        return "\n\n".join(parts)
 
     async def _emit_retry_progress(
         self,
@@ -302,6 +317,22 @@ class OpenAICompatibleProvider:
         output_text = raw_json.get("output_text")
         if isinstance(output_text, str) and output_text.strip():
             return output_text
+        text_value = self._extract_nested_text(raw_json.get("text"))
+        if text_value:
+            return text_value
+        data = raw_json.get("data")
+        if isinstance(data, dict):
+            content = self._try_extract_content(data)
+            if content:
+                return content
+        for key in ("result", "response", "message", "item"):
+            nested = raw_json.get(key)
+            if isinstance(nested, dict):
+                content = self._try_extract_content(nested)
+                if content:
+                    return content
+            if isinstance(nested, str) and nested.strip():
+                return nested
 
         output = raw_json.get("output")
         if isinstance(output, list):
@@ -313,9 +344,13 @@ class OpenAICompatibleProvider:
         if content:
             return content
 
+        if self._is_empty_responses_output(raw_json):
+            raise EmptyResponseOutputError(self._format_empty_responses_output(raw_json))
+
         raise ProviderError(
             "provider response does not contain supported text content "
-            "(expected choices/message/content, choices/text, output_text, or output/content text)",
+            "(expected choices/message/content, choices/text, output_text, output/content text, "
+            f"or nested text fields; response_summary={self._summarize_json_shape(raw_json)})",
         )
 
     def _extract_content_value(self, content: Any) -> str:
@@ -344,9 +379,20 @@ class OpenAICompatibleProvider:
                 value = text.get("value")
                 if isinstance(value, str):
                     return value
+        if item.get("type") in {"output_text", "summary_text"}:
+            text = item.get("text")
+            if isinstance(text, str):
+                return text
+            if isinstance(text, dict):
+                value = text.get("value")
+                if isinstance(value, str):
+                    return value
         text = item.get("text")
         if isinstance(text, str):
             return text
+        text_value = self._extract_nested_text(text)
+        if text_value:
+            return text_value
         return ""
 
     def _extract_text_from_output_items(self, output: list[Any]) -> str:
@@ -363,7 +409,69 @@ class OpenAICompatibleProvider:
             text = item.get("text")
             if isinstance(text, str) and text.strip():
                 text_parts.append(text)
+                continue
+            text_value = self._extract_nested_text(text)
+            if text_value:
+                text_parts.append(text_value)
+                continue
+            if isinstance(item.get("message"), dict):
+                extracted = self._try_extract_content(item["message"])
+                if extracted:
+                    text_parts.append(extracted)
         return "\n".join(part for part in text_parts if part.strip())
+
+    def _try_extract_content(self, raw_json: dict[str, Any]) -> str:
+        try:
+            return self._extract_content(raw_json)
+        except ProviderError:
+            return ""
+
+    def _extract_nested_text(self, value: Any) -> str:
+        if isinstance(value, str) and value.strip():
+            return value
+        if isinstance(value, dict):
+            for key in ("value", "text", "content", "output_text"):
+                nested = value.get(key)
+                text = self._extract_nested_text(nested)
+                if text:
+                    return text
+        if isinstance(value, list):
+            text_parts = [self._extract_nested_text(item) for item in value]
+            return "\n".join(part for part in text_parts if part.strip())
+        return ""
+
+    def _is_empty_responses_output(self, raw_json: dict[str, Any]) -> bool:
+        if raw_json.get("object") != "response":
+            return False
+        output = raw_json.get("output")
+        return isinstance(output, list) and not output
+
+    def _format_empty_responses_output(self, raw_json: dict[str, Any]) -> str:
+        text_format = None
+        text_config = raw_json.get("text")
+        if isinstance(text_config, dict):
+            format_config = text_config.get("format")
+            if isinstance(format_config, dict):
+                text_format = format_config.get("type")
+        return (
+            "empty Responses API output "
+            f"(id={raw_json.get('id') or 'unknown'}, "
+            f"status={raw_json.get('status') or 'unknown'}, "
+            f"model={raw_json.get('model') or 'unknown'}, "
+            f"error={raw_json.get('error') or 'null'}, "
+            f"incomplete_details={raw_json.get('incomplete_details') or 'null'}, "
+            f"tool_choice={raw_json.get('tool_choice') or 'unknown'}, "
+            f"max_output_tokens={raw_json.get('max_output_tokens') or 'unknown'}, "
+            f"text_format={text_format or 'unknown'}, "
+            "hint=the upstream gateway completed the Responses request but returned output=[], "
+            "so no JSON text exists to parse; verify this gateway supports "
+            "Responses text generation with tool_choice=none and json_object text.format)"
+        )
+
+    def _summarize_json_shape(self, raw_json: dict[str, Any]) -> str:
+        top_keys = sorted(str(key) for key in raw_json.keys())
+        preview = self._summarize_error_body(json.dumps(raw_json, ensure_ascii=False), limit=1200)
+        return f"top_keys={top_keys}, body_preview={preview}"
 
     async def _read_response(
         self,
@@ -455,6 +563,16 @@ class OpenAICompatibleProvider:
         return last_message_json, content
 
     def _extract_delta_text(self, raw_json: dict[str, Any]) -> str:
+        event_type = raw_json.get("type")
+        if event_type == "response.output_text.delta":
+            delta = raw_json.get("delta")
+            if isinstance(delta, str):
+                return delta
+        if event_type == "response.refusal.delta":
+            delta = raw_json.get("delta")
+            if isinstance(delta, str):
+                return delta
+
         choices = raw_json.get("choices")
         if not isinstance(choices, list) or not choices:
             return ""

@@ -101,11 +101,14 @@ class OpenAICompatibleProviderTest(unittest.TestCase):
 
         self.assertEqual(provider._request_path(), "/responses")
         self.assertEqual(payload["model"], "gpt-5.5")
+        self.assertEqual(payload["temperature"], 0.1)
         self.assertEqual(payload["max_output_tokens"], 1200)
-        self.assertFalse(payload["stream"])
+        self.assertTrue(payload["stream"])
+        self.assertFalse(payload["store"])
+        self.assertEqual(payload["tool_choice"], "none")
         self.assertEqual(payload["text"], {"format": {"type": "json_object"}})
-        self.assertEqual(payload["input"][0]["role"], "system")
-        self.assertEqual(payload["input"][0]["content"][0]["type"], "input_text")
+        self.assertEqual(payload["instructions"], "system prompt with json output requirement")
+        self.assertEqual(payload["input"], "user: return json please")
 
     def test_extract_content_supports_string_message(self) -> None:
         raw_json = {
@@ -206,6 +209,128 @@ class OpenAICompatibleProviderTest(unittest.TestCase):
 
         self.assertEqual(json.loads(content), {"ok": True, "source": "output.content"})
 
+    def test_extract_content_supports_output_text_content_item_shape(self) -> None:
+        raw_json = {
+            "id": "resp_789",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "{\"ok\": true, \"source\": \"output_text_item\"}",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        content = self.provider._extract_content(raw_json)
+
+        self.assertEqual(json.loads(content), {"ok": True, "source": "output_text_item"})
+
+    def test_extract_content_supports_nested_data_output_text_shape(self) -> None:
+        raw_json = {
+            "data": {
+                "output_text": "{\"ok\": true, \"source\": \"data.output_text\"}",
+            },
+        }
+
+        content = self.provider._extract_content(raw_json)
+
+        self.assertEqual(json.loads(content), {"ok": True, "source": "data.output_text"})
+
+    def test_extract_content_error_includes_response_shape_summary(self) -> None:
+        with self.assertRaisesRegex(ProviderError, "response_summary=top_keys") as context:
+            self.provider._extract_content({"id": "resp_no_text", "status": "completed", "output": "none"})
+
+        self.assertIn("resp_no_text", str(context.exception))
+
+    def test_extract_content_reports_empty_responses_output(self) -> None:
+        raw_json = {
+            "id": "resp_empty",
+            "object": "response",
+            "status": "completed",
+            "model": "gpt-5.5",
+            "output": [],
+            "error": None,
+            "incomplete_details": None,
+            "tool_choice": "auto",
+            "text": {"format": {"type": "json_object"}},
+        }
+
+        with self.assertRaisesRegex(ProviderError, "empty Responses API output") as context:
+            self.provider._extract_content(raw_json)
+
+        message = str(context.exception)
+        self.assertIn("output=[]", message)
+        self.assertIn("tool_choice=auto", message)
+        self.assertIn("text_format=json_object", message)
+
+    def test_generate_retries_empty_responses_output_before_failing(self) -> None:
+        provider = OpenAICompatibleProvider(
+            ProviderConfig(
+                provider_name="auto-code",
+                api_base="https://vip.auto-code.net",
+                api_key="test-key",
+                wire_api="responses",
+            ),
+        )
+        provider_request = ProviderRequest(
+            agent_name="requirement_verification",
+            task_id="task_001",
+            model_target=ModelTarget(provider="auto-code", model="gpt-5.5"),
+            system_prompt="system prompt with json output requirement",
+            messages=(ProviderMessage(role="user", content="return json please"),),
+            generation_config=GenerationConfig(temperature=0.1, max_tokens=1200),
+        )
+        attempts: list[int] = []
+
+        class StubStreamContext:
+            async def __aenter__(self):
+                attempts.append(1)
+                return httpx.Response(
+                    200,
+                    headers={"content-type": "application/json"},
+                    json={
+                        "id": "resp_empty",
+                        "object": "response",
+                        "status": "completed",
+                        "model": "gpt-5.5",
+                        "output": [],
+                        "error": None,
+                        "incomplete_details": None,
+                        "text": {"format": {"type": "json_object"}},
+                    },
+                    request=httpx.Request("POST", "https://vip.auto-code.net/responses"),
+                )
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        class StubClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            def stream(self, method, url, json, headers):
+                return StubStreamContext()
+
+        with (
+            patch("tdd_agent_framework.providers.openai_compatible.httpx.AsyncClient", StubClient),
+            patch("tdd_agent_framework.providers.openai_compatible.asyncio.sleep", new=self._noop_sleep),
+        ):
+            with self.assertRaisesRegex(ProviderError, "empty Responses API output after retries") as context:
+                asyncio.run(provider.generate(provider_request))
+
+        self.assertEqual(len(attempts), provider.request_retry_attempts)
+        self.assertIn("attempt=3/3", str(context.exception))
+
     def test_parse_json_object_from_text_extracts_wrapped_json_object(self) -> None:
         wrapped = '```json\\n{"status":"pass","summary":"ok"}\\n```'
 
@@ -282,6 +407,51 @@ class OpenAICompatibleProviderTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ProviderError, "provider returned JSON but not an object"):
             asyncio.run(self.provider._read_response(response, agent_name="requirement_analysis"))
+
+    def test_read_response_supports_responses_output_text_delta_stream(self) -> None:
+        response = httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                b'data: {"type":"response.output_text.delta","delta":"{\\"ok\\":"}\n'
+                b'data: {"type":"response.output_text.delta","delta":" true}"}\n'
+                b"data: [DONE]\n"
+            ),
+            request=httpx.Request("POST", "https://vip.auto-code.net/responses"),
+        )
+
+        raw_json, content = asyncio.run(
+            self.provider._read_response(response, agent_name="requirement_analysis")
+        )
+
+        self.assertEqual(raw_json["type"], "response.output_text.delta")
+        self.assertEqual(json.loads(content), {"ok": True})
+
+    def test_read_response_supports_responses_completed_stream_without_deltas(self) -> None:
+        response = httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                b"data: {"
+                b'"type":"response.completed",'
+                b'"response":{'
+                b'"id":"resp_123",'
+                b'"object":"response",'
+                b'"status":"completed",'
+                b'"output":[{"type":"message","content":[{"type":"output_text","text":"{\\"ok\\": true}"}]}]'
+                b"}"
+                b"}\n"
+                b"data: [DONE]\n"
+            ),
+            request=httpx.Request("POST", "https://vip.auto-code.net/responses"),
+        )
+
+        raw_json, content = asyncio.run(
+            self.provider._read_response(response, agent_name="requirement_analysis")
+        )
+
+        self.assertEqual(raw_json["type"], "response.completed")
+        self.assertEqual(json.loads(content), {"ok": True})
 
     def test_retries_retryable_http_status_before_failing(self) -> None:
         provider_request = ProviderRequest(

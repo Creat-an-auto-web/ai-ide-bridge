@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1080" viewBox="0 0 1800 1080" role="img" aria-labelledby="title desc">
-  <title id="title">需求分析阶段三会话多智能体架构图</title>
-  <desc id="desc">全中文架构图，展示需求分析阶段由故事生成、单条验证、组合验证三个会话智能体构成，并通过用户审核形成闭环。</desc>
+  <title id="title">需求分析阶段三智能体架构图</title>
+  <desc id="desc">全中文架构图，展示需求分析阶段由故事生成、单条验证、组合验证三个智能体构成，并通过生成与验证闭环产出结果。</desc>
   <defs>
     <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
       <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e9f2ff" stroke-width="1"/>
@@ -25,7 +25,7 @@
   <rect width="1800" height="1080" fill="url(#grid)"/>
 
   <rect x="455" y="34" width="890" height="76" rx="8" fill="#4aa3f0"/>
-  <text x="900" y="82" class="title" text-anchor="middle">需求分析阶段三会话多智能体架构</text>
+  <text x="900" y="82" class="title" text-anchor="middle">需求分析阶段三智能体架构</text>
 
   <rect x="70" y="160" width="160" height="58" rx="2" fill="#b772f2"/>
   <text x="150" y="197" class="lane" text-anchor="middle">输入</text>
@@ -33,10 +33,8 @@
   <text x="150" y="377" class="lane" text-anchor="middle">生成</text>
   <rect x="70" y="560" width="160" height="58" rx="2" fill="#b772f2"/>
   <text x="150" y="597" class="lane" text-anchor="middle">验证</text>
-  <rect x="70" y="760" width="160" height="58" rx="2" fill="#b772f2"/>
-  <text x="150" y="797" class="lane" text-anchor="middle">审核</text>
-  <rect x="70" y="920" width="160" height="58" rx="2" fill="#b772f2"/>
-  <text x="150" y="957" class="lane" text-anchor="middle">结果</text>
+  <rect x="70" y="820" width="160" height="58" rx="2" fill="#b772f2"/>
+  <text x="150" y="857" class="lane" text-anchor="middle">结果</text>
 
   <rect x="340" y="148" width="1120" height="86" rx="8" fill="#97cdfb"/>
   <rect x="410" y="169" width="180" height="44" rx="4" fill="#238fe8"/>
@@ -53,47 +51,36 @@
   <path d="M 900 234 L 900 300" class="arrow"/>
 
   <rect x="530" y="318" width="740" height="150" rx="10" fill="#fff8c4" stroke="#f4cf58" stroke-width="3"/>
-  <text x="900" y="360" class="big" text-anchor="middle">故事生成会话</text>
+  <text x="900" y="360" class="big" text-anchor="middle">故事生成智能体</text>
   <rect x="610" y="388" width="260" height="42" rx="20" fill="#ffc88f" stroke="#0b2948" stroke-width="3"/>
   <text x="740" y="415" class="mid" text-anchor="middle">生成需求结构</text>
   <rect x="930" y="388" width="260" height="42" rx="20" fill="#ffc88f" stroke="#0b2948" stroke-width="3"/>
   <text x="1060" y="415" class="mid" text-anchor="middle">拆分中文故事</text>
 
-  <path d="M 900 468 L 900 488" class="line"/>
-  <path d="M 900 488 L 1120 488" class="line"/>
-  <path d="M 680 488 L 1120 488" class="line"/>
-  <path d="M 680 488 L 680 510" class="arrow"/>
-  <path d="M 1120 488 L 1120 510" class="arrow"/>
+  <path d="M 700 468 L 700 510" class="arrow"/>
+  <path d="M 1100 468 L 1100 510" class="arrow"/>
 
   <rect x="500" y="528" width="360" height="150" rx="10" fill="#fff8c4" stroke="#f4cf58" stroke-width="3"/>
-  <text x="680" y="568" class="big" text-anchor="middle">单条验证会话</text>
+  <text x="680" y="568" class="big" text-anchor="middle">单条验证智能体</text>
   <rect x="550" y="596" width="260" height="42" rx="20" fill="#ffc88f" stroke="#0b2948" stroke-width="3"/>
   <text x="680" y="623" class="mid" text-anchor="middle">检查故事质量</text>
 
   <rect x="940" y="528" width="360" height="150" rx="10" fill="#fff8c4" stroke="#f4cf58" stroke-width="3"/>
-  <text x="1120" y="568" class="big" text-anchor="middle">组合验证会话</text>
+  <text x="1120" y="568" class="big" text-anchor="middle">组合验证智能体</text>
   <rect x="990" y="596" width="260" height="42" rx="20" fill="#ffc88f" stroke="#0b2948" stroke-width="3"/>
   <text x="1120" y="623" class="mid" text-anchor="middle">检查业务闭环</text>
 
-  <path d="M 680 678 L 680 720" class="line"/>
-  <path d="M 1120 678 L 1120 720" class="line"/>
-  <path d="M 680 720 L 1120 720" class="line"/>
-  <path d="M 900 720 L 900 730" class="arrow"/>
+  <path d="M 620 510 L 620 486" class="arrow"/>
+  <path d="M 1220 510 L 1220 486" class="arrow"/>
+  <path d="M 860 603 L 922 603" class="arrow"/>
+  <path d="M 1120 678 L 1120 748" class="arrow"/>
 
-  <rect x="530" y="748" width="740" height="96" rx="8" fill="#97cdfb"/>
-  <text x="900" y="786" class="big" text-anchor="middle">用户审核暂停点</text>
-  <text x="900" y="820" class="text" text-anchor="middle">查看故事树，补充需求，选择故事反馈，或接受当前结果</text>
-
-  <path d="M 1270 796 L 1370 796 L 1370 390 L 1288 390" class="arrow"/>
-
-  <path d="M 900 844 L 900 886" class="arrow"/>
-
-  <rect x="340" y="904" width="1120" height="110" rx="8" fill="#97cdfb"/>
-  <rect x="420" y="936" width="260" height="48" rx="4" fill="#238fe8"/>
-  <text x="550" y="967" class="white" text-anchor="middle">用户故事</text>
-  <rect x="770" y="936" width="260" height="48" rx="4" fill="#238fe8"/>
-  <text x="900" y="967" class="white" text-anchor="middle">故事依赖图</text>
-  <rect x="1120" y="936" width="260" height="48" rx="4" fill="#2dbd73"/>
-  <text x="1250" y="967" class="white" text-anchor="middle">进入测试用例生成</text>
+  <rect x="340" y="766" width="1120" height="110" rx="8" fill="#97cdfb"/>
+  <rect x="420" y="798" width="260" height="48" rx="4" fill="#238fe8"/>
+  <text x="550" y="829" class="white" text-anchor="middle">用户故事</text>
+  <rect x="770" y="798" width="260" height="48" rx="4" fill="#238fe8"/>
+  <text x="900" y="829" class="white" text-anchor="middle">故事依赖图</text>
+  <rect x="1120" y="798" width="260" height="48" rx="4" fill="#2dbd73"/>
+  <text x="1250" y="829" class="white" text-anchor="middle">进入测试用例生成</text>
 
 </svg>
