@@ -75,9 +75,12 @@ POST /v1/test-code-generation/runs
 
 当前兼容接口可以接收旧的 `test_command` 字符串，但新实现应以 `sandbox-execution.v1` 为准。
 
-如果下一步要进入正式隔离执行，可继续补：
+当前第四阶段已经提供 Docker 与临时工作区两种运行时。二、三阶段只交付
+`sandbox-execution.v1` 请求，不负责选择运行时；第四阶段会先检测 Docker，
+Docker 不可用时再由用户选择改用临时工作区、重试 Docker 或取消测试。
 
-- Docker 沙箱
-- 网络与资源限制
-- 运行事件流和取消接口
+后续仍可继续补：
+
+- 按项目自动构建包含业务依赖的 Docker 镜像
+- 独立的运行中取消协议和持久化产物下载
 - 汇总失败并回到 repair 阶段

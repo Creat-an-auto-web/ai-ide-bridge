@@ -18,6 +18,7 @@ import {
   TestCodeGenerationResultPayload,
   TestCodeRepairResultPayload,
   RequirementAnalysisStreamEvent,
+  DockerRuntimeStatusPayload,
   SandboxExecutionDebugDraft,
   SandboxExecutionResultPayload,
   SandboxExecutionStreamEvent,
@@ -111,6 +112,9 @@ export interface AiIdeBridgeUiState {
   sandboxDebugResult: SandboxExecutionResultPayload | null
   sandboxDebugError: string | null
   sandboxDebugIsRunning: boolean
+  sandboxDockerStatus: DockerRuntimeStatusPayload | null
+  sandboxDockerCheckIsRunning: boolean
+  sandboxDockerChoiceRequired: boolean
   latestNotification: { level: 'info' | 'warning' | 'error'; title: string; message: string } | null
   latestPatchReview: PatchReviewModel | null
   latestWorkspaceEdit: WorkspaceEditModel | null
@@ -709,6 +713,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
   const entryRef = useRef<ReturnType<typeof attachVoidRealIdeSidebarFromAccessor> | null>(null)
   const requirementAnalysisSocketRef = useRef<WebSocket | null>(null)
   const sandboxDebugSocketRef = useRef<WebSocket | null>(null)
+  const sandboxDebugOperationRef = useRef(0)
   const requirementAnalysisStopRequestedRef = useRef(false)
   const requirementAnalysisLastRunOptionsRef = useRef<RequirementAnalysisContinuationOptions>({})
 
@@ -749,6 +754,9 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     sandboxDebugResult: null,
     sandboxDebugError: null,
     sandboxDebugIsRunning: false,
+    sandboxDockerStatus: null,
+    sandboxDockerCheckIsRunning: false,
+    sandboxDockerChoiceRequired: false,
     latestNotification: null,
     latestPatchReview: null,
     latestWorkspaceEdit: null,
@@ -805,6 +813,9 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     entryRef.current = entry
 
     return () => {
+      sandboxDebugOperationRef.current += 1
+      sandboxDebugSocketRef.current?.close()
+      sandboxDebugSocketRef.current = null
       entry.dispose()
       entryRef.current = null
     }
@@ -1307,15 +1318,21 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       }))
     },
     loadSandboxDebugFixture() {
+      sandboxDebugOperationRef.current += 1
+      sandboxDebugSocketRef.current?.close()
+      sandboxDebugSocketRef.current = null
       setUiState((prev) => ({
         ...prev,
         sandboxDebugDraft: createSandboxExecutionDebugDraft(),
         sandboxDebugEvents: [],
         sandboxDebugResult: null,
         sandboxDebugError: null,
+        sandboxDockerStatus: null,
+        sandboxDockerCheckIsRunning: false,
+        sandboxDockerChoiceRequired: false,
       }))
     },
-    async runSandboxDebug() {
+    async runSandboxDebug(runtime: 'docker' | 'local_copy' = 'docker') {
       const draft = uiState.sandboxDebugDraft
       const testFilePath = draft.test_file_path.trim()
       const testFileContent = draft.test_file_content
@@ -1334,9 +1351,78 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         return
       }
 
+      const operationId = sandboxDebugOperationRef.current + 1
+      sandboxDebugOperationRef.current = operationId
+      const isCurrentOperation = () =>
+        sandboxDebugOperationRef.current === operationId
+
+      if (runtime === 'docker') {
+        setUiState((prev) => ({
+          ...prev,
+          sandboxDockerCheckIsRunning: true,
+          sandboxDockerChoiceRequired: false,
+          sandboxDockerStatus: null,
+          sandboxDebugEvents: [],
+          sandboxDebugResult: null,
+          sandboxDebugError: null,
+        }))
+        try {
+          const response = await bridgeFetchImpl(
+            new URL('/v1/sandbox-execution/docker/status', bridgeBaseUrl).toString(),
+            { method: 'GET' },
+          )
+          const bodyText = await response.text()
+          const envelope = bodyText ? JSON.parse(bodyText) as {
+            success?: boolean
+            data?: DockerRuntimeStatusPayload
+            error?: { message?: string }
+          } : {}
+          if (!response.ok || !envelope.success || !envelope.data) {
+            throw new Error(
+              envelope.error?.message
+                || `Docker 状态检测失败（HTTP ${response.status}）`,
+            )
+          }
+          if (!isCurrentOperation()) {
+            return
+          }
+          setUiState((prev) => ({
+            ...prev,
+            sandboxDockerStatus: envelope.data ?? null,
+          }))
+          if (!envelope.data.available) {
+            setUiState((prev) => ({
+              ...prev,
+              sandboxDockerChoiceRequired: true,
+              sandboxDebugError: null,
+            }))
+            return
+          }
+        } catch (error) {
+          if (isCurrentOperation()) {
+            setUiState((prev) => ({
+              ...prev,
+              sandboxDebugError: error instanceof Error ? error.message : String(error),
+            }))
+          }
+          return
+        } finally {
+          if (isCurrentOperation()) {
+            setUiState((prev) => ({
+              ...prev,
+              sandboxDockerCheckIsRunning: false,
+            }))
+          }
+        }
+      }
+
+      if (!isCurrentOperation()) {
+        return
+      }
       setUiState((prev) => ({
         ...prev,
         sandboxDebugIsRunning: true,
+        sandboxDockerChoiceRequired: false,
         sandboxDebugEvents: [],
         sandboxDebugResult: null,
         sandboxDebugError: null,
@@ -1366,12 +1452,17 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
             path: testFilePath,
             language: 'python',
             framework: 'pytest',
-            purpose: '第四阶段独立沙箱联调',
+            purpose: '沙箱运行测试',
             related_test_case_ids: ['sandbox_debug_smoke'],
             content: testFileContent,
           }],
           command,
+          120,
+          runtime,
         )
+        if (!isCurrentOperation()) {
+          return
+        }
         const webSocketFactory =
           hostOptions.webSocketFactory
           ?? defaultNativeWebSocketFactory
@@ -1397,7 +1488,11 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
             } catch {
               // ignore close errors
             }
-            reject(error)
+            if (isCurrentOperation()) {
+              reject(error)
+            } else {
+              resolve()
+            }
           }
 
           socket.onopen = () => {
@@ -1405,12 +1500,20 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           }
 
           socket.onmessage = (message) => {
+            if (!isCurrentOperation()) {
+              try {
+                socket.close()
+              } catch {
+                // ignore close errors
+              }
+              return
+            }
             let event: SandboxExecutionStreamEvent
             try {
               event = JSON.parse(String(message.data)) as SandboxExecutionStreamEvent
             } catch (error) {
               finishWithError(
-                new Error(`沙箱联调事件格式无效：${error instanceof Error ? error.message : String(error)}`),
+                new Error(`沙箱运行测试事件格式无效：${error instanceof Error ? error.message : String(error)}`),
               )
               return
             }
@@ -1422,6 +1525,21 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
               }
               if (event.type === 'result' && event.data) {
                 nextState.sandboxDebugResult = event.data
+                if (
+                  runtime === 'docker'
+                  && (
+                    event.data.failure?.kind === 'docker_runtime_unavailable'
+                    || event.data.failure?.kind === 'docker_execution_failed'
+                  )
+                ) {
+                  nextState.sandboxDockerChoiceRequired = true
+                  nextState.sandboxDockerStatus = {
+                    available: false,
+                    command: nextState.sandboxDockerStatus?.command ?? 'docker',
+                    server_version: null,
+                    detail: event.data.failure.summary,
+                  }
+                }
                 nextState.latestNotification = {
                   level: event.data.status === 'passed' ? 'info' : 'warning',
                   title: 'SandboxExecution',
@@ -1446,31 +1564,56 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
               resolve()
               socket.close()
             } else if (event.type === 'error') {
-              finishWithError(new Error(event.message || '沙箱联调失败。'))
+              finishWithError(new Error(event.message || '沙箱运行测试失败。'))
             }
           }
 
           socket.onerror = () => {
-            finishWithError(new Error('沙箱联调 WebSocket 连接失败。'))
+            finishWithError(new Error('沙箱运行测试 WebSocket 连接失败。'))
           }
 
           socket.onclose = () => {
             if (!settled) {
-              finishWithError(new Error('沙箱联调连接在收到最终结果前关闭。'))
+              finishWithError(new Error('沙箱运行测试连接在收到最终结果前关闭。'))
             }
           }
         })
       } catch (error) {
-        setUiState((prev) => ({
-          ...prev,
-          sandboxDebugError: error instanceof Error ? error.message : String(error),
-        }))
+        if (isCurrentOperation()) {
+          setUiState((prev) => ({
+            ...prev,
+            sandboxDebugError: error instanceof Error ? error.message : String(error),
+          }))
+        }
       } finally {
-        setUiState((prev) => ({
-          ...prev,
-          sandboxDebugIsRunning: false,
-        }))
+        if (isCurrentOperation()) {
+          setUiState((prev) => ({
+            ...prev,
+            sandboxDebugIsRunning: false,
+            sandboxDockerCheckIsRunning: false,
+          }))
+        }
       }
+    },
+    cancelSandboxDebug() {
+      sandboxDebugOperationRef.current += 1
+      sandboxDebugSocketRef.current?.close()
+      sandboxDebugSocketRef.current = null
+      setUiState((prev) => ({
+        ...prev,
+        sandboxDebugIsRunning: false,
+        sandboxDockerCheckIsRunning: false,
+        sandboxDockerChoiceRequired: false,
+        sandboxDebugError: null,
+        sandboxDebugEvents: [],
+        sandboxDebugResult: null,
+        sandboxDockerStatus: null,
+        latestNotification: {
+          level: 'warning',
+          title: 'SandboxExecution',
+          message: '已取消本次沙箱测试。',
+        },
+      }))
     },
     setTestCodeExecutionCommandDraft(commandDraft: string) {
       setUiState((prev) => ({

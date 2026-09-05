@@ -11,8 +11,22 @@ servers:
 tags:
   - name: Tasks
   - name: Commands
+  - name: SandboxExecution
 
 paths:
+  /v1/sandbox-execution/docker/status:
+    get:
+      tags: [SandboxExecution]
+      summary: Check Docker Desktop and Docker Engine availability
+      operationId: getDockerRuntimeStatus
+      responses:
+        '200':
+          description: Docker runtime status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DockerRuntimeStatusResponse'
+
   /v1/tasks:
     post:
       tags: [Tasks]
@@ -348,3 +362,34 @@ components:
         details:
           type: object
           additionalProperties: true
+
+    DockerRuntimeStatus:
+      type: object
+      required: [available, command, detail]
+      properties:
+        available:
+          type: boolean
+        command:
+          type: string
+        server_version:
+          type: string
+          nullable: true
+        detail:
+          type: string
+
+    DockerRuntimeStatusResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        requestId:
+          type: string
+          nullable: true
+        data:
+          $ref: '#/components/schemas/DockerRuntimeStatus'
+        error:
+          nullable: true
+          $ref: '#/components/schemas/Error'
+        protocolVersion:
+          type: string

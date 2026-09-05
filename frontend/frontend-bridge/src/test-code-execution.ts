@@ -23,6 +23,13 @@ export interface SandboxExecutionPolicyPayload {
   allow_workspace_changes: boolean
 }
 
+export interface DockerRuntimeStatusPayload {
+  available: boolean
+  command: string
+  server_version: string | null
+  detail: string
+}
+
 export interface SandboxExecutionRunInputPayload {
   protocol_version: 'sandbox-execution.v1'
   task_id: string
@@ -146,11 +153,13 @@ export interface SandboxExecutionDebugDraft {
 export const createSandboxExecutionDebugDraft = (): SandboxExecutionDebugDraft => ({
   test_file_path: 'tests/test_sandbox_smoke.py',
   test_file_content: [
-    'def test_sandbox_smoke():',
-    '    assert True',
+    'from pathlib import Path',
+    '',
+    'assert Path("tests/test_sandbox_smoke.py").exists()',
+    'print("sandbox smoke passed")',
     '',
   ].join('\n'),
-  command: 'python -m pytest tests/test_sandbox_smoke.py -q',
+  command: 'python tests/test_sandbox_smoke.py',
 })
 
 export const splitCommandDraft = (value: string): string[] => {
@@ -210,6 +219,7 @@ export const toSandboxExecutionInputPayload = (
   testFiles: GeneratedTestFilePayload[],
   command: SandboxCommandPayload | null,
   timeoutSeconds = 120,
+  runtime: SandboxExecutionPolicyPayload['runtime'] = 'docker',
 ): SandboxExecutionRunInputPayload => ({
   protocol_version: 'sandbox-execution.v1',
   task_id: taskId,
@@ -219,8 +229,8 @@ export const toSandboxExecutionInputPayload = (
   test_files: testFiles,
   command,
   execution_policy: {
-    runtime: 'local_copy',
-    network: 'allow',
+    runtime,
+    network: runtime === 'docker' ? 'deny' : 'allow',
     timeout_seconds: timeoutSeconds,
     max_output_bytes: 262144,
     retain_artifacts: true,

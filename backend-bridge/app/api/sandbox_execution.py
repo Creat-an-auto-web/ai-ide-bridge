@@ -9,6 +9,15 @@ from app.models.sandbox_execution import SandboxExecutionRunRequest
 router = APIRouter(prefix="/v1/sandbox-execution", tags=["SandboxExecution"])
 
 
+@router.get("/docker/status", response_model=ResponseEnvelope)
+async def get_docker_runtime_status(request: Request) -> ResponseEnvelope:
+    service = request.app.state.sandbox_execution_service
+    return ResponseEnvelope(
+        success=True,
+        data=await service.check_docker_runtime(),
+    )
+
+
 @router.post("/runs", response_model=ResponseEnvelope)
 async def run_sandbox_execution(
     payload: SandboxExecutionRunRequest,

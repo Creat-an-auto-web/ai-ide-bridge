@@ -70,6 +70,13 @@ class SandboxExecutionPolicyPayload(BaseModel):
     allow_workspace_changes: bool = False
 
 
+class DockerRuntimeStatusPayload(BaseModel):
+    available: bool
+    command: str
+    server_version: str | None = None
+    detail: str
+
+
 class SandboxProvenancePayload(BaseModel):
     requirement_package_id: str | None = None
     test_case_result_id: str | None = None

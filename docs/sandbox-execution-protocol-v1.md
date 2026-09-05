@@ -61,8 +61,8 @@ sandbox-execution.v1
     "environment": {}
   },
   "execution_policy": {
-    "runtime": "local_copy",
-    "network": "allow",
+    "runtime": "docker",
+    "network": "deny",
     "timeout_seconds": 120,
     "max_output_bytes": 262144,
     "retain_artifacts": true,
@@ -90,12 +90,31 @@ sandbox-execution.v1
 
 ### 3.2 执行策略
 
-`runtime` 当前预留：
+`runtime` 是第四阶段内部的运行时选择，不改变第二、三阶段交付的测试执行接口：
 
 - `local_copy`：将源工作区复制到临时目录后执行。隔离源工作区写入，但不能保证网络隔离。
-- `docker`：未来正式沙箱运行时。目标是隔离网络、文件系统和资源。
+- `docker`：将临时工作区挂载到 Docker 容器中执行，并施加网络、文件系统和资源限制。
+
+两种运行时都使用同一份 `sandbox-execution.v1` 请求、事件和响应结构。第二、三阶段不需要知道本次运行最终选择了哪种运行时；第四阶段负责在执行前检测 Docker，并在 Docker 不可用时由用户决定是否改用 `local_copy`。
 
 当 `runtime=local_copy` 且 `network=deny` 时，服务会拒绝执行并返回 `infrastructure_error`，不会假装已隔离网络。
+
+第四阶段可以通过以下接口检测 Docker Desktop 和 Docker Engine：
+
+```text
+GET /v1/sandbox-execution/docker/status
+```
+
+返回的 `data` 至少包含：
+
+```json
+{
+  "available": false,
+  "command": "docker",
+  "server_version": null,
+  "detail": "未找到 docker 命令。请安装并启动 Docker Desktop。"
+}
+```
 
 ## 4. 标准响应
 
@@ -171,6 +190,7 @@ sandbox-execution.v1
 - `command_start_failed`
 - `network_isolation_unavailable`
 - `docker_runtime_unavailable`
+- `docker_execution_failed`
 - `workspace_copy_failed`
 
 测试断言失败、超时和运行环境不可用必须区分，Repair 只能针对可修复的测试失败继续运行。
@@ -213,6 +233,9 @@ IDE 提供“沙箱运行测试”入口，用于在第二、三阶段尚未可�
 
 - 不要求存在需求分析结果、测试用例生成结果或测试代码生成结果。
 - 默认加载一个最小测试文件样例，也允许用户编辑测试文件路径、内容和命令。
+- 点击“运行沙箱测试”时先调用 Docker 状态检测；Docker 可用时使用 `runtime=docker`。
+- Docker 不可用时暂停本次运行，提供“采用临时工作区测试”“重试 Docker 沙箱测试”“取消测试”三个选项。
+- 选择“采用临时工作区测试”只切换第四阶段内部的运行时，仍发送同一份 `sandbox-execution.v1` 请求。
 - 通过 `WebSocket /v1/sandbox-execution/ws` 直接调用标准协议，不经过旧兼容接口。
 - 在执行过程中推送工作区复制、测试文件准备、命令启动、命令运行心跳和命令输出事件。
 - 展示执行状态、退出码、隔离状态、标准输出、标准错误、工作区差异和基础设施警告。
@@ -240,6 +263,12 @@ IDE 提供“沙箱运行测试”入口，用于在第二、三阶段尚未可�
 }
 ```
 
+当 Docker 在检测阶段不可用时，事件流会先发送
+`stage=docker_unavailable`，并在 `metadata` 中标记
+`user_action_required=docker_runtime_choice` 及三个可选动作：
+`use_local_copy`、`retry_docker`、`cancel`。这只是第四阶段的运行时选择，
+不会改变测试文件、命令和结果的标准结构。
+
 最终结果通过 `type=result` 事件的 `data` 字段返回。同步接口
 `POST /v1/sandbox-execution/runs` 仍然保留，适合不需要过程事件的服务端调用。
 
@@ -248,6 +277,8 @@ IDE 提供“沙箱运行测试”入口，用于在第二、三阶段尚未可�
 当前已经做到：
 
 - 测试文件只写入临时工作区副本，不回写用户源工作区。
+- Docker 运行时会在执行前检查 Docker Engine，并使用临时工作区副本创建容器。
+- Docker 运行时支持网络模式、只读根文件系统、CPU、内存和进程数限制，并在测试结束或超时后清理临时容器。
 - 本地项目中的 `node_modules` 会随副本复制，确保 JavaScript/TypeScript 测试命令可解析项目依赖；因此大型前端项目的本地副本准备时间会更长。
 - 禁止测试文件路径逃逸。
 - 结构化 `argv` 执行。
@@ -258,12 +289,9 @@ IDE 提供“沙箱运行测试”入口，用于在第二、三阶段尚未可�
 
 当前尚未做到：
 
-- Docker 容器隔离。
-- 网络强制禁止。
-- CPU、内存、进程数限制。
+- 按项目自动构建包含全部业务依赖的专用 Docker 镜像；可通过
+  `AI_IDE_BRIDGE_DOCKER_IMAGE` 指定已准备好测试依赖的镜像。
 - 长时间保留沙箱和产物下载。
-- 运行中取消接口与事件流。
+- 独立的运行中取消接口；关闭 IDE 的 WebSocket 连接会触发执行清理，但正式产品仍应补充显式取消协议。
 
-`local_copy` 是用于联调和闭环验证的兼容运行时，不应作为不可信代码的正式隔离边界。正式环境应切换到 Docker runtime，并默认使用 `network=deny`。
-
-Docker runtime 完成后，`network=deny` 才能成为默认安全策略。
+`local_copy` 是用于 Docker 不可用时的联调和闭环验证的兼容运行时，不应作为不可信代码的正式隔离边界。正式环境应优先使用 Docker runtime，并默认使用 `network=deny`。

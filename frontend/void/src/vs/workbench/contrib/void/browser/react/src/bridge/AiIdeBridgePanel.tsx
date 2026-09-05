@@ -109,6 +109,9 @@ export const AiIdeBridgePanel = () => {
     sandboxDebugResult,
     sandboxDebugError,
     sandboxDebugIsRunning,
+    sandboxDockerStatus,
+    sandboxDockerCheckIsRunning,
+    sandboxDockerChoiceRequired,
   } = bridge.uiState
 
   const promptValue = draftPrompt
@@ -1941,11 +1944,11 @@ export const AiIdeBridgePanel = () => {
           此入口直接调用 `sandbox-execution.v1`，不依赖测试用例生成或测试代码生成。它用于验证沙箱执行器、临时工作区复制、命令执行和结果回传。
         </div>
         <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--vscode-input-foreground)' }}>
-          当前使用 `local_copy`，不会回写当前工作区，但暂不提供网络隔离；正式流程仍应从前序阶段交付测试文件后进入沙箱运行测试。
+          点击运行后会先检测 Docker Desktop。Docker 可用时使用 Docker 沙箱；不可用时可改用临时工作区测试。二、三阶段始终只交付同一套 `sandbox-execution.v1` 接口。
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
-            <span>联调测试文件路径</span>
+            <span>测试文件路径</span>
             <input
               value={sandboxDebugDraft.test_file_path}
               onChange={(event) => bridge.setSandboxDebugDraft({
@@ -1956,7 +1959,7 @@ export const AiIdeBridgePanel = () => {
             />
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
-            <span>联调测试文件内容</span>
+            <span>测试文件内容</span>
             <textarea
               value={sandboxDebugDraft.test_file_content}
               onChange={(event) => bridge.setSandboxDebugDraft({
@@ -1979,7 +1982,7 @@ export const AiIdeBridgePanel = () => {
                 ...sandboxDebugDraft,
                 command: event.target.value,
               })}
-              placeholder="例如：python -m pytest tests/test_sandbox_smoke.py -q"
+              placeholder="例如：python tests/test_sandbox_smoke.py"
               style={inputStyle}
             />
           </label>
@@ -1987,28 +1990,83 @@ export const AiIdeBridgePanel = () => {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
           <button
             onClick={() => bridge.loadSandboxDebugFixture()}
-            disabled={sandboxDebugIsRunning}
+            disabled={sandboxDebugIsRunning || sandboxDockerCheckIsRunning}
             style={{
               ...buttonStyle,
-              opacity: sandboxDebugIsRunning ? 0.55 : 1,
+              opacity: sandboxDebugIsRunning || sandboxDockerCheckIsRunning ? 0.55 : 1,
             }}
           >
             加载测试样例
           </button>
           <button
             onClick={() => { void bridge.runSandboxDebug() }}
-            disabled={sandboxDebugIsRunning}
+            disabled={sandboxDebugIsRunning || sandboxDockerCheckIsRunning}
             style={{
               ...buttonStyle,
-              opacity: sandboxDebugIsRunning ? 0.55 : 1,
-              background: sandboxDebugIsRunning
+              opacity: sandboxDebugIsRunning || sandboxDockerCheckIsRunning ? 0.55 : 1,
+              background: sandboxDebugIsRunning || sandboxDockerCheckIsRunning
                 ? 'rgba(255, 255, 255, 0.03)'
                 : 'rgba(92, 196, 137, 0.18)',
             }}
           >
-            {sandboxDebugIsRunning ? '沙箱运行中' : '运行沙箱测试'}
+            {sandboxDockerCheckIsRunning
+              ? '正在检测 Docker'
+              : sandboxDebugIsRunning
+                ? '沙箱运行中'
+                : '运行沙箱测试'}
           </button>
         </div>
+
+        {sandboxDockerCheckIsRunning && (
+          <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+            正在检测 Docker Desktop 是否已启动且 Docker 引擎可用。
+          </div>
+        )}
+
+        {sandboxDockerChoiceRequired && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              marginTop: 4,
+              padding: '10px 12px',
+              border: '1px solid rgba(255, 196, 92, 0.55)',
+              borderRadius: 8,
+              background: 'rgba(255, 196, 92, 0.08)',
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 600 }}>
+              Docker Desktop 未启动，或 Docker 引擎当前不可用。
+            </div>
+            <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+              {sandboxDockerStatus?.detail ?? '未检测到可用的 Docker Desktop。'}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => { void bridge.runSandboxDebug('local_copy') }}
+                disabled={sandboxDebugIsRunning}
+                style={buttonStyle}
+              >
+                采用临时工作区测试
+              </button>
+              <button
+                onClick={() => { void bridge.runSandboxDebug('docker') }}
+                disabled={sandboxDebugIsRunning || sandboxDockerCheckIsRunning}
+                style={{ ...buttonStyle, background: 'rgba(92, 196, 137, 0.18)' }}
+              >
+                重试 Docker 沙箱测试
+              </button>
+              <button
+                onClick={() => bridge.cancelSandboxDebug()}
+                disabled={sandboxDebugIsRunning || sandboxDockerCheckIsRunning}
+                style={buttonStyle}
+              >
+                取消测试
+              </button>
+            </div>
+          </div>
+        )}
 
         {(sandboxDebugIsRunning || sandboxDebugEvents.length > 0) && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>

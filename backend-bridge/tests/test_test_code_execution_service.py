@@ -14,6 +14,42 @@ from app.services.test_code_execution_service import TestCodeExecutionBackendSer
 
 
 class TestCodeExecutionBackendServiceTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _write_fake_docker(
+        path: Path,
+        *,
+        sleep_on_info: bool = False,
+        sleep_on_run: bool = False,
+        run_exit_code: int = 0,
+        run_stderr: str = "",
+    ) -> None:
+        info_body = "time.sleep(10)" if sleep_on_info else "print('27.5.1')"
+        run_body = "time.sleep(10)" if sleep_on_run else "print('fake docker run')"
+        path.write_text(
+            "\n".join(
+                [
+                    "#!/usr/bin/env python3",
+                    "import sys",
+                    "import time",
+                    "",
+                    "command = sys.argv[1] if len(sys.argv) > 1 else ''",
+                    "if command == 'info':",
+                    f"    {info_body}",
+                    "    raise SystemExit(0)",
+                    "if command == 'rm':",
+                    "    raise SystemExit(0)",
+                    "if command == 'run':",
+                    f"    {run_body}",
+                    f"    print({run_stderr!r}, file=sys.stderr)" if run_stderr else "",
+                    f"    raise SystemExit({run_exit_code})",
+                    "raise SystemExit(2)",
+                    "",
+                ],
+            ),
+            encoding="utf-8",
+        )
+        path.chmod(0o755)
+
     async def test_legacy_run_keeps_source_workspace_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir)
@@ -275,6 +311,260 @@ class TestCodeExecutionBackendServiceTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(result["status"], "timed_out")
             self.assertEqual(result["execution"]["termination_reason"], "timeout")
+
+    async def test_docker_status_reports_available_server(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docker_path = Path(temp_dir) / "fake-docker"
+            self._write_fake_docker(docker_path)
+
+            result = await SandboxExecutionBackendService(
+                docker_command=str(docker_path),
+            ).check_docker_runtime()
+
+            self.assertTrue(result["available"])
+            self.assertEqual(result["server_version"], "27.5.1")
+
+    async def test_docker_status_reports_missing_cli_without_raising(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_docker = Path(temp_dir) / "missing-docker"
+
+            result = await SandboxExecutionBackendService(
+                docker_command=str(missing_docker),
+            ).check_docker_runtime()
+
+            self.assertFalse(result["available"])
+            self.assertIn("未找到 docker 命令", result["detail"])
+
+    async def test_docker_status_reports_timeout_without_leaking_process(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docker_path = Path(temp_dir) / "slow-docker"
+            self._write_fake_docker(docker_path, sleep_on_info=True)
+
+            result = await SandboxExecutionBackendService(
+                docker_command=str(docker_path),
+                docker_check_timeout_seconds=0.05,
+            ).check_docker_runtime()
+
+            self.assertFalse(result["available"])
+            self.assertIn("响应超时", result["detail"])
+
+    async def test_docker_unavailable_is_returned_through_the_standard_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            payload = SandboxExecutionRunRequest.model_validate(
+                {
+                    "task_id": "sandbox_docker_unavailable",
+                    "workspace": {"repo_root": temp_dir},
+                    "test_files": [
+                        {
+                            "path": "tests/test_docker_unavailable.py",
+                            "content": "assert True\n",
+                        }
+                    ],
+                    "command": {"argv": ["python", "-c", "print('unused')"]},
+                    "execution_policy": {
+                        "runtime": "docker",
+                        "network": "deny",
+                    },
+                },
+            )
+
+            result = await SandboxExecutionBackendService(
+                docker_command=str(Path(temp_dir) / "missing-docker"),
+            ).run(payload)
+
+            self.assertEqual(result["status"], "infrastructure_error")
+            self.assertEqual(result["execution"]["runtime"], "docker")
+            self.assertEqual(result["failure"]["kind"], "docker_runtime_unavailable")
+            self.assertFalse(result["execution"]["workspace_isolated"])
+            self.assertFalse(result["execution"]["network_isolated"])
+
+            events: list[dict] = []
+
+            async def collect(event: dict) -> None:
+                events.append(event)
+
+            await SandboxExecutionBackendService(
+                docker_command=str(Path(temp_dir) / "missing-docker"),
+            ).stream_run(payload, collect)
+            unavailable_event = next(
+                event for event in events if event["stage"] == "docker_unavailable"
+            )
+            self.assertEqual(
+                unavailable_event["metadata"]["user_action_required"],
+                "docker_runtime_choice",
+            )
+            self.assertEqual(
+                unavailable_event["metadata"]["options"],
+                ["use_local_copy", "retry_docker", "cancel"],
+            )
+
+    async def test_docker_command_preserves_relative_working_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            payload = SandboxExecutionRunRequest.model_validate(
+                {
+                    "task_id": "sandbox_docker_cwd",
+                    "workspace": {"repo_root": str(repo_root)},
+                    "test_files": [
+                        {
+                            "path": "tests/test_docker_cwd.py",
+                            "content": "assert True\n",
+                        }
+                    ],
+                    "command": {
+                        "argv": ["python", "-m", "pytest", "tests"],
+                        "cwd": "backend",
+                    },
+                    "execution_policy": {
+                        "runtime": "docker",
+                        "network": "deny",
+                    },
+                },
+            )
+            service = SandboxExecutionBackendService(
+                docker_command="/usr/bin/docker",
+            )
+
+            docker_argv = service._build_docker_run_command(
+                payload=payload,
+                command=payload.command,
+                sandbox_root=repo_root / "copy",
+                container_name="ai-ide-bridge-test",
+                relative_command_cwd="backend",
+            )
+
+            self.assertEqual(docker_argv[docker_argv.index("--workdir") + 1], "/workspace/backend")
+            self.assertIn("--network", docker_argv)
+            self.assertEqual(docker_argv[docker_argv.index("--network") + 1], "none")
+
+    async def test_docker_runtime_executes_through_the_same_protocol(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            docker_path = repo_root / "fake-docker"
+            self._write_fake_docker(docker_path)
+            payload = SandboxExecutionRunRequest.model_validate(
+                {
+                    "task_id": "sandbox_docker",
+                    "workspace": {"repo_root": str(repo_root)},
+                    "test_files": [
+                        {
+                            "path": "tests/test_docker.py",
+                            "language": "python",
+                            "framework": "pytest",
+                            "content": "def test_docker():\n    assert True\n",
+                        }
+                    ],
+                    "command": {
+                        "argv": [
+                            "python",
+                            "-c",
+                            "print('test command')",
+                        ]
+                    },
+                    "execution_policy": {
+                        "runtime": "docker",
+                        "network": "deny",
+                        "timeout_seconds": 10,
+                    },
+                },
+            )
+            events: list[dict] = []
+
+            async def collect(event: dict) -> None:
+                events.append(event)
+
+            service = SandboxExecutionBackendService(
+                docker_command=str(docker_path),
+            )
+            await service.stream_run(payload, collect)
+            result = events[-1]["data"]
+
+            self.assertEqual(result["status"], "passed")
+            self.assertEqual(result["execution"]["runtime"], "docker")
+            self.assertTrue(result["execution"]["workspace_isolated"])
+            self.assertTrue(result["execution"]["network_isolated"])
+            self.assertIn(
+                "docker_check_started",
+                [event["stage"] for event in events],
+            )
+            self.assertIn(
+                "container_starting",
+                [event["stage"] for event in events],
+            )
+
+    async def test_docker_runtime_timeout_uses_standard_timeout_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            docker_path = repo_root / "fake-docker"
+            self._write_fake_docker(docker_path, sleep_on_run=True)
+            payload = SandboxExecutionRunRequest.model_validate(
+                {
+                    "task_id": "sandbox_docker_timeout",
+                    "workspace": {"repo_root": str(repo_root)},
+                    "test_files": [
+                        {
+                            "path": "tests/test_docker_timeout.py",
+                            "content": "def test_docker_timeout():\n    assert True\n",
+                        }
+                    ],
+                    "command": {
+                        "argv": ["python", "-c", "print('unused by fake docker')"],
+                    },
+                    "execution_policy": {
+                        "runtime": "docker",
+                        "network": "deny",
+                        "timeout_seconds": 1,
+                    },
+                },
+            )
+
+            result = await SandboxExecutionBackendService(
+                docker_command=str(docker_path),
+            ).run(payload)
+
+            self.assertEqual(result["status"], "timed_out")
+            self.assertEqual(result["execution"]["runtime"], "docker")
+            self.assertEqual(result["execution"]["termination_reason"], "timeout")
+
+    async def test_docker_run_failure_is_infrastructure_error_with_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            docker_path = repo_root / "fake-docker"
+            self._write_fake_docker(
+                docker_path,
+                run_exit_code=125,
+                run_stderr="Cannot connect to the Docker daemon",
+            )
+            payload = SandboxExecutionRunRequest.model_validate(
+                {
+                    "task_id": "sandbox_docker_failure",
+                    "workspace": {"repo_root": str(repo_root)},
+                    "test_files": [
+                        {
+                            "path": "tests/test_docker_failure.py",
+                            "content": "assert True\n",
+                        }
+                    ],
+                    "command": {"argv": ["python", "tests/test_docker_failure.py"]},
+                    "execution_policy": {
+                        "runtime": "docker",
+                        "network": "deny",
+                        "timeout_seconds": 10,
+                    },
+                },
+            )
+
+            result = await SandboxExecutionBackendService(
+                docker_command=str(docker_path),
+            ).run(payload)
+
+            self.assertEqual(result["status"], "infrastructure_error")
+            self.assertEqual(
+                result["execution"]["termination_reason"],
+                "docker_execution_failed",
+            )
+            self.assertEqual(result["failure"]["kind"], "docker_execution_failed")
+            self.assertIn("Cannot connect to the Docker daemon", result["failure"]["summary"])
 
     async def test_sandbox_execution_api_and_legacy_adapter(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

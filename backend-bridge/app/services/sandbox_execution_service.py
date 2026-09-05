@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from app.models.sandbox_execution import (
     SandboxCommandPayload,
+    DockerRuntimeStatusPayload,
     SandboxExecutionPolicyPayload,
     SandboxExecutionResultPayload,
     SandboxExecutionRunRequest,
@@ -33,12 +34,7 @@ ProgressCallback = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 class SandboxExecutionBackendService:
-    """Runs generated tests in a temporary workspace copy.
-
-    This is the first local implementation of the sandbox contract. It isolates
-    workspace writes, but it cannot enforce network isolation; Docker is the
-    next runtime to implement.
-    """
+    """Executes tests through the versioned sandbox protocol."""
 
     _ignored_workspace_names = {
         ".git",
@@ -53,6 +49,87 @@ class SandboxExecutionBackendService:
         "build",
     }
     _environment_key_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+    def __init__(
+        self,
+        *,
+        docker_command: str | None = None,
+        docker_image: str | None = None,
+        docker_check_timeout_seconds: float = 5.0,
+    ) -> None:
+        self.docker_command = (
+            docker_command
+            or os.getenv("AI_IDE_BRIDGE_DOCKER_COMMAND")
+            or "docker"
+        )
+        self.docker_image_override = docker_image or os.getenv("AI_IDE_BRIDGE_DOCKER_IMAGE")
+        self.docker_image = (
+            self.docker_image_override
+            or "python:3.12-slim"
+        )
+        self.docker_check_timeout_seconds = docker_check_timeout_seconds
+
+    async def check_docker_runtime(self) -> dict[str, Any]:
+        """Check that both the Docker CLI and its server are available."""
+        try:
+            process = await asyncio.create_subprocess_exec(
+                self.docker_command,
+                "info",
+                "--format",
+                "{{.ServerVersion}}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=os.name == "posix",
+            )
+        except FileNotFoundError:
+            return DockerRuntimeStatusPayload(
+                available=False,
+                command=self.docker_command,
+                detail="未找到 docker 命令。请安装并启动 Docker Desktop。",
+            ).model_dump(mode="json")
+        except OSError as error:
+            return DockerRuntimeStatusPayload(
+                available=False,
+                command=self.docker_command,
+                detail=f"无法启动 Docker CLI：{error}",
+            ).model_dump(mode="json")
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=self.docker_check_timeout_seconds,
+            )
+        except TimeoutError:
+            self._terminate_process(process)
+            await self._wait_for_process_exit(process)
+            return DockerRuntimeStatusPayload(
+                available=False,
+                command=self.docker_command,
+                detail="Docker Desktop 响应超时，可能尚未启动完成。",
+            ).model_dump(mode="json")
+
+        if process.returncode == 0:
+            server_version = stdout.decode("utf-8", errors="replace").strip() or None
+            return DockerRuntimeStatusPayload(
+                available=True,
+                command=self.docker_command,
+                server_version=server_version,
+                detail="Docker Desktop 已启动且 Docker 引擎可用。",
+            ).model_dump(mode="json")
+
+        detail = (
+            stderr.decode("utf-8", errors="replace").strip()
+            or stdout.decode("utf-8", errors="replace").strip()
+            or "Docker 引擎不可用。"
+        )
+        return DockerRuntimeStatusPayload(
+            available=False,
+            command=self.docker_command,
+            detail=(
+                "Docker Desktop 未启动或 Docker 引擎不可用："
+                f"{self._truncate_text(detail, 1200)}"
+            ),
+        ).model_dump(mode="json")
 
     async def run(self, payload: SandboxExecutionRunRequest) -> dict[str, Any]:
         return await self._run(payload)
@@ -118,19 +195,61 @@ class SandboxExecutionBackendService:
         self._validate_command_cwd(command.cwd)
 
         if policy.runtime == "docker":
-            return self._build_infrastructure_error(
-                payload=payload,
-                command=command,
-                sandbox_id=sandbox_id,
-                started_at=started_at,
-                kind="docker_runtime_unavailable",
-                summary="当前尚未实现 DockerSandboxRunner，暂不能执行要求 Docker 隔离的任务。",
-                warning="请先使用 local_copy 开发运行时，或等待 Docker 沙箱执行器接入。",
-                workspace_isolated=False,
-                network_isolated=False,
+            await self._emit(
+                event_callback,
+                {
+                    "type": "status",
+                    "stage": "docker_check_started",
+                    "message": "正在检查 Docker Desktop 和 Docker 引擎状态。",
+                },
+            )
+            docker_status = await self.check_docker_runtime()
+            if not docker_status["available"]:
+                await self._emit(
+                    event_callback,
+                    {
+                        "type": "status",
+                        "stage": "docker_unavailable",
+                        "message": "Docker Desktop 不可用，等待选择运行方式。",
+                        "metadata": {
+                            "user_action_required": "docker_runtime_choice",
+                            "options": [
+                                "use_local_copy",
+                                "retry_docker",
+                                "cancel",
+                            ],
+                            "docker_status": docker_status,
+                        },
+                    },
+                )
+                return self._build_infrastructure_error(
+                    payload=payload,
+                    command=command,
+                    sandbox_id=sandbox_id,
+                    started_at=started_at,
+                    kind="docker_runtime_unavailable",
+                    summary=docker_status["detail"],
+                    warning="请启动 Docker Desktop 后重试，或改用临时工作区测试。",
+                    workspace_isolated=False,
+                    network_isolated=False,
+                )
+            await self._emit(
+                event_callback,
+                {
+                    "type": "status",
+                    "stage": "docker_ready",
+                    "message": (
+                        "Docker Desktop 已就绪，准备创建隔离容器。"
+                        + (
+                            f" 服务端版本：{docker_status['server_version']}。"
+                            if docker_status.get("server_version")
+                            else ""
+                        )
+                    ),
+                },
             )
 
-        if policy.network == "deny":
+        if policy.runtime == "local_copy" and policy.network == "deny":
             return self._build_infrastructure_error(
                 payload=payload,
                 command=command,
@@ -144,10 +263,18 @@ class SandboxExecutionBackendService:
             )
 
         source_root = Path(payload.workspace.repo_root).expanduser().resolve()
-        warnings = [
-            "当前使用 local_copy 运行时：工作区写入不会回写原项目。",
-            "当前 local_copy 运行时不隔离网络；正式执行应使用 Docker runtime。",
-        ]
+        is_docker = policy.runtime == "docker"
+        warnings = (
+            [
+                "当前使用 Docker runtime：源工作区不会直接被测试写入。",
+                "容器使用独立文件系统、资源限制和网络策略；运行结束后自动清理。",
+            ]
+            if is_docker
+            else [
+                "当前使用 local_copy 运行时：工作区写入不会回写原项目。",
+                "当前 local_copy 运行时不隔离网络；正式执行应使用 Docker runtime。",
+            ]
+        )
 
         with tempfile.TemporaryDirectory(prefix=f"{sandbox_id}_") as temp_dir:
             sandbox_root = Path(temp_dir) / "workspace"
@@ -206,7 +333,46 @@ class SandboxExecutionBackendService:
                 command.environment,
                 sandbox_root,
             )
-            execution = await self._execute_command(
+            if not is_docker:
+                return await self._execute_command(
+                    command=command,
+                    cwd=command_cwd,
+                    environment=environment,
+                    timeout_seconds=policy.timeout_seconds,
+                    max_output_bytes=policy.max_output_bytes,
+                    payload=payload,
+                    sandbox_id=sandbox_id,
+                    original_contents=original_contents,
+                    sandbox_root=sandbox_root,
+                    warnings=warnings,
+                    started_at=started_at,
+                    event_callback=event_callback,
+                    runtime="local_copy",
+                    network_isolated=False,
+                )
+
+            container_name = f"ai-ide-bridge-{sandbox_id}"
+            relative_command_cwd = command_cwd.relative_to(sandbox_root).as_posix()
+            docker_argv = self._build_docker_run_command(
+                payload=payload,
+                command=command,
+                sandbox_root=sandbox_root,
+                container_name=container_name,
+                relative_command_cwd=relative_command_cwd,
+            )
+            await self._emit(
+                event_callback,
+                {
+                    "type": "status",
+                    "stage": "container_starting",
+                    "message": "正在创建 Docker 沙箱容器。",
+                    "metadata": {
+                        "image": self._docker_image_for(payload, command),
+                        "network": policy.network,
+                    },
+                },
+            )
+            return await self._execute_command(
                 command=command,
                 cwd=command_cwd,
                 environment=environment,
@@ -219,8 +385,160 @@ class SandboxExecutionBackendService:
                 warnings=warnings,
                 started_at=started_at,
                 event_callback=event_callback,
+                runtime="docker",
+                network_isolated=policy.network == "deny",
+                process_argv=docker_argv,
+                process_cwd=Path(temp_dir),
+                process_environment=os.environ.copy(),
+                docker_container_name=container_name,
             )
-            return execution
+
+    def _docker_image_for(
+        self,
+        payload: SandboxExecutionRunRequest,
+        command: SandboxCommandPayload,
+    ) -> str:
+        if self.docker_image_override:
+            return self.docker_image
+
+        metadata = " ".join(
+            [
+                *(item.language.lower() for item in payload.test_files),
+                *(item.framework.lower() for item in payload.test_files),
+                *command.argv,
+            ],
+        )
+        if any(
+            marker in metadata
+            for marker in (
+                "node",
+                "npm",
+                "pnpm",
+                "yarn",
+                "jest",
+                "vitest",
+                "typescript",
+            )
+        ):
+            return "node:22-bookworm-slim"
+        return self.docker_image
+
+    def _build_docker_run_command(
+        self,
+        *,
+        payload: SandboxExecutionRunRequest,
+        command: SandboxCommandPayload,
+        sandbox_root: Path,
+        container_name: str,
+        relative_command_cwd: str = ".",
+    ) -> list[str]:
+        container_workdir = (
+            "/workspace"
+            if relative_command_cwd in ("", ".")
+            else f"/workspace/{relative_command_cwd}"
+        )
+        docker_argv = [
+            self.docker_command,
+            "run",
+            "--rm",
+            "--init",
+            "--name",
+            container_name,
+            "--workdir",
+            container_workdir,
+            "--mount",
+            f"type=bind,source={sandbox_root},target=/workspace",
+            "--read-only",
+            "--tmpfs",
+            "/tmp:rw,nosuid,size=512m",
+            "--tmpfs",
+            "/dev/shm:rw,nosuid,size=64m",
+            "--network",
+            "none" if payload.execution_policy.network == "deny" else "bridge",
+            "--cpus",
+            os.getenv("AI_IDE_BRIDGE_DOCKER_CPUS", "2"),
+            "--memory",
+            os.getenv("AI_IDE_BRIDGE_DOCKER_MEMORY", "2g"),
+            "--pids-limit",
+            os.getenv("AI_IDE_BRIDGE_DOCKER_PIDS_LIMIT", "256"),
+            "--security-opt",
+            "no-new-privileges:true",
+            "--cap-drop",
+            "ALL",
+        ]
+        if hasattr(os, "getuid") and hasattr(os, "getgid"):
+            docker_argv.extend(["--user", f"{os.getuid()}:{os.getgid()}"])
+
+        for key, value in self._build_container_environment(
+            command.environment,
+        ).items():
+            docker_argv.extend(["--env", f"{key}={value}"])
+
+        docker_argv.extend(
+            [
+                self._docker_image_for(payload, command),
+                *command.argv,
+            ],
+        )
+        return docker_argv
+
+    def _build_container_environment(
+        self,
+        requested: dict[str, str],
+    ) -> dict[str, str]:
+        environment = {
+            "HOME": "/tmp",
+            "TMPDIR": "/tmp",
+            "TEMP": "/tmp",
+            "TMP": "/tmp",
+        }
+        for key in ("LANG", "LC_ALL"):
+            value = os.environ.get(key)
+            if value:
+                environment[key] = value
+        for key, value in requested.items():
+            if not self._environment_key_pattern.fullmatch(key):
+                raise ValueError(f"command.environment contains invalid key: {key}")
+            if "\x00" in value:
+                raise ValueError(f"command.environment.{key} must not contain NUL characters")
+            environment[key] = value
+        return environment
+
+    async def _remove_docker_container(self, container_name: str) -> None:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                self.docker_command,
+                "rm",
+                "--force",
+                container_name,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+                start_new_session=os.name == "posix",
+            )
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5)
+            except TimeoutError:
+                self._terminate_process(process)
+                await self._wait_for_process_exit(process)
+        except (OSError, TimeoutError):
+            return
+
+    @staticmethod
+    async def _wait_for_process_exit(
+        process: asyncio.subprocess.Process,
+        timeout_seconds: float = 2.0,
+    ) -> None:
+        try:
+            await asyncio.wait_for(asyncio.shield(process.wait()), timeout=timeout_seconds)
+        except TimeoutError:
+            try:
+                process.kill()
+            except (OSError, ProcessLookupError):
+                return
+            try:
+                await asyncio.wait_for(asyncio.shield(process.wait()), timeout=1.0)
+            except TimeoutError:
+                return
 
     async def _execute_command(
         self,
@@ -237,6 +555,12 @@ class SandboxExecutionBackendService:
         warnings: list[str],
         started_at: float,
         event_callback: ProgressCallback | None = None,
+        runtime: str = "local_copy",
+        network_isolated: bool = False,
+        process_argv: list[str] | None = None,
+        process_cwd: Path | None = None,
+        process_environment: dict[str, str] | None = None,
+        docker_container_name: str | None = None,
     ) -> dict[str, Any]:
         process: asyncio.subprocess.Process | None = None
         timed_out = False
@@ -249,6 +573,49 @@ class SandboxExecutionBackendService:
         stdout_limit = (output_limit + 1) // 2
         stderr_limit = output_limit - stdout_limit
 
+        stdout_reader: asyncio.Task[tuple[bytes, bool]] | None = None
+        stderr_reader: asyncio.Task[tuple[bytes, bool]] | None = None
+        wait_task: asyncio.Task[int] | None = None
+        docker_container_removed = False
+
+        async def stop_process() -> None:
+            if process is None:
+                return
+            if process.returncode is None:
+                self._terminate_process(process)
+            await self._wait_for_process_exit(process)
+            if wait_task is not None and not wait_task.done():
+                await wait_task
+
+        async def collect_reader_results(
+            *,
+            ignore_errors: bool = False,
+        ) -> None:
+            nonlocal stdout_bytes, stderr_bytes
+            nonlocal stdout_truncated, stderr_truncated
+
+            readers = [reader for reader in (stdout_reader, stderr_reader) if reader is not None]
+            if not readers:
+                return
+            results = await asyncio.gather(*readers, return_exceptions=True)
+            if not ignore_errors:
+                for result in results:
+                    if isinstance(result, BaseException):
+                        raise result
+            if len(results) == 2:
+                if not isinstance(results[0], BaseException):
+                    stdout_bytes, stdout_truncated = results[0]
+                if not isinstance(results[1], BaseException):
+                    stderr_bytes, stderr_truncated = results[1]
+
+        async def cleanup_after_error() -> None:
+            nonlocal docker_container_removed
+            await stop_process()
+            await collect_reader_results(ignore_errors=True)
+            if docker_container_name and not docker_container_removed:
+                docker_container_removed = True
+                await self._remove_docker_container(docker_container_name)
+
         try:
             await self._emit(
                 event_callback,
@@ -260,9 +627,9 @@ class SandboxExecutionBackendService:
                 },
             )
             process = await asyncio.create_subprocess_exec(
-                *command.argv,
-                cwd=str(cwd),
-                env=environment,
+                *(process_argv or command.argv),
+                cwd=str(process_cwd or cwd),
+                env=process_environment or environment,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=os.name == "posix",
@@ -300,7 +667,7 @@ class SandboxExecutionBackendService:
                 remaining_seconds = timeout_seconds - elapsed_seconds
                 if remaining_seconds <= 0:
                     timed_out = True
-                    self._terminate_process(process)
+                    await stop_process()
                     break
                 try:
                     await asyncio.wait_for(
@@ -320,15 +687,29 @@ class SandboxExecutionBackendService:
                         },
                     )
                 except asyncio.CancelledError:
-                    self._terminate_process(process)
-                    await wait_task
-                    await asyncio.gather(stdout_reader, stderr_reader)
+                    await cleanup_after_error()
                     raise
-            await wait_task
-            stdout_bytes, stdout_truncated = await stdout_reader
-            stderr_bytes, stderr_truncated = await stderr_reader
+            if not timed_out:
+                await wait_task
+            await collect_reader_results()
+            if (
+                docker_container_name
+                and (
+                    timed_out
+                    or (
+                        process.returncode is not None
+                        and process.returncode == 125
+                    )
+                )
+            ):
+                docker_container_removed = True
+                await self._remove_docker_container(docker_container_name)
         except (FileNotFoundError, PermissionError, OSError) as error:
+            await cleanup_after_error()
             command_error = error
+        except BaseException:
+            await cleanup_after_error()
+            raise
 
         duration_ms = int((time.perf_counter() - started_at) * 1000)
         stdout = self._decode_output(stdout_bytes, stdout_truncated)
@@ -339,10 +720,24 @@ class SandboxExecutionBackendService:
             status = "infrastructure_error"
             exit_code = None
             signal_number = None
-            termination_reason = "command_not_found" if isinstance(command_error, FileNotFoundError) else "command_start_failed"
+            if runtime == "docker":
+                termination_reason = (
+                    "docker_runtime_unavailable"
+                    if isinstance(command_error, FileNotFoundError)
+                    else "docker_execution_failed"
+                )
+                command_error_summary = self._format_command_error(command, command_error)
+                failure_summary = f"Docker 沙箱启动失败：{command_error_summary}"
+            else:
+                termination_reason = (
+                    "command_not_found"
+                    if isinstance(command_error, FileNotFoundError)
+                    else "command_start_failed"
+                )
+                failure_summary = self._format_command_error(command, command_error)
             failure = SandboxFailurePayload(
                 kind=termination_reason,
-                summary=self._format_command_error(command, command_error),
+                summary=failure_summary,
                 repair_targets=[item.path for item in payload.test_files],
                 related_test_case_ids=self._related_test_case_ids(payload.test_files),
             )
@@ -353,9 +748,13 @@ class SandboxExecutionBackendService:
             assert process is not None
             exit_code = process.returncode
             signal_number = -exit_code if exit_code is not None and exit_code < 0 else None
+            docker_execution_failed = runtime == "docker" and exit_code == 125
             if timed_out:
                 status = "timed_out"
                 termination_reason = "timeout"
+            elif docker_execution_failed:
+                status = "infrastructure_error"
+                termination_reason = "docker_execution_failed"
             elif exit_code == 0:
                 status = "passed"
                 termination_reason = "test_passed"
@@ -368,6 +767,7 @@ class SandboxExecutionBackendService:
                 stdout_bytes,
                 stderr_bytes,
             )
+            docker_failure_summary = self._summarize_failure(stdout, stderr)
             failure = None
             if status != "passed":
                 failure = SandboxFailurePayload(
@@ -375,7 +775,19 @@ class SandboxExecutionBackendService:
                     summary=(
                         "测试执行超时。"
                         if status == "timed_out"
-                        else self._summarize_failure(stdout, stderr)
+                        else (
+                            (
+                                "Docker 容器未能启动或测试命令未能在容器中执行。"
+                                if docker_failure_summary
+                                == "测试执行失败，但没有返回可解析的错误信息。"
+                                else (
+                                    "Docker 容器启动失败："
+                                    f"{docker_failure_summary}"
+                                )
+                            )
+                            if status == "infrastructure_error"
+                            else self._summarize_failure(stdout, stderr)
+                        )
                     ),
                     repair_targets=[item.path for item in payload.test_files],
                     related_test_case_ids=self._related_test_case_ids(payload.test_files),
@@ -407,10 +819,10 @@ class SandboxExecutionBackendService:
                     "cwd": command.cwd,
                 }
             ),
-            runtime="local_copy",
+            runtime=runtime,
             sandbox_id=sandbox_id,
             workspace_isolated=True,
-            network_isolated=False,
+            network_isolated=network_isolated,
             duration_ms=duration_ms,
             exit_code=exit_code,
             signal=signal_number,
@@ -528,7 +940,7 @@ class SandboxExecutionBackendService:
                 os.killpg(process.pid, signal.SIGKILL)
             else:
                 process.kill()
-        except ProcessLookupError:
+        except (OSError, ProcessLookupError):
             return
 
     @staticmethod
@@ -790,6 +1202,13 @@ class SandboxExecutionBackendService:
         if not content:
             return "测试执行失败，但没有返回可解析的错误信息。"
         return "\n".join(content[-12:])
+
+    @staticmethod
+    def _truncate_text(value: str, max_chars: int) -> str:
+        normalized = value.strip()
+        if len(normalized) <= max_chars:
+            return normalized
+        return f"{normalized[:max_chars]}…"
 
     @staticmethod
     def _related_test_case_ids(test_files: list[SandboxTestFilePayload]) -> list[str]:
