@@ -104,6 +104,11 @@ export const AiIdeBridgePanel = () => {
     testCodeRepairResult,
     testCodeRepairError,
     testCodeRepairIsRunning,
+    sandboxDebugDraft,
+    sandboxDebugEvents,
+    sandboxDebugResult,
+    sandboxDebugError,
+    sandboxDebugIsRunning,
   } = bridge.uiState
 
   const promptValue = draftPrompt
@@ -341,7 +346,7 @@ export const AiIdeBridgePanel = () => {
   const canRepairGeneratedTests = (
     Boolean(testCodeExecutionResult)
     && !testCodeRepairIsRunning
-    && !testCodeExecutionResult.passed
+    && testCodeExecutionResult.evaluation.decision === 'repair'
   )
   const activeTestFiles = testCodeRepairResult?.test_files ?? testCodeGenerationResult?.test_files ?? []
   const reviewSummaryPoints = safeArray(userReviewGuidance?.summary_points)
@@ -409,6 +414,10 @@ export const AiIdeBridgePanel = () => {
   const lastRequirementAnalysisEvent =
     requirementAnalysisEvents.length > 0
       ? requirementAnalysisEvents[requirementAnalysisEvents.length - 1]
+      : null
+  const lastSandboxDebugEvent =
+    sandboxDebugEvents.length > 0
+      ? sandboxDebugEvents[sandboxDebugEvents.length - 1]
       : null
 
   const updateRequirementSetting = <K extends keyof RequirementAnalysisAgentSettings>(
@@ -1710,10 +1719,10 @@ export const AiIdeBridgePanel = () => {
       {testCodeGenerationResult && (
         <div style={sectionStyle}>
           <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
-            下一阶段：落盘、运行与 Repair
+            下一阶段：隔离运行与 Repair
           </div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
-            这一步会把当前测试文件草案真正写入工作区，然后调用后端 `/v1/test-code-execution/runs` 执行测试；失败后可以继续调用 `/v1/test-code-repair/runs` 生成修复后的测试文件。
+            这一步会将当前测试文件草案写入隔离临时工作区，再调用后端执行测试；只有测试断言失败时才可继续调用 `/v1/test-code-repair/runs` 生成修复后的测试文件。
           </div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
             当前执行源：{testCodeRepairResult ? 'repair 后测试文件' : '初始测试代码草案'} · 文件数：{activeTestFiles.length}
@@ -1737,7 +1746,7 @@ export const AiIdeBridgePanel = () => {
                 background: canRunGeneratedTests ? 'rgba(92, 196, 137, 0.18)' : 'rgba(255, 255, 255, 0.03)',
               }}
             >
-              {testCodeExecutionIsRunning ? '写入并运行中' : '写入工作区并运行测试'}
+              {testCodeExecutionIsRunning ? '隔离运行中' : '在隔离环境运行测试'}
             </button>
             <button
               onClick={() => { void bridge.repairGeneratedTestCode() }}
@@ -1767,7 +1776,7 @@ export const AiIdeBridgePanel = () => {
                 执行命令：{testCodeExecutionResult.command}
               </div>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
-                已写入文件：{writtenTestFiles.join('、')}
+                隔离副本测试文件：{writtenTestFiles.join('、')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
                 决策：{executionEvaluation.decision} · {executionEvaluation.failure_summary ?? '本轮无失败摘要'}
@@ -1922,6 +1931,191 @@ export const AiIdeBridgePanel = () => {
           )}
         </div>
       )}
+
+      <details style={sectionStyle}>
+        <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--vscode-editor-foreground)' }}>
+          沙箱运行测试
+        </summary>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+        <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--vscode-input-foreground)' }}>
+          此入口直接调用 `sandbox-execution.v1`，不依赖测试用例生成或测试代码生成。它用于验证沙箱执行器、临时工作区复制、命令执行和结果回传。
+        </div>
+        <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--vscode-input-foreground)' }}>
+          当前使用 `local_copy`，不会回写当前工作区，但暂不提供网络隔离；正式流程仍应从前序阶段交付测试文件后进入沙箱运行测试。
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+            <span>联调测试文件路径</span>
+            <input
+              value={sandboxDebugDraft.test_file_path}
+              onChange={(event) => bridge.setSandboxDebugDraft({
+                ...sandboxDebugDraft,
+                test_file_path: event.target.value,
+              })}
+              style={inputStyle}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+            <span>联调测试文件内容</span>
+            <textarea
+              value={sandboxDebugDraft.test_file_content}
+              onChange={(event) => bridge.setSandboxDebugDraft({
+                ...sandboxDebugDraft,
+                test_file_content: event.target.value,
+              })}
+              style={{
+                ...inputStyle,
+                minHeight: 120,
+                resize: 'vertical',
+                fontFamily: 'var(--vscode-editor-font-family)',
+              }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+            <span>测试命令</span>
+            <input
+              value={sandboxDebugDraft.command}
+              onChange={(event) => bridge.setSandboxDebugDraft({
+                ...sandboxDebugDraft,
+                command: event.target.value,
+              })}
+              placeholder="例如：python -m pytest tests/test_sandbox_smoke.py -q"
+              style={inputStyle}
+            />
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          <button
+            onClick={() => bridge.loadSandboxDebugFixture()}
+            disabled={sandboxDebugIsRunning}
+            style={{
+              ...buttonStyle,
+              opacity: sandboxDebugIsRunning ? 0.55 : 1,
+            }}
+          >
+            加载测试样例
+          </button>
+          <button
+            onClick={() => { void bridge.runSandboxDebug() }}
+            disabled={sandboxDebugIsRunning}
+            style={{
+              ...buttonStyle,
+              opacity: sandboxDebugIsRunning ? 0.55 : 1,
+              background: sandboxDebugIsRunning
+                ? 'rgba(255, 255, 255, 0.03)'
+                : 'rgba(92, 196, 137, 0.18)',
+            }}
+          >
+            {sandboxDebugIsRunning ? '沙箱运行中' : '运行沙箱测试'}
+          </button>
+        </div>
+
+        {(sandboxDebugIsRunning || sandboxDebugEvents.length > 0) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+              当前阶段：{lastSandboxDebugEvent?.stage ?? 'starting'}
+            </div>
+            {lastSandboxDebugEvent && (
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                最新事件：{lastSandboxDebugEvent.message}
+                {typeof lastSandboxDebugEvent.elapsed_ms === 'number'
+                  ? ` · ${Math.round(lastSandboxDebugEvent.elapsed_ms / 1000)}s`
+                  : ''}
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {sandboxDebugEvents.slice(-8).map((event, index) => (
+                <div
+                  key={`${event.stage}-${index}-${event.elapsed_ms ?? index}`}
+                  style={{
+                    fontSize: 12,
+                    color: 'var(--vscode-input-foreground)',
+                    opacity: event.type === 'heartbeat' || event.type === 'output' ? 0.72 : 0.92,
+                  }}
+                >
+                  [{event.stage}] {event.message}
+                  {typeof event.elapsed_ms === 'number'
+                    ? ` · ${Math.round(event.elapsed_ms / 1000)}s`
+                    : ''}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {sandboxDebugError && (
+          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--vscode-errorForeground)' }}>
+            沙箱运行测试错误：{sandboxDebugError}
+          </div>
+        )}
+
+        {sandboxDebugResult && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+            <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+              执行状态：{sandboxDebugResult.status} · {sandboxDebugResult.execution.duration_ms} ms · exit code {sandboxDebugResult.execution.exit_code ?? '无'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+              运行时：{sandboxDebugResult.execution.runtime} · 工作区隔离：{sandboxDebugResult.execution.workspace_isolated ? '是' : '否'} · 网络隔离：{sandboxDebugResult.execution.network_isolated ? '是' : '否'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+              终止原因：{sandboxDebugResult.execution.termination_reason}
+            </div>
+            {sandboxDebugResult.failure && (
+              <div style={{ fontSize: 12, whiteSpace: 'pre-wrap', color: 'var(--vscode-errorForeground)' }}>
+                失败摘要：{sandboxDebugResult.failure.summary}
+              </div>
+            )}
+            {(sandboxDebugResult.outputs.stdout || sandboxDebugResult.outputs.stderr) && (
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: 'var(--vscode-input-foreground)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--vscode-panel-border)',
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                  maxHeight: 240,
+                  overflow: 'auto',
+                }}
+              >
+                {[sandboxDebugResult.outputs.stdout, sandboxDebugResult.outputs.stderr].filter(Boolean).join('\n\n')}
+              </pre>
+            )}
+            {sandboxDebugResult.outputs.workspace_diff && (
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: 'var(--vscode-input-foreground)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--vscode-panel-border)',
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                  maxHeight: 200,
+                  overflow: 'auto',
+                }}
+              >
+                {sandboxDebugResult.outputs.workspace_diff}
+              </pre>
+            )}
+            {sandboxDebugResult.warnings.length > 0 && (
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                {sandboxDebugResult.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          )}
+        </div>
+      </details>
 
       <div style={sectionStyle}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

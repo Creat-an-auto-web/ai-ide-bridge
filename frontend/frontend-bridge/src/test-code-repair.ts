@@ -86,7 +86,7 @@ export const toTestCodeRepairInputPayload = (
   test_files: safeArray(testFiles),
   execution_result: {
     command: executionResult.command,
-    exit_code: executionResult.exit_code,
+    exit_code: executionResult.exit_code ?? -1,
     stdout: executionResult.stdout,
     stderr: executionResult.stderr,
     failed_tests: safeArray(executionResult.failed_tests),

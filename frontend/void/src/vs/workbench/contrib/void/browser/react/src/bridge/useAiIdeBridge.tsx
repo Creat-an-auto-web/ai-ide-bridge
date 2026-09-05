@@ -18,6 +18,9 @@ import {
   TestCodeGenerationResultPayload,
   TestCodeRepairResultPayload,
   RequirementAnalysisStreamEvent,
+  SandboxExecutionDebugDraft,
+  SandboxExecutionResultPayload,
+  SandboxExecutionStreamEvent,
   WorkspaceEditModel,
   attachVoidRealIdeSidebarFromAccessor,
   collectVoidContext,
@@ -26,6 +29,8 @@ import {
   emptyBridgeSidebarState,
   normalizeRequirementAnalysisSettings,
   summarizeRequirementAnalysisSettings,
+  createSandboxExecutionDebugDraft,
+  splitCommandDraft,
   toTestCaseGenerationInputPayload,
   toTestCaseGenerationSettingsPayload,
   toTestCodeExecutionInputPayload,
@@ -34,6 +39,7 @@ import {
   toTestCodeRepairInputPayload,
   toTestCodeRepairSettingsPayload,
   toRequirementAnalysisAgentSettingsPayload,
+  toSandboxExecutionInputPayload,
 } from '../../../../../../../../ai-ide-bridge/frontend-bridge/src/index.js'
 import { useAccessor } from '../util/services.js'
 
@@ -100,6 +106,11 @@ export interface AiIdeBridgeUiState {
   testCodeRepairResult: TestCodeRepairResultPayload | null
   testCodeRepairError: string | null
   testCodeRepairIsRunning: boolean
+  sandboxDebugDraft: SandboxExecutionDebugDraft
+  sandboxDebugEvents: SandboxExecutionStreamEvent[]
+  sandboxDebugResult: SandboxExecutionResultPayload | null
+  sandboxDebugError: string | null
+  sandboxDebugIsRunning: boolean
   latestNotification: { level: 'info' | 'warning' | 'error'; title: string; message: string } | null
   latestPatchReview: PatchReviewModel | null
   latestWorkspaceEdit: WorkspaceEditModel | null
@@ -697,6 +708,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
   )
   const entryRef = useRef<ReturnType<typeof attachVoidRealIdeSidebarFromAccessor> | null>(null)
   const requirementAnalysisSocketRef = useRef<WebSocket | null>(null)
+  const sandboxDebugSocketRef = useRef<WebSocket | null>(null)
   const requirementAnalysisStopRequestedRef = useRef(false)
   const requirementAnalysisLastRunOptionsRef = useRef<RequirementAnalysisContinuationOptions>({})
 
@@ -732,6 +744,11 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     testCodeRepairResult: null,
     testCodeRepairError: null,
     testCodeRepairIsRunning: false,
+    sandboxDebugDraft: createSandboxExecutionDebugDraft(),
+    sandboxDebugEvents: [],
+    sandboxDebugResult: null,
+    sandboxDebugError: null,
+    sandboxDebugIsRunning: false,
     latestNotification: null,
     latestPatchReview: null,
     latestWorkspaceEdit: null,
@@ -1283,6 +1300,178 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         }))
       }
     },
+    setSandboxDebugDraft(draft: SandboxExecutionDebugDraft) {
+      setUiState((prev) => ({
+        ...prev,
+        sandboxDebugDraft: draft,
+      }))
+    },
+    loadSandboxDebugFixture() {
+      setUiState((prev) => ({
+        ...prev,
+        sandboxDebugDraft: createSandboxExecutionDebugDraft(),
+        sandboxDebugEvents: [],
+        sandboxDebugResult: null,
+        sandboxDebugError: null,
+      }))
+    },
+    async runSandboxDebug() {
+      const draft = uiState.sandboxDebugDraft
+      const testFilePath = draft.test_file_path.trim()
+      const testFileContent = draft.test_file_content
+      if (!testFilePath) {
+        setUiState((prev) => ({
+          ...prev,
+          sandboxDebugError: '请填写联调测试文件路径。',
+        }))
+        return
+      }
+      if (!testFileContent.trim()) {
+        setUiState((prev) => ({
+          ...prev,
+          sandboxDebugError: '请填写联调测试文件内容。',
+        }))
+        return
+      }
+
+      setUiState((prev) => ({
+        ...prev,
+        sandboxDebugIsRunning: true,
+        sandboxDebugEvents: [],
+        sandboxDebugResult: null,
+        sandboxDebugError: null,
+      }))
+
+      try {
+        const contextSource = createVoidRealContextSourceFromAccessor({
+          accessor: accessorRef.current as never,
+        })
+        const repoRoot = await contextSource.getRepoRootPath()
+        if (!repoRoot) {
+          throw new Error('当前未检测到仓库根目录，无法创建独立沙箱联调工作区。')
+        }
+
+        const commandDraft = draft.command.trim()
+        const command = commandDraft
+          ? {
+            argv: splitCommandDraft(commandDraft),
+            cwd: '.',
+            environment: {},
+          }
+          : null
+        const payload = toSandboxExecutionInputPayload(
+          uiState.requirementAnalysisResult?.task_id ?? 'sandbox_debug',
+          repoRoot,
+          [{
+            path: testFilePath,
+            language: 'python',
+            framework: 'pytest',
+            purpose: '第四阶段独立沙箱联调',
+            related_test_case_ids: ['sandbox_debug_smoke'],
+            content: testFileContent,
+          }],
+          command,
+        )
+        const webSocketFactory =
+          hostOptions.webSocketFactory
+          ?? defaultNativeWebSocketFactory
+          ?? ((url: string) => new WebSocket(url))
+
+        await new Promise<void>((resolve, reject) => {
+          let settled = false
+          const socket = webSocketFactory(
+            toWebSocketUrl(bridgeBaseUrl, '/v1/sandbox-execution/ws'),
+          )
+          sandboxDebugSocketRef.current = socket
+
+          const finishWithError = (error: Error) => {
+            if (settled) {
+              return
+            }
+            settled = true
+            if (sandboxDebugSocketRef.current === socket) {
+              sandboxDebugSocketRef.current = null
+            }
+            try {
+              socket.close()
+            } catch {
+              // ignore close errors
+            }
+            reject(error)
+          }
+
+          socket.onopen = () => {
+            socket.send(JSON.stringify(payload))
+          }
+
+          socket.onmessage = (message) => {
+            let event: SandboxExecutionStreamEvent
+            try {
+              event = JSON.parse(String(message.data)) as SandboxExecutionStreamEvent
+            } catch (error) {
+              finishWithError(
+                new Error(`沙箱联调事件格式无效：${error instanceof Error ? error.message : String(error)}`),
+              )
+              return
+            }
+
+            setUiState((prev) => {
+              const nextState: AiIdeBridgeUiState = {
+                ...prev,
+                sandboxDebugEvents: [...prev.sandboxDebugEvents, event].slice(-80),
+              }
+              if (event.type === 'result' && event.data) {
+                nextState.sandboxDebugResult = event.data
+                nextState.latestNotification = {
+                  level: event.data.status === 'passed' ? 'info' : 'warning',
+                  title: 'SandboxExecution',
+                  message: event.data.status === 'passed'
+                    ? '沙箱运行测试通过。'
+                    : `沙箱运行测试结束：${event.data.status}。`,
+                }
+                nextState.finalSummary = event.data.failure?.summary
+                  ?? `沙箱运行测试结束，状态：${event.data.status}。`
+              }
+              if (event.type === 'error') {
+                nextState.sandboxDebugError = event.message
+              }
+              return nextState
+            })
+
+            if (event.type === 'result' && event.data) {
+              settled = true
+              if (sandboxDebugSocketRef.current === socket) {
+                sandboxDebugSocketRef.current = null
+              }
+              resolve()
+              socket.close()
+            } else if (event.type === 'error') {
+              finishWithError(new Error(event.message || '沙箱联调失败。'))
+            }
+          }
+
+          socket.onerror = () => {
+            finishWithError(new Error('沙箱联调 WebSocket 连接失败。'))
+          }
+
+          socket.onclose = () => {
+            if (!settled) {
+              finishWithError(new Error('沙箱联调连接在收到最终结果前关闭。'))
+            }
+          }
+        })
+      } catch (error) {
+        setUiState((prev) => ({
+          ...prev,
+          sandboxDebugError: error instanceof Error ? error.message : String(error),
+        }))
+      } finally {
+        setUiState((prev) => ({
+          ...prev,
+          sandboxDebugIsRunning: false,
+        }))
+      }
+    },
     setTestCodeExecutionCommandDraft(commandDraft: string) {
       setUiState((prev) => ({
         ...prev,
@@ -1300,7 +1489,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       if (!requirementResult || !testCaseResult || !currentTestFiles?.length) {
         setUiState((prev) => ({
           ...prev,
-          testCodeExecutionError: '请先生成测试代码草案，再写入工作区并运行测试。',
+          testCodeExecutionError: '请先生成测试代码草案，再在隔离环境中运行测试。',
         }))
         return
       }
@@ -1317,7 +1506,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         })
         const repoRoot = await contextSource.getRepoRootPath()
         if (!repoRoot) {
-          throw new Error('当前未检测到仓库根目录，无法写入测试文件并执行测试。')
+          throw new Error('当前未检测到仓库根目录，无法创建隔离工作区并执行测试。')
         }
 
         const payload = {
@@ -1359,12 +1548,16 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
             level: envelope.data.passed ? 'info' : 'warning',
             title: 'TestCodeExecution',
             message: envelope.data.passed
-              ? `测试执行通过，已写入 ${envelope.data.artifacts.written_files.length} 个文件`
-              : `测试执行失败，可进入 repair，失败用例 ${envelope.data.failed_tests.length} 条`,
+              ? `隔离测试执行通过，覆盖 ${envelope.data.artifacts.written_files.length} 个测试文件`
+              : envelope.data.evaluation.decision === 'repair'
+                ? `测试断言失败，可进入 repair，失败用例 ${envelope.data.failed_tests.length} 条`
+                : `测试未能执行完成：${envelope.data.evaluation.failure_summary ?? envelope.data.evaluation.stop_reason ?? '运行环境不可用'}`,
           },
           finalSummary: envelope.data.passed
-            ? `测试代码已落盘并执行通过，命令：${envelope.data.command}`
-            : `测试代码已落盘并执行完成，命令退出码 ${envelope.data.exit_code}，建议进入 repair。`,
+            ? `隔离测试执行通过，命令：${envelope.data.command}`
+            : envelope.data.evaluation.decision === 'repair'
+              ? `隔离测试执行完成，命令退出码 ${envelope.data.exit_code}，建议进入 repair。`
+              : `隔离测试未能执行完成：${envelope.data.evaluation.failure_summary ?? envelope.data.evaluation.stop_reason ?? '运行环境不可用'}。`,
         }))
       } catch (error) {
         setUiState((prev) => ({
