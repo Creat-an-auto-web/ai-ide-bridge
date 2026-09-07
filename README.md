@@ -178,6 +178,16 @@
 6. 将这些事件归约成侧栏状态
 7. 在 Void 侧栏中呈现
 
+### 默认端到端 TDD 后端
+
+`POST /v1/tasks` 现在默认由 `BRIDGE_ENGINE=tdd` 驱动完整流程：需求分析、完整
+测试用例、测试代码、业务实现、隔离测试、失败诊断与有限轮次的实现修复。测试
+基线在修复期间不可修改，最终业务代码和回归测试通过现有 `task.patch` 返回前端。
+
+配置、状态机和返回产物见
+[`docs/end-to-end-tdd-pipeline.md`](docs/end-to-end-tdd-pipeline.md)。如需兼容旧流程，
+可显式设置 `BRIDGE_ENGINE=openhands` 或 `BRIDGE_ENGINE=mock`。
+
 ### 当前前端已经支持的功能
 
 当前前端桥接层已经具备：

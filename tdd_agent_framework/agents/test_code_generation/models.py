@@ -68,6 +68,7 @@ class TestCodeGenerationInput:
     story_units: list[StoryUnit] = field(default_factory=list)
     test_plan: str = ""
     test_cases: list[GeneratedTestCase] = field(default_factory=list)
+    repository_context: dict[str, str] = field(default_factory=dict)
     execution_constraints: TestCodeGenerationConstraints = field(
         default_factory=TestCodeGenerationConstraints,
     )
@@ -82,6 +83,12 @@ class TestCodeGenerationInput:
             raise ValueError("story_units must be a non-empty list")
         if not isinstance(raw_test_cases, list) or not raw_test_cases:
             raise ValueError("test_cases must be a non-empty list")
+        repository_context = data.get("repository_context", {})
+        if not isinstance(repository_context, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in repository_context.items()
+        ):
+            raise ValueError("repository_context must be an object of string values")
         return cls(
             task_id=_require_str(data.get("task_id"), "task_id"),
             user_prompt=_optional_str(data.get("user_prompt"), "user_prompt"),
@@ -89,6 +96,7 @@ class TestCodeGenerationInput:
             story_units=[StoryUnit.from_dict(item) for item in raw_story_units],
             test_plan=_require_str(data.get("test_plan"), "test_plan"),
             test_cases=[GeneratedTestCase.from_dict(item) for item in raw_test_cases],
+            repository_context=repository_context,
             execution_constraints=TestCodeGenerationConstraints.from_dict(
                 data.get("execution_constraints"),
             ),

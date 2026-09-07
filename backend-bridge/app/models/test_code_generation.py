@@ -94,6 +94,7 @@ class TestCodeGenerationInputPayload(BaseModel):
     story_units: list[StoryUnitPayload] = Field(default_factory=list)
     test_plan: str
     test_cases: list[GeneratedTestCasePayload] = Field(default_factory=list)
+    repository_context: dict[str, str] = Field(default_factory=dict)
     execution_constraints: TestCodeGenerationExecutionConstraintsPayload = Field(
         default_factory=TestCodeGenerationExecutionConstraintsPayload,
     )

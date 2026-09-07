@@ -5,7 +5,8 @@
 
 ## 1. 目标与边界
 
-第四阶段只负责接收第三阶段交付的测试文件，在受控环境中执行，并返回可供 Repair 或人工审核消费的结构化结果。
+第四阶段负责接收第三阶段交付的测试文件，并可同时接收端到端 TDD 编排器生成的
+业务实现文件，在受控环境中执行并返回可供 Repair 或人工审核消费的结构化结果。
 
 它不负责：
 
@@ -34,6 +35,9 @@ sandbox-execution.v1
 
 第四阶段不依赖第二、三阶段的内部实现类。需求包、测试用例结果和测试代码结果只能通过 `provenance` 追踪，不参与执行逻辑。
 
+完整 TDD 流程还会传入可选的 `workspace_files`。它与 `test_files` 分开建模，确保
+失败修复只替换业务实现，测试基线在所有轮次中保持不变。
+
 ## 3. 标准请求
 
 ```json
@@ -53,6 +57,14 @@ sandbox-execution.v1
       "framework": "pytest",
       "purpose": "覆盖登录主流程",
       "related_test_case_ids": ["tc_login_success"]
+    }
+  ],
+  "workspace_files": [
+    {
+      "path": "app/login.py",
+      "content": "def login(...):\n    ...\n",
+      "language": "python",
+      "purpose": "登录业务实现"
     }
   ],
   "command": {
@@ -277,6 +289,8 @@ IDE 提供“沙箱运行测试”入口，用于在第二、三阶段尚未可�
 当前已经做到：
 
 - 测试文件只写入临时工作区副本，不回写用户源工作区。
+- 可选业务实现文件与测试文件一同覆盖到临时工作区，但保持独立列表；失败结果的
+  `repair_targets` 优先指向业务实现文件。
 - Docker 运行时会在执行前检查 Docker Engine，并使用临时工作区副本创建容器。
 - Docker 运行时支持网络模式、只读根文件系统、CPU、内存和进程数限制，并在测试结束或超时后清理临时容器。
 - 本地项目中的 `node_modules` 会随副本复制，确保 JavaScript/TypeScript 测试命令可解析项目依赖；因此大型前端项目的本地副本准备时间会更长。

@@ -37,6 +37,20 @@ class SandboxTestFilePayload(BaseModel):
     related_test_case_ids: list[str] = Field(default_factory=list)
 
 
+class SandboxWorkspaceFilePayload(BaseModel):
+    """A production/source file overlaid into the isolated workspace.
+
+    Keeping these files separate from ``test_files`` lets the executor preserve
+    the immutable TDD test baseline while still exercising generated
+    implementation code in the same sandbox.
+    """
+
+    path: str = Field(min_length=1)
+    content: str
+    language: str = ""
+    purpose: str = ""
+
+
 class SandboxCommandPayload(BaseModel):
     argv: list[str] = Field(min_length=1)
     cwd: str = "."
@@ -89,6 +103,7 @@ class SandboxExecutionRunRequest(BaseModel):
     run_id: str = Field(default_factory=_new_run_id)
     workspace: SandboxWorkspacePayload
     test_files: list[SandboxTestFilePayload] = Field(min_length=1)
+    workspace_files: list[SandboxWorkspaceFilePayload] = Field(default_factory=list)
     command: SandboxCommandPayload | None = None
     execution_policy: SandboxExecutionPolicyPayload = Field(
         default_factory=SandboxExecutionPolicyPayload,

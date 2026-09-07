@@ -33,6 +33,7 @@ POST /v1/test-code-generation/runs
 - `input.test_plan`
 - `input.test_cases`
 - `input.plan`
+- `input.repository_context`（可选；完整 TDD 流程会自动提供受限的仓库文件快照）
 
 输出核心字段：
 
@@ -46,6 +47,7 @@ POST /v1/test-code-generation/runs
 ## 3. 质量要求
 
 - 每个生成文件都必须是测试文件。
+- 测试必须使用 `repository_context` 中真实存在的模块、导入路径和公开接口。
 - 每个输入测试用例都必须被至少一个测试文件覆盖。
 - `changed_files` 必须包含所有生成的测试文件路径。
 - 生成内容必须是完整测试文件文本，而不是零散片段。
