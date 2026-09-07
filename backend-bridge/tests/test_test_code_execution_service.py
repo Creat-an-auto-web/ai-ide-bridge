@@ -193,6 +193,54 @@ class TestCodeExecutionBackendServiceTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("tests/test_sample.py", result["outputs"]["workspace_diff"])
             self.assertEqual(result["provenance"]["test_code_result_id"], "test_code_001")
 
+    async def test_sandbox_overlays_implementation_without_touching_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            (repo_root / "src").mkdir()
+            source_file = repo_root / "src/calc.py"
+            source_file.write_text("def add(a, b):\n    pass\n", encoding="utf-8")
+            payload = SandboxExecutionRunRequest.model_validate(
+                {
+                    "task_id": "sandbox_implementation",
+                    "workspace": {"repo_root": str(repo_root)},
+                    "test_files": [
+                        {
+                            "path": "tests/test_calc.py",
+                            "language": "python",
+                            "framework": "pytest",
+                            "content": "from src.calc import add\n\ndef test_add():\n    assert add(1, 2) == 3\n",
+                        }
+                    ],
+                    "workspace_files": [
+                        {
+                            "path": "src/calc.py",
+                            "language": "python",
+                            "purpose": "generated implementation",
+                            "content": "def add(a, b):\n    return a + b\n",
+                        }
+                    ],
+                    "command": {
+                        "argv": [
+                            "python",
+                            "-c",
+                            "from src.calc import add; assert add(1, 2) == 3",
+                        ]
+                    },
+                    "execution_policy": {
+                        "runtime": "local_copy",
+                        "network": "allow",
+                        "timeout_seconds": 10,
+                    },
+                }
+            )
+
+            result = await SandboxExecutionBackendService().run(payload)
+
+            self.assertEqual(result["status"], "passed")
+            self.assertIn("src/calc.py", result["outputs"]["workspace_diff"])
+            self.assertIn("src/calc.py", result["outputs"]["artifacts"])
+            self.assertEqual(source_file.read_text(encoding="utf-8"), "def add(a, b):\n    pass\n")
+
     async def test_sandbox_stream_emits_progress_and_final_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             payload = SandboxExecutionRunRequest.model_validate(

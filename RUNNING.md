@@ -102,7 +102,34 @@ export NO_PROXY=127.0.0.1,localhost
 
 如果你的 Clash `21596` 实际是 `socks5` 端口，请把上面的 `http://` 改成 `socks5://`。
 
-### 推荐启动方式：两个终端
+### 推荐启动方式：原生 TDD 后端
+
+原生 TDD 流程不要求单独启动 OpenHands。配置模型后直接启动前端；前端会自动
+拉起 `backend-bridge`：
+
+```bash
+cd /home/ricebean/ai-agent
+source .venv/bin/activate
+export GLM_API_KEY=<your-key>
+export GLM_MODEL=GLM-4.7-Flash
+export GLM_API_BASE=https://api.z.ai/api/paas/v4
+export BRIDGE_ENGINE=tdd
+npm run start:native --prefix ai-ide-bridge/frontend/void
+```
+
+若要手动观察 bridge 日志：
+
+```bash
+cd /home/ricebean/ai-agent/ai-ide-bridge/backend-bridge
+source /home/ricebean/ai-agent/.venv/bin/activate
+export GLM_API_KEY=<your-key>
+export BRIDGE_ENGINE=tdd
+python -m uvicorn app.main:app --host 127.0.0.1 --port 27182
+```
+
+下面的 OpenHands 启动方式仅用于 `BRIDGE_ENGINE=openhands` 兼容模式。
+
+### OpenHands 兼容启动方式：两个终端
 
 终端 1，启动 OpenHands 后端：
 
@@ -122,6 +149,7 @@ cd /home/ricebean/ai-agent
 source .venv/bin/activate
 export NO_PROXY=127.0.0.1,localhost
 export OPENHANDS_URL=http://127.0.0.1:3000
+export BRIDGE_ENGINE=openhands
 npm run start:native --prefix ai-ide-bridge/frontend/void
 ```
 
@@ -145,6 +173,7 @@ cd /home/ricebean/ai-agent/ai-ide-bridge/backend-bridge
 source /home/ricebean/ai-agent/.venv/bin/activate
 export NO_PROXY=127.0.0.1,localhost
 export OPENHANDS_URL=http://127.0.0.1:3000
+export BRIDGE_ENGINE=openhands
 python -m uvicorn app.main:app --host 127.0.0.1 --port 27182
 ```
 

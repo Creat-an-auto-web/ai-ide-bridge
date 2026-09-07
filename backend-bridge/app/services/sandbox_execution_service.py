@@ -10,7 +10,7 @@ import signal
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 
@@ -24,6 +24,7 @@ from app.models.sandbox_execution import (
     SandboxOutputsPayload,
     SandboxProvenancePayload,
     SandboxTestFilePayload,
+    SandboxWorkspaceFilePayload,
     SandboxTestSummaryPayload,
     SandboxExecutionSummaryPayload,
 )
@@ -191,7 +192,7 @@ class SandboxExecutionBackendService:
             },
         )
         self._validate_workspace(payload.workspace.repo_root)
-        self._validate_test_file_paths(payload.test_files)
+        self._validate_overlay_file_paths(payload.test_files, payload.workspace_files)
         self._validate_command_cwd(command.cwd)
 
         if policy.runtime == "docker":
@@ -313,14 +314,24 @@ class SandboxExecutionBackendService:
                     "message": "隔离临时工作区已准备完成。",
                 },
             )
-            original_contents = self._write_test_files(sandbox_root, payload.test_files)
+            original_contents = self._write_overlay_files(
+                sandbox_root,
+                payload.test_files,
+                payload.workspace_files,
+            )
             await self._emit(
                 event_callback,
                 {
                     "type": "status",
                     "stage": "test_files_ready",
-                    "message": f"已写入 {len(payload.test_files)} 个测试文件副本。",
-                    "metadata": {"test_file_count": len(payload.test_files)},
+                    "message": (
+                        f"已写入 {len(payload.test_files)} 个测试文件和 "
+                        f"{len(payload.workspace_files)} 个实现文件副本。"
+                    ),
+                    "metadata": {
+                        "test_file_count": len(payload.test_files),
+                        "workspace_file_count": len(payload.workspace_files),
+                    },
                 },
             )
             command_cwd = self._safe_relative_path(
@@ -738,7 +749,7 @@ class SandboxExecutionBackendService:
             failure = SandboxFailurePayload(
                 kind=termination_reason,
                 summary=failure_summary,
-                repair_targets=[item.path for item in payload.test_files],
+                repair_targets=self._repair_targets(payload),
                 related_test_case_ids=self._related_test_case_ids(payload.test_files),
             )
             test_summary = SandboxTestSummaryPayload(
@@ -789,7 +800,7 @@ class SandboxExecutionBackendService:
                             else self._summarize_failure(stdout, stderr)
                         )
                     ),
-                    repair_targets=[item.path for item in payload.test_files],
+                    repair_targets=self._repair_targets(payload),
                     related_test_case_ids=self._related_test_case_ids(payload.test_files),
                 )
 
@@ -837,7 +848,10 @@ class SandboxExecutionBackendService:
                 original_contents,
             ),
             artifacts=(
-                [item.path for item in payload.test_files]
+                [
+                    *(item.path for item in payload.test_files),
+                    *(item.path for item in payload.workspace_files),
+                ]
                 if payload.execution_policy.retain_artifacts
                 else []
             ),
@@ -1029,13 +1043,14 @@ class SandboxExecutionBackendService:
         )
         return result.to_dict()
 
-    def _write_test_files(
+    def _write_overlay_files(
         self,
         sandbox_root: Path,
         test_files: list[SandboxTestFilePayload],
+        workspace_files: list[SandboxWorkspaceFilePayload],
     ) -> dict[str, str | None]:
         original_contents: dict[str, str | None] = {}
-        for test_file in test_files:
+        for test_file in [*test_files, *workspace_files]:
             target = self._safe_relative_path(
                 sandbox_root,
                 test_file.path,
@@ -1086,10 +1101,20 @@ class SandboxExecutionBackendService:
         if not path.exists() or not path.is_dir():
             raise ValueError("workspace.repo_root must point to an existing directory")
 
-    def _validate_test_file_paths(self, test_files: list[SandboxTestFilePayload]) -> None:
+    def _validate_overlay_file_paths(
+        self,
+        test_files: list[SandboxTestFilePayload],
+        workspace_files: list[SandboxWorkspaceFilePayload],
+    ) -> None:
         seen: set[str] = set()
-        for test_file in test_files:
-            normalized = test_file.path.strip()
+        for test_file in [*test_files, *workspace_files]:
+            raw_path = test_file.path.strip().replace("\\", "/")
+            pure_path = PurePosixPath(raw_path)
+            if pure_path.is_absolute() or ".." in pure_path.parts:
+                raise ValueError(
+                    f"test_file.path escapes the sandbox workspace: {test_file.path}"
+                )
+            normalized = str(pure_path)
             if normalized in seen:
                 raise ValueError(f"duplicate test_file.path: {normalized}")
             seen.add(normalized)
@@ -1119,7 +1144,9 @@ class SandboxExecutionBackendService:
         framework = first_file.framework.lower()
         language = first_file.language.lower()
         paths = [item.path for item in test_files]
-        if "vitest" in framework:
+        if "unittest" in framework:
+            argv = ["python", "-m", "unittest", *paths]
+        elif "vitest" in framework:
             argv = ["npx", "vitest", "run", *paths]
         elif "jest" in framework:
             argv = ["npx", "jest", *paths]
@@ -1218,6 +1245,12 @@ class SandboxExecutionBackendService:
                 if test_case_id not in result:
                     result.append(test_case_id)
         return result
+
+    @staticmethod
+    def _repair_targets(payload: SandboxExecutionRunRequest) -> list[str]:
+        if payload.workspace_files:
+            return [item.path for item in payload.workspace_files]
+        return [item.path for item in payload.test_files]
 
     @staticmethod
     def _collect_workspace_diff(

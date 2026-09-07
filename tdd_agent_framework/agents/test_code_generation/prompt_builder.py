@@ -47,6 +47,7 @@ class TestCodeGenerationPromptBuilder:
                 }
                 for test_case in generation_input.test_cases
             ],
+            "repository_context": generation_input.repository_context,
             "execution_constraints": {
                 "max_test_files": generation_input.execution_constraints.max_test_files,
                 "prefer_existing_test_stack": generation_input.execution_constraints.prefer_existing_test_stack,
@@ -81,7 +82,8 @@ class TestCodeGenerationPromptBuilder:
             "4. related_test_case_ids 必须覆盖输入 test_cases。\n"
             "5. changed_files 必须包含所有 test_files.path。\n"
             "6. 如果 execution_constraints.framework_hint 不为空，优先使用该测试框架。\n"
-            "7. 如果没有明确框架提示，选择最合理的测试框架，并在 rationale 里说明。\n\n"
+            "7. 如果没有明确框架提示，选择最合理的测试框架，并在 rationale 里说明。\n"
+            "8. 必须依据 repository_context 使用仓库真实模块、导入路径和公开接口，不能臆造不存在的接口。\n\n"
             f"输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
             f"输出结构：\n{json.dumps(output_shape, ensure_ascii=False, indent=2)}"
         )

@@ -23,6 +23,7 @@ from app.services.test_code_execution_service import TestCodeExecutionBackendSer
 from app.services.test_code_generation_service import TestCodeGenerationBackendService
 from app.services.test_code_repair_service import TestCodeRepairBackendService
 from app.services.task_service import TaskService
+from app.services.tdd_engine import TddEngine
 
 
 def _load_local_env() -> None:
@@ -50,12 +51,19 @@ async def lifespan(app: FastAPI):
     event_bus = EventBus()
     task_service = TaskService(event_bus)
     
+    configured_engine = os.getenv("BRIDGE_ENGINE", "tdd").strip().lower()
     use_mock = os.getenv("USE_MOCK_ENGINE", "false").lower() in ("true", "1", "yes")
-    if use_mock:
+    if use_mock or configured_engine == "mock":
         engine = MockEngine(task_service, event_bus)
-    else:
+    elif configured_engine == "openhands":
         openhands_url = os.getenv("OPENHANDS_URL", "http://127.0.0.1:3000")
         engine = OpenHandsEngine(task_service, event_bus, openhands_url)
+    elif configured_engine == "tdd":
+        engine = TddEngine(task_service, event_bus)
+    else:
+        raise RuntimeError(
+            "BRIDGE_ENGINE must be one of: tdd, openhands, mock"
+        )
         
     task_service.set_engine(engine)
 
