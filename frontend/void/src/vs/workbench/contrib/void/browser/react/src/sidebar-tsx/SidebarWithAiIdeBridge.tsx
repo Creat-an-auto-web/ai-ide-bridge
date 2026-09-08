@@ -63,7 +63,15 @@ export const SidebarWithAiIdeBridge = () => {
           <TabButton active={tab === 'chat'} label='原始 Chat' onClick={() => setTab('chat')} />
         </div>
 
-        <div style={{ minHeight: 0, overflow: 'auto', flex: 1 }}>
+        <div
+          style={{
+            flex: '1 1 0',
+            minHeight: 0,
+            minWidth: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }}
+        >
           <ErrorBoundary>
             {tab === 'bridge'
               ? <AiIdeBridgePanel />
