@@ -1,0 +1,19 @@
+frontend/void/src/vs/workbench/contrib/void/browser/react/src/sidebar-tsx/SidebarWithAiIdeBridge.tsx
+  s_36820f65476812::t_50400dd82b0ec3 66-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "cebd628b557c47d58b40b775a5a4f2c2609f1463",
+  "prompts": {},
+  "sessions": {
+    "s_36820f65476812": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e145e-f0d7-72f1-8845-0d0497267262",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Rcb725 <ricebean725@gmail.com>"
+    }
+  }
+}
