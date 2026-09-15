@@ -76,7 +76,10 @@ class TestCaseGenerationVerificationPromptBuilder:
             "2. 如果 plan 中的关键覆盖点都已落到 test_plan 或 test_cases 中，status 设为 complete。\n"
             "3. 如果仍缺少计划中的覆盖点，status 设为 incomplete，并把缺失项写入 missing_items。\n"
             "4. 如果 plan 本身缺少关键上下文、无法判断，status 设为 blocked。\n"
-            "5. missing_items 与 notes 要聚焦真正缺失内容，不要泛泛而谈。\n\n"
+            "5. 对计划中标为仅在适用时覆盖的场景，只有输入的需求、story 或关系图明确包含"
+            "外部依赖、权限/状态机或跨 story 交互时，才可判定为缺失；不能因上下文不存在"
+            "就列为 missing_items。\n"
+            "6. missing_items 与 notes 要聚焦真正缺失内容，不要泛泛而谈。\n\n"
             f"输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
             f"输出结构：\n{json.dumps(output_shape, ensure_ascii=False, indent=2)}"
         )

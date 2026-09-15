@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+from app import main
 from app.models.requirement_analysis import RequirementAnalysisSettingsPayload
 from app.models.test_case_generation import TestCaseGenerationSettingsPayload
 
 
 class GlmEnvDefaultsTest(unittest.TestCase):
+    def test_local_env_path_is_the_bridge_root(self) -> None:
+        expected = Path(main.__file__).resolve().parents[1] / ".env"
+        self.assertEqual(main._local_env_path(), expected)
+
     def test_test_case_generation_settings_use_glm_env_defaults(self) -> None:
         with patch.dict(
             os.environ,

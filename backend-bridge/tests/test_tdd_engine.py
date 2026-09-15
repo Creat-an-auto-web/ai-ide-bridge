@@ -146,6 +146,12 @@ class SandboxStub:
 
 
 class TddEngineTest(unittest.IsolatedAsyncioTestCase):
+    def test_test_plan_marks_unrelated_coverage_as_not_applicable(self) -> None:
+        plan = TddEngine._test_plan_from_analysis(AnalysisStub())
+
+        self.assertIn("仅当需求或仓库上下文确实存在", plan)
+        self.assertIn("不能视为缺失", plan)
+
     async def test_runs_failure_repair_success_and_returns_patch(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -206,4 +212,3 @@ class TddEngineTest(unittest.IsolatedAsyncioTestCase):
             final = next(event for event in events if event.type == "task.final")
             self.assertEqual(final.payload["outcome"], "completed")
             self.assertEqual(len(final.payload["artifacts"]["attempts"]), 2)
-

@@ -9,6 +9,9 @@ from tdd_agent_framework.agents.test_case_generation import (
     TestCaseGenerationParser,
     TestCaseGenerationValidationError,
 )
+from tdd_agent_framework.agents.test_case_generation.prompt_builder import (
+    TestCaseGenerationPromptBuilder,
+)
 from tdd_agent_framework.core import AgentRunContext, ModelTarget, ProviderResponse
 
 
@@ -65,6 +68,13 @@ def make_input() -> TestCaseGenerationInput:
 
 
 class TestCaseGenerationAgentTest(unittest.TestCase):
+    def test_prompt_requires_non_empty_assertable_expected_results(self) -> None:
+        prompt = TestCaseGenerationPromptBuilder().build_user_prompt(make_input())
+
+        self.assertIn("expected_result", prompt)
+        self.assertIn("不能是空字符串", prompt)
+        self.assertIn("逐条检查所有必填字段", prompt)
+
     def test_parser_accepts_json_wrapped_in_markdown(self) -> None:
         parser = TestCaseGenerationParser()
         response = ProviderResponse(

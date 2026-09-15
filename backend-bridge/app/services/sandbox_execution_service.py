@@ -278,7 +278,10 @@ class SandboxExecutionBackendService:
         )
 
         with tempfile.TemporaryDirectory(prefix=f"{sandbox_id}_") as temp_dir:
-            sandbox_root = Path(temp_dir) / "workspace"
+            # Resolve /var -> /private/var aliases before combining paths. On
+            # macOS, command_cwd is resolved by the path validation helper.
+            temp_root = Path(temp_dir).resolve()
+            sandbox_root = temp_root / "workspace"
             await self._emit(
                 event_callback,
                 {
@@ -291,7 +294,7 @@ class SandboxExecutionBackendService:
                 await self._copy_workspace(
                     source_root,
                     sandbox_root,
-                    Path(temp_dir),
+                    temp_root,
                     event_callback,
                 )
             except (OSError, shutil.Error) as error:
@@ -399,7 +402,7 @@ class SandboxExecutionBackendService:
                 runtime="docker",
                 network_isolated=policy.network == "deny",
                 process_argv=docker_argv,
-                process_cwd=Path(temp_dir),
+                process_cwd=temp_root,
                 process_environment=os.environ.copy(),
                 docker_container_name=container_name,
             )

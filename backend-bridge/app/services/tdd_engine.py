@@ -658,7 +658,9 @@ class TddEngine:
         criteria = "\n".join(f"- {item}" for item in analysis.requirement_spec.acceptance_criteria)
         return (
             "为所有 user story 和验收标准生成可自动化测试；必须覆盖正常路径、"
-            "边界值、非法输入、依赖失败、权限/状态约束与跨 story 集成路径。\n"
+            "边界值和非法输入。仅当需求或仓库上下文确实存在外部依赖、权限/状态机或多个"
+            "story 的交互时，才必须覆盖相应的依赖失败、权限/状态约束或跨 story 集成路径；"
+            "没有此类上下文时，应在测试计划中标注为不适用，而不能视为缺失。\n"
             f"全局验收标准：\n{criteria}"
         )
 

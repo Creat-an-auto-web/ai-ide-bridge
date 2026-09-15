@@ -2306,11 +2306,28 @@ export const AiIdeBridgePanel = () => {
         <div style={sectionStyle}>
           <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>补丁预览</div>
           <div style={{ fontSize: 12, marginBottom: 6 }}>{latestPatchReview.summary}</div>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {patchReviewFiles.map((file) => (
-              <li key={file.path}>{file.title}</li>
+              <details key={file.path}>
+                <summary style={{ cursor: 'pointer', fontSize: 12, lineHeight: 1.7 }}>
+                  {file.title}
+                </summary>
+                <pre
+                  style={{
+                    margin: '6px 0 0',
+                    padding: 8,
+                    overflow: 'auto',
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                    background: 'var(--vscode-textCodeBlock-background)',
+                    color: 'var(--vscode-editor-foreground)',
+                  }}
+                >
+                  {file.unifiedDiff || file.ranges.map((range) => range.content).join('\n')}
+                </pre>
+              </details>
             ))}
-          </ul>
+          </div>
         </div>
       )}
 

@@ -11,7 +11,7 @@ class TestCaseGenerationPromptBuilder:
             "你是 TestCaseGenerationAgent。"
             "你的任务是基于标准化 User Story 生成全面、可执行、可校验的测试用例。"
             "输出必须是合法 JSON 对象，不要输出 markdown，不要解释。"
-            "每条测试用例必须包含测试输入和预期结果。"
+            "每条测试用例必须包含非空测试输入和可验证的非空预期结果。"
         )
 
     def build_user_prompt(self, generation_input: TestCaseGenerationInput) -> str:
@@ -63,10 +63,14 @@ class TestCaseGenerationPromptBuilder:
             "要求：\n"
             "1. 输出必须是 JSON 对象。\n"
             "2. 每个 story 至少 1 条测试用例。\n"
-            "3. 每条测试用例必须有 test_input 和 expected_result。\n"
+            "3. 每条测试用例必须有非空对象 test_input、至少一个非空 steps 项，以及非空"
+            "expected_result。expected_result 必须是可断言的具体行为或异常，不能是空字符串、"
+            "null、占位符或泛化描述。\n"
             "4. 单个 story 的测试用例数量不能超过 max_test_cases_per_story。\n"
             "5. 如果 require_boundary_cases=true，至少有 1 条 boundary 用例。\n"
-            "6. 如果 require_negative_cases=true，至少有 1 条 negative 用例。\n\n"
+            "6. 如果 require_negative_cases=true，至少有 1 条 negative 用例。\n"
+            "7. 返回前逐条检查所有必填字段；任何字段无法填写时，删除该用例后再生成完整用例，"
+            "不要输出不完整对象。\n\n"
             f"输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
             f"输出结构：\n{json.dumps(output_shape, ensure_ascii=False, indent=2)}"
         )

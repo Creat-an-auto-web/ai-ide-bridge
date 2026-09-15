@@ -26,8 +26,12 @@ from app.services.task_service import TaskService
 from app.services.tdd_engine import TddEngine
 
 
+def _local_env_path() -> Path:
+    return Path(__file__).resolve().parents[1] / ".env"
+
+
 def _load_local_env() -> None:
-    env_path = Path(__file__).resolve().parents[2] / ".env"
+    env_path = _local_env_path()
     if not env_path.exists():
         return
 
