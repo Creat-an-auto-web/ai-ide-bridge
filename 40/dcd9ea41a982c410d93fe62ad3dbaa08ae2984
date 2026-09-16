@@ -1,0 +1,31 @@
+RUNNING.md
+  s_36820f65476812::t_f2f12167add32f 5-7,29,124-125,138-139,163-164,172-173
+  s_36820f65476812::t_d1a2e9152c3b7c 289
+frontend/frontend-bridge/README.md
+  s_36820f65476812::t_f2f12167add32f 37
+README.md
+  s_36820f65476812::t_f2f12167add32f 238,241,244,247,286,290,294,298,302,306,403-404,494-495,663-666
+frontend/harness/README.md
+  s_36820f65476812::t_f2f12167add32f 39
+  s_36820f65476812::t_d1a2e9152c3b7c 42
+frontend/frontend-bridge/demo/app.js
+  s_36820f65476812::t_f2f12167add32f 287
+tdd_agent_framework/README.md
+  s_36820f65476812::t_f2f12167add32f 28,43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "40dcd9ea41a982c410d93fe62ad3dbaa08ae2984",
+  "prompts": {},
+  "sessions": {
+    "s_36820f65476812": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e145e-f0d7-72f1-8845-0d0497267262",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Rcb725 <ricebean725@gmail.com>"
+    }
+  }
+}
