@@ -2,6 +2,9 @@
 
 这份文件给出当前仓库里桥接层的最短运行路径。
 
+除非另有说明，下面的命令都假定从包含 `ai-ide-bridge/`、`.venv/` 和
+`OpenHands/` 的工作区根目录执行。请先把当前目录切换到该工作区根目录。
+
 ## 当前已有内容
 
 - `backend-bridge/`
@@ -23,7 +26,7 @@
 
 ## 1. 启动后端
 
-在仓库根目录执行：
+在工作区根目录执行：
 
 ```bash
 cd ai-ide-bridge/backend-bridge
@@ -67,7 +70,6 @@ http://127.0.0.1:27182/healthz
 ### 首次准备
 
 ```bash
-cd /home/ricebean/ai-agent
 source .venv/bin/activate
 
 pip install -r ai-ide-bridge/backend-bridge/requirements.txt
@@ -108,7 +110,6 @@ export NO_PROXY=127.0.0.1,localhost
 拉起 `backend-bridge`：
 
 ```bash
-cd /home/ricebean/ai-agent
 source .venv/bin/activate
 export GLM_API_KEY=<your-key>
 export GLM_MODEL=GLM-4.7-Flash
@@ -120,8 +121,8 @@ npm run start:native --prefix ai-ide-bridge/frontend/void
 若要手动观察 bridge 日志：
 
 ```bash
-cd /home/ricebean/ai-agent/ai-ide-bridge/backend-bridge
-source /home/ricebean/ai-agent/.venv/bin/activate
+cd ai-ide-bridge/backend-bridge
+source ../../.venv/bin/activate
 export GLM_API_KEY=<your-key>
 export BRIDGE_ENGINE=tdd
 python -m uvicorn app.main:app --host 127.0.0.1 --port 27182
@@ -134,8 +135,8 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 27182
 终端 1，启动 OpenHands 后端：
 
 ```bash
-cd /home/ricebean/ai-agent/OpenHands
-source /home/ricebean/ai-agent/.venv/bin/activate
+cd OpenHands
+source ../.venv/bin/activate
 export NO_PROXY=127.0.0.1,localhost
 make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000
 ```
@@ -145,7 +146,6 @@ make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000
 这条命令会自动拉起 `backend-bridge`，然后打开 Void 原生前端：
 
 ```bash
-cd /home/ricebean/ai-agent
 source .venv/bin/activate
 export NO_PROXY=127.0.0.1,localhost
 export OPENHANDS_URL=http://127.0.0.1:3000
@@ -160,8 +160,8 @@ npm run start:native --prefix ai-ide-bridge/frontend/void
 终端 1，启动 OpenHands 后端：
 
 ```bash
-cd /home/ricebean/ai-agent/OpenHands
-source /home/ricebean/ai-agent/.venv/bin/activate
+cd OpenHands
+source ../.venv/bin/activate
 export NO_PROXY=127.0.0.1,localhost
 make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000
 ```
@@ -169,8 +169,8 @@ make start-backend BACKEND_HOST=127.0.0.1 BACKEND_PORT=3000
 终端 2，启动 `backend-bridge`：
 
 ```bash
-cd /home/ricebean/ai-agent/ai-ide-bridge/backend-bridge
-source /home/ricebean/ai-agent/.venv/bin/activate
+cd ai-ide-bridge/backend-bridge
+source ../../.venv/bin/activate
 export NO_PROXY=127.0.0.1,localhost
 export OPENHANDS_URL=http://127.0.0.1:3000
 export BRIDGE_ENGINE=openhands
@@ -180,7 +180,6 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 27182
 终端 3，启动前端，并关闭自动拉起 `backend-bridge`：
 
 ```bash
-cd /home/ricebean/ai-agent
 source .venv/bin/activate
 export NO_PROXY=127.0.0.1,localhost
 export OPENHANDS_URL=http://127.0.0.1:3000
@@ -287,7 +286,7 @@ node ai-ide-bridge/frontend/harness/bridge_smoke_test.mjs
 常用覆盖参数：
 
 ```bash
-BRIDGE_REPO_PATH=/home/ricebean/ai-agent \
+BRIDGE_REPO_PATH="$(pwd)" \
 BRIDGE_PROMPT="修复当前失败的测试" \
 node ai-ide-bridge/frontend/harness/bridge_smoke_test.mjs
 ```

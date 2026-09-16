@@ -25,7 +25,7 @@
 本地启动需求分析原型服务：
 
 ```bash
-cd /home/ricebean/ai-agent/ai-ide-bridge
+cd "$(git rev-parse --show-toplevel)"
 python -m tdd_agent_framework.server --host 127.0.0.1 --port 27184
 ```
 
@@ -40,7 +40,7 @@ python -m tdd_agent_framework.server --host 127.0.0.1 --port 27184
 需求分析系统级评估：
 
 ```bash
-cd /home/ricebean/ai-agent/ai-ide-bridge
+cd "$(git rev-parse --show-toplevel)"
 python -m tdd_agent_framework.evals.requirement_analysis_eval --settings /path/to/requirement-analysis-settings.json
 ```
 

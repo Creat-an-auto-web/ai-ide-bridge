@@ -235,16 +235,16 @@
 
 ### `frontend/void` 的关键入口
 
-- [scripts/native-launcher.mjs](/home/ricebean/ai-agent/ai-ide-bridge/frontend/void/scripts/native-launcher.mjs)
+- [scripts/native-launcher.mjs](./frontend/void/scripts/native-launcher.mjs)
   - 原生启动器
 
-- [useAiIdeBridge.tsx](/home/ricebean/ai-agent/ai-ide-bridge/frontend/void/src/vs/workbench/contrib/void/browser/react/src/bridge/useAiIdeBridge.tsx)
+- [useAiIdeBridge.tsx](./frontend/void/src/vs/workbench/contrib/void/browser/react/src/bridge/useAiIdeBridge.tsx)
   - Void 侧 React hook 入口
 
-- [AiIdeBridgePanel.tsx](/home/ricebean/ai-agent/ai-ide-bridge/frontend/void/src/vs/workbench/contrib/void/browser/react/src/bridge/AiIdeBridgePanel.tsx)
+- [AiIdeBridgePanel.tsx](./frontend/void/src/vs/workbench/contrib/void/browser/react/src/bridge/AiIdeBridgePanel.tsx)
   - 桥接侧栏面板
 
-- [SidebarWithAiIdeBridge.tsx](/home/ricebean/ai-agent/ai-ide-bridge/frontend/void/src/vs/workbench/contrib/void/browser/react/src/sidebar-tsx/SidebarWithAiIdeBridge.tsx)
+- [SidebarWithAiIdeBridge.tsx](./frontend/void/src/vs/workbench/contrib/void/browser/react/src/sidebar-tsx/SidebarWithAiIdeBridge.tsx)
   - 将桥接面板并入 Void 侧栏
 
 ### Void 原生前端中的桥接逻辑
@@ -283,27 +283,27 @@
 
 这套协议的前端定义在：
 
-- [protocol.ts](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/src/protocol.ts)
+- [protocol.ts](./frontend/frontend-bridge/src/protocol.ts)
 
 前端客户端实现在：
 
-- [client.ts](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/src/client.ts)
+- [client.ts](./frontend/frontend-bridge/src/client.ts)
 
 后端接口实现在：
 
-- [tasks.py](/home/ricebean/ai-agent/ai-ide-bridge/backend-bridge/app/api/tasks.py)
+- [tasks.py](./backend-bridge/app/api/tasks.py)
 
 后端任务管理与审批状态实现在：
 
-- [task_service.py](/home/ricebean/ai-agent/ai-ide-bridge/backend-bridge/app/services/task_service.py)
+- [task_service.py](./backend-bridge/app/services/task_service.py)
 
 后端事件总线实现在：
 
-- [event_bus.py](/home/ricebean/ai-agent/ai-ide-bridge/backend-bridge/app/services/event_bus.py)
+- [event_bus.py](./backend-bridge/app/services/event_bus.py)
 
 前端事件归约实现在：
 
-- [state.ts](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/src/state.ts)
+- [state.ts](./frontend/frontend-bridge/src/state.ts)
 
 ### 传输层是怎么分工的
 
@@ -400,8 +400,8 @@
 
 对应实现可看：
 
-- [void-adapter.ts](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/src/void-adapter.ts)
-- [void-source-skeleton.ts](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/src/examples/void-source-skeleton.ts)
+- [void-adapter.ts](./frontend/frontend-bridge/src/void-adapter.ts)
+- [void-source-skeleton.ts](./frontend/frontend-bridge/src/examples/void-source-skeleton.ts)
 
 ### 一次完整通信是怎么发生的
 
@@ -491,8 +491,8 @@
 
 对应实现见：
 
-- [event_bus.py](/home/ricebean/ai-agent/ai-ide-bridge/backend-bridge/app/services/event_bus.py)
-- [tasks.py](/home/ricebean/ai-agent/ai-ide-bridge/backend-bridge/app/api/tasks.py)
+- [event_bus.py](./backend-bridge/app/services/event_bus.py)
+- [tasks.py](./backend-bridge/app/api/tasks.py)
 
 前端在 `applyBridgeEvent(...)` 里也会检查：
 
@@ -660,7 +660,7 @@ wsproto
 
 ## 相关文档
 
-- [RUNNING.md](/home/ricebean/ai-agent/ai-ide-bridge/RUNNING.md)
-- [frontend/README.md](/home/ricebean/ai-agent/ai-ide-bridge/frontend/README.md)
-- [frontend/frontend-bridge/README.md](/home/ricebean/ai-agent/ai-ide-bridge/frontend/frontend-bridge/README.md)
-- [frontend/void/README.md](/home/ricebean/ai-agent/ai-ide-bridge/frontend/void/README.md)
+- [RUNNING.md](./RUNNING.md)
+- [frontend/README.md](./frontend/README.md)
+- [frontend/frontend-bridge/README.md](./frontend/frontend-bridge/README.md)
+- [frontend/void/README.md](./frontend/void/README.md)

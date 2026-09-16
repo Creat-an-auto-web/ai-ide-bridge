@@ -284,7 +284,7 @@ els.autoApprove.addEventListener('change', () => {
 els.createTaskBtn.addEventListener('click', () => { void createTask() })
 els.cancelTaskBtn.addEventListener('click', () => { void cancelTask() })
 
-els.repoRootPath.value = '/home/ricebean/ai-agent'
+els.repoRootPath.value = ''
 els.userPrompt.value = 'Fix the current failing test'
 els.activeFile.value = 'readme.md'
 

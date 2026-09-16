@@ -36,10 +36,10 @@ BRIDGE_AUTO_APPROVE=1
 BRIDGE_TIMEOUT_MS=30000
 ```
 
-示例：
+示例（从工作区根目录执行）：
 
 ```bash
-BRIDGE_REPO_PATH=/home/ricebean/ai-agent node ai-ide-bridge/frontend/harness/bridge_smoke_test.mjs
+BRIDGE_REPO_PATH="$(pwd)" node ai-ide-bridge/frontend/harness/bridge_smoke_test.mjs
 ```
 
 ## WebSocket 前置条件

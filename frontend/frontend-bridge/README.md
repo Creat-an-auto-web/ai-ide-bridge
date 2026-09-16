@@ -34,7 +34,7 @@ http://127.0.0.1:4310
 
 如果要看最短运行路径，请看：
 
-- [RUNNING.md](/home/ricebean/ai-agent/ai-ide-bridge/RUNNING.md)
+- [RUNNING.md](../../RUNNING.md)
 
 ## 主要入口
 
