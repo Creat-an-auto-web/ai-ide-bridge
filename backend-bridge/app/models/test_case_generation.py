@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import re
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -27,6 +28,7 @@ class TestCaseGenerationSettingsPayload(BaseModel):
     enabled: bool = True
     provider_kind: str = "openai_compatible"
     provider_name: str = "zhipu"
+    wire_api: Literal["chat_completions", "responses"] = "chat_completions"
     model: str = Field(default_factory=lambda: _env_str("GLM_MODEL", "GLM-4.7-Flash"))
     api_base: str = Field(
         default_factory=lambda: _normalize_api_base(

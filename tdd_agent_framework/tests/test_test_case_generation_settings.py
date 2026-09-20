@@ -16,6 +16,7 @@ class TestCaseGenerationSettingsTest(unittest.TestCase):
                 "enabled": True,
                 "provider_kind": "openai_compatible",
                 "provider_name": "openrouter",
+                "wire_api": "responses",
                 "model": "qwen/qwen3-32b",
                 "api_base": "https://openrouter.ai/api/v1",
                 "api_key": "secret-key",
@@ -28,6 +29,7 @@ class TestCaseGenerationSettingsTest(unittest.TestCase):
         public_view = TestCaseGenerationAgentSettingsView.from_settings(settings)
 
         self.assertEqual(settings.to_provider_config().api_base, "https://openrouter.ai/api/v1")
+        self.assertEqual(settings.to_provider_config().wire_api, "responses")
         self.assertEqual(settings.to_model_target().model, "qwen/qwen3-32b")
         self.assertEqual(settings.to_generation_config().max_tokens, 3200)
         self.assertTrue(public_view.has_api_key)
@@ -57,6 +59,20 @@ class TestCaseGenerationSettingsTest(unittest.TestCase):
                     "provider_name": "openai",
                     "model": "gpt-5.4",
                     "api_base": "https://api.openai.com/v1",
+                },
+            )
+
+    def test_settings_validation_rejects_unknown_wire_api(self) -> None:
+        with self.assertRaisesRegex(ValueError, "wire_api"):
+            TestCaseGenerationAgentSettings.from_dict(
+                {
+                    "enabled": True,
+                    "provider_kind": "openai_compatible",
+                    "provider_name": "openai",
+                    "wire_api": "legacy",
+                    "model": "gpt-5.5",
+                    "api_base": "https://api.openai.com/v1",
+                    "api_key": "secret-key",
                 },
             )
 

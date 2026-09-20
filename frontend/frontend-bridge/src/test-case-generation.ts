@@ -7,6 +7,7 @@ export interface TestCaseGenerationSettingsPayload {
   enabled: boolean
   provider_kind: 'openai_compatible'
   provider_name: string
+  wire_api: RequirementAnalysisAgentSettings['wireApi']
   model: string
   api_base: string
   api_key: string
@@ -122,6 +123,7 @@ export const toTestCaseGenerationSettingsPayload = (
   enabled: settings.enabled,
   provider_kind: 'openai_compatible',
   provider_name: settings.providerName,
+  wire_api: settings.wireApi,
   model: settings.model,
   api_base: settings.apiBase,
   api_key: settings.apiKey,

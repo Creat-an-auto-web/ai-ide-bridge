@@ -8,6 +8,7 @@ from tdd_agent_framework.providers import ProviderConfig
 
 
 ALLOWED_PROVIDER_KINDS = {"openai_compatible"}
+ALLOWED_WIRE_APIS = {"chat_completions", "responses"}
 
 
 def _require_non_empty_string(value: Any, field_name: str) -> str:
@@ -21,6 +22,7 @@ class TestCaseGenerationAgentSettings:
     enabled: bool
     provider_kind: str
     provider_name: str
+    wire_api: str
     model: str
     api_base: str
     api_key: str
@@ -42,6 +44,12 @@ class TestCaseGenerationAgentSettings:
                 f"provider_kind must be one of {sorted(ALLOWED_PROVIDER_KINDS)}",
             )
 
+        wire_api = str(data.get("wire_api", "chat_completions")).strip()
+        if wire_api not in ALLOWED_WIRE_APIS:
+            raise ValueError(
+                f"wire_api must be one of {sorted(ALLOWED_WIRE_APIS)}",
+            )
+
         temperature = data.get("temperature", 0.2)
         if not isinstance(temperature, (int, float)):
             raise ValueError("temperature must be a number")
@@ -58,6 +66,7 @@ class TestCaseGenerationAgentSettings:
             enabled=bool(data.get("enabled", True)),
             provider_kind=provider_kind,
             provider_name=_require_non_empty_string(data.get("provider_name"), "provider_name"),
+            wire_api=wire_api,
             model=_require_non_empty_string(data.get("model"), "model"),
             api_base=_require_non_empty_string(data.get("api_base"), "api_base"),
             api_key=_require_non_empty_string(data.get("api_key"), "api_key"),
@@ -71,6 +80,7 @@ class TestCaseGenerationAgentSettings:
             provider_name=self.provider_name,
             api_base=self.api_base,
             api_key=self.api_key,
+            wire_api=self.wire_api,
             timeout_seconds=self.timeout_seconds,
         )
 

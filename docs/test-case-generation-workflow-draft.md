@@ -129,6 +129,7 @@
     "enabled": true,
     "provider_kind": "openai_compatible",
     "provider_name": "zhipu",
+    "wire_api": "chat_completions",
     "model": "GLM-4.7-Flash",
     "api_base": "https://api.z.ai/api/paas/v4",
     "api_key": "<local>",

@@ -453,6 +453,49 @@ class OpenAICompatibleProviderTest(unittest.TestCase):
         self.assertEqual(raw_json["type"], "response.completed")
         self.assertEqual(json.loads(content), {"ok": True})
 
+    def test_read_response_stops_on_responses_completed_without_done_marker(self) -> None:
+        response = httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                b"data: {"
+                b'"type":"response.completed",'
+                b'"response":{'
+                b'"id":"resp_456",'
+                b'"object":"response",'
+                b'"status":"completed",'
+                b'"output":[{"type":"message","content":[{"type":"output_text","text":"{\\"ok\\": true}"}]}]'
+                b"}"
+                b"}\n"
+            ),
+            request=httpx.Request("POST", "https://vip.auto-code.net/responses"),
+        )
+
+        raw_json, content = asyncio.run(
+            self.provider._read_response(response, agent_name="test_case_generation")
+        )
+
+        self.assertEqual(raw_json["type"], "response.completed")
+        self.assertEqual(json.loads(content), {"ok": True})
+
+    def test_read_response_stops_on_chat_completion_finish_reason(self) -> None:
+        response = httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                b'data: {"choices":[{"delta":{"content":"{\\"ok\\":"}}]}\n'
+                b'data: {"choices":[{"delta":{"content":" true}"},"finish_reason":"stop"}]}\n'
+            ),
+            request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+        )
+
+        raw_json, content = asyncio.run(
+            self.provider._read_response(response, agent_name="test_case_generation")
+        )
+
+        self.assertEqual(raw_json["choices"][0]["finish_reason"], "stop")
+        self.assertEqual(json.loads(content), {"ok": True})
+
     def test_retries_retryable_http_status_before_failing(self) -> None:
         provider_request = ProviderRequest(
             agent_name="requirement_analysis",

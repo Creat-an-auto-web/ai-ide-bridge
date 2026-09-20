@@ -503,13 +503,13 @@ class TddEngine:
             "model": os.getenv("GLM_MODEL", "GLM-4.7-Flash").strip() or "GLM-4.7-Flash",
             "api_base": os.getenv("GLM_API_BASE", "https://api.z.ai/api/paas/v4").strip().rstrip("/"),
             "api_key": api_key,
+            "wire_api": os.getenv("GLM_WIRE_API", "chat_completions").strip() or "chat_completions",
             "temperature": float(os.getenv("TDD_MODEL_TEMPERATURE", "0.2")),
             "max_tokens": int(os.getenv("TDD_MODEL_MAX_TOKENS", "12000")),
             "timeout_seconds": float(os.getenv("TDD_MODEL_TIMEOUT_SECONDS", "60")),
         }
         requirement = {
             **base,
-            "wire_api": os.getenv("GLM_WIRE_API", "chat_completions"),
             "max_request_seconds": float(os.getenv("TDD_MODEL_MAX_REQUEST_SECONDS", "900")),
         }
         implementation = {

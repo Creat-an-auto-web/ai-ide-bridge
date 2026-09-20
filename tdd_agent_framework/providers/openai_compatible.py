@@ -552,6 +552,9 @@ class OpenAICompatibleProvider:
                     ),
                 )
 
+            if self._is_terminal_stream_event(chunk_json):
+                break
+
         content = "".join(collected_text)
         if not content and last_message_json is not None:
             content = self._extract_content(last_message_json)
@@ -561,6 +564,18 @@ class OpenAICompatibleProvider:
             raise ProviderError("provider stream ended without data")
 
         return last_message_json, content
+
+    def _is_terminal_stream_event(self, raw_json: dict[str, Any]) -> bool:
+        """Stop when a gateway sends a terminal event without a [DONE] marker."""
+        event_type = raw_json.get("type")
+        if event_type in {"response.completed", "response.failed", "response.incomplete"}:
+            return True
+
+        choices = raw_json.get("choices")
+        if isinstance(choices, list) and choices:
+            return choices[0].get("finish_reason") is not None
+
+        return False
 
     def _extract_delta_text(self, raw_json: dict[str, Any]) -> str:
         event_type = raw_json.get("type")
