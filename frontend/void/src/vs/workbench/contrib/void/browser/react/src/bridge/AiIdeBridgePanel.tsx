@@ -104,6 +104,11 @@ export const AiIdeBridgePanel = () => {
     testCodeRepairResult,
     testCodeRepairError,
     testCodeRepairIsRunning,
+    workflowArtifactsStatus,
+    workflowArtifactsDirectoryPath,
+    workflowArtifactsWrittenFiles,
+    workflowArtifactsError,
+    workflowArtifactsIsWorking,
     sandboxDebugDraft,
     sandboxDebugEvents,
     sandboxDebugResult,
@@ -380,6 +385,10 @@ export const AiIdeBridgePanel = () => {
   const repairChangedFiles = safeArray(testCodeRepairResult?.changed_files)
   const repairWarnings = safeArray(testCodeRepairResult?.warnings)
   const repairTestFiles = safeArray(testCodeRepairResult?.test_files)
+  const workflowArtifactBundle = bridge.workflowArtifactBundle
+  const workflowArtifactFiles = safeArray(workflowArtifactBundle?.files)
+  const workflowArtifactCompletedStages = safeArray(workflowArtifactBundle?.completedStages)
+  const workflowArtifactsAreComplete = workflowArtifactCompletedStages.length === 3
   const panelPlanSteps = safeArray(panel.planSteps)
   const panelLogs = safeArray(panel.logs)
   const patchReviewFiles = safeArray(latestPatchReview?.files)
@@ -1914,6 +1923,85 @@ export const AiIdeBridgePanel = () => {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {workflowArtifactBundle && (
+        <div style={sectionStyle}>
+          <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
+            阶段产物文件
+          </div>
+          <div style={{ fontSize: 12, lineHeight: 1.6, wordBreak: 'break-word', color: 'var(--vscode-input-foreground)' }}>
+            一、二、三阶段的结果会整理为独立文件。查看时写入临时预览目录并在编辑器中打开；确认保留后写入项目的 `ai-ide-artifacts/{workflowArtifactBundle.directoryName}/`，不会覆盖真实源码或测试文件。
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.7, color: 'var(--vscode-input-foreground)' }}>
+            阶段一 需求分析：已生成
+            {' · '}阶段二 测试用例：{workflowArtifactCompletedStages.includes('test_case_generation') ? '已生成' : '未生成'}
+            {' · '}阶段三 测试代码：{workflowArtifactCompletedStages.includes('test_code_generation') ? '已生成' : '未生成'}
+          </div>
+          <details style={{ marginTop: 8 }}>
+            <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--vscode-editor-foreground)' }}>
+              文件清单 · {workflowArtifactFiles.length} 个
+            </summary>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.7, wordBreak: 'break-word', color: 'var(--vscode-input-foreground)' }}>
+              {workflowArtifactFiles.map((file) => (
+                <li key={file.relativePath}>{file.relativePath}</li>
+              ))}
+            </ul>
+          </details>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <button
+              onClick={() => { void bridge.previewWorkflowArtifacts() }}
+              disabled={workflowArtifactsIsWorking}
+              style={{
+                ...buttonStyle,
+                opacity: workflowArtifactsIsWorking ? 0.55 : 1,
+                background: 'rgba(78, 161, 255, 0.16)',
+              }}
+            >
+              {workflowArtifactsIsWorking ? '正在处理' : '在 IDE 中查看'}
+            </button>
+            <button
+              onClick={() => { void bridge.retainWorkflowArtifacts() }}
+              disabled={workflowArtifactsIsWorking || workflowArtifactsStatus === 'retained'}
+              style={{
+                ...buttonStyle,
+                opacity: workflowArtifactsIsWorking || workflowArtifactsStatus === 'retained' ? 0.55 : 1,
+                background: 'rgba(92, 196, 137, 0.18)',
+              }}
+            >
+              {workflowArtifactsStatus === 'retained'
+                ? '产物已保留'
+                : workflowArtifactsAreComplete
+                  ? '保留全部产物'
+                  : '保留当前产物'}
+            </button>
+            {workflowArtifactsStatus === 'preview' && (
+              <button
+                onClick={() => { void bridge.discardWorkflowArtifactPreview() }}
+                disabled={workflowArtifactsIsWorking}
+                style={{ ...buttonStyle, opacity: workflowArtifactsIsWorking ? 0.55 : 1 }}
+              >
+                清理预览文件
+              </button>
+            )}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.6, wordBreak: 'break-word', color: 'var(--vscode-input-foreground)' }}>
+            当前状态：{
+              workflowArtifactsStatus === 'retained'
+                ? '已保留到项目'
+                : workflowArtifactsStatus === 'preview'
+                  ? '已生成预览，等待保留或清理'
+                  : '尚未写入工作区'
+            }
+            {workflowArtifactsDirectoryPath ? ` · ${workflowArtifactsDirectoryPath}` : ''}
+            {workflowArtifactsWrittenFiles.length > 0 ? ` · 已写入 ${workflowArtifactsWrittenFiles.length} 个文件` : ''}
+          </div>
+          {workflowArtifactsError && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--vscode-errorForeground)' }}>
+              产物文件处理失败：{workflowArtifactsError}
             </div>
           )}
         </div>

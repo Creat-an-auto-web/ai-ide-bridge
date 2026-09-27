@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { VSBuffer } from '../../../../../../../base/common/buffer.js'
 import { CancellationToken } from '../../../../../../../base/common/cancellation.js'
+import { URI } from '../../../../../../../base/common/uri.js'
 import { asText } from '../../../../../../../platform/request/common/request.js'
 import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js'
 import {
@@ -24,6 +26,7 @@ import {
   SandboxExecutionStreamEvent,
   WorkspaceEditModel,
   attachVoidRealIdeSidebarFromAccessor,
+  buildWorkflowArtifactBundle,
   collectVoidContext,
   createDefaultRequirementAnalysisSettings,
   createVoidRealContextSourceFromAccessor,
@@ -107,6 +110,11 @@ export interface AiIdeBridgeUiState {
   testCodeRepairResult: TestCodeRepairResultPayload | null
   testCodeRepairError: string | null
   testCodeRepairIsRunning: boolean
+  workflowArtifactsStatus: 'idle' | 'preview' | 'retained'
+  workflowArtifactsDirectoryPath: string | null
+  workflowArtifactsWrittenFiles: string[]
+  workflowArtifactsError: string | null
+  workflowArtifactsIsWorking: boolean
   sandboxDebugDraft: SandboxExecutionDebugDraft
   sandboxDebugEvents: SandboxExecutionStreamEvent[]
   sandboxDebugResult: SandboxExecutionResultPayload | null
@@ -749,6 +757,11 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     testCodeRepairResult: null,
     testCodeRepairError: null,
     testCodeRepairIsRunning: false,
+    workflowArtifactsStatus: 'idle',
+    workflowArtifactsDirectoryPath: null,
+    workflowArtifactsWrittenFiles: [],
+    workflowArtifactsError: null,
+    workflowArtifactsIsWorking: false,
     sandboxDebugDraft: createSandboxExecutionDebugDraft(),
     sandboxDebugEvents: [],
     sandboxDebugResult: null,
@@ -831,8 +844,168 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     options.testLogsProvider,
   ])
 
+  const workflowArtifactBundle = buildWorkflowArtifactBundle({
+    requirementAnalysisResult: uiState.requirementAnalysisResult,
+    testCaseGenerationResult: uiState.testCaseGenerationResult,
+    testCodeGenerationResult: uiState.testCodeGenerationResult,
+    testCodeRepairResult: uiState.testCodeRepairResult,
+  })
+
+  const getWorkflowArtifactDirectory = (preview: boolean) => {
+    if (!workflowArtifactBundle) {
+      throw new Error('当前没有可写入的阶段产物。')
+    }
+    const workspace = accessorRef.current.get('IWorkspaceContextService').getWorkspace()
+    const workspaceRoot = workspace.folders?.[0]?.uri
+    if (!workspaceRoot) {
+      throw new Error('当前未打开工作区，无法保存阶段产物。')
+    }
+    return URI.joinPath(
+      workspaceRoot,
+      'ai-ide-artifacts',
+      preview
+        ? `.preview-${workflowArtifactBundle.directoryName}`
+        : workflowArtifactBundle.directoryName,
+    )
+  }
+
+  const materializeWorkflowArtifacts = async (retain: boolean) => {
+    if (!workflowArtifactBundle) {
+      setUiState((prev) => ({
+        ...prev,
+        workflowArtifactsError: '当前没有可查看的阶段产物。',
+      }))
+      return
+    }
+
+    setUiState((prev) => ({
+      ...prev,
+      workflowArtifactsIsWorking: true,
+      workflowArtifactsError: null,
+    }))
+    try {
+      const fileService = accessorRef.current.get('IFileService')
+      const commandService = accessorRef.current.get('ICommandService')
+      const artifactDirectory = getWorkflowArtifactDirectory(!retain)
+      if (await fileService.exists(artifactDirectory)) {
+        await fileService.del(artifactDirectory, { recursive: true })
+      }
+      await fileService.createFolder(artifactDirectory)
+
+      const writtenFiles: string[] = []
+      for (const file of workflowArtifactBundle.files) {
+        const pathSegments = file.relativePath.split('/').filter(Boolean)
+        const fileUri = URI.joinPath(artifactDirectory, ...pathSegments)
+        if (pathSegments.length > 1) {
+          await fileService.createFolder(
+            URI.joinPath(artifactDirectory, ...pathSegments.slice(0, -1)),
+          )
+        }
+        await fileService.writeFile(fileUri, VSBuffer.fromString(file.content))
+        writtenFiles.push(file.relativePath)
+      }
+
+      const summaryUri = URI.joinPath(artifactDirectory, 'README.md')
+      await commandService.executeCommand('vscode.open', summaryUri)
+      if (retain) {
+        const previewDirectory = getWorkflowArtifactDirectory(true)
+        if (await fileService.exists(previewDirectory)) {
+          await fileService.del(previewDirectory, { recursive: true })
+        }
+      }
+      setUiState((prev) => ({
+        ...prev,
+        workflowArtifactsStatus: retain ? 'retained' : 'preview',
+        workflowArtifactsDirectoryPath: artifactDirectory.fsPath,
+        workflowArtifactsWrittenFiles: writtenFiles,
+        workflowArtifactsError: null,
+        latestNotification: {
+          level: 'info',
+          title: 'WorkflowArtifacts',
+          message: retain
+            ? `已保留 ${writtenFiles.length} 个阶段产物文件。`
+            : `已在 IDE 中打开 ${writtenFiles.length} 个阶段产物文件。`,
+        },
+      }))
+    } catch (error) {
+      setUiState((prev) => ({
+        ...prev,
+        workflowArtifactsError: error instanceof Error ? error.message : String(error),
+      }))
+    } finally {
+      setUiState((prev) => ({
+        ...prev,
+        workflowArtifactsIsWorking: false,
+      }))
+    }
+  }
+
   return useMemo(() => ({
     uiState,
+    workflowArtifactBundle,
+    async previewWorkflowArtifacts() {
+      if (uiState.workflowArtifactsStatus === 'retained') {
+        try {
+          const artifactDirectory = getWorkflowArtifactDirectory(false)
+          const fileService = accessorRef.current.get('IFileService')
+          if (await fileService.exists(artifactDirectory)) {
+            await accessorRef.current.get('ICommandService').executeCommand(
+              'vscode.open',
+              URI.joinPath(artifactDirectory, 'README.md'),
+            )
+            return
+          }
+        } catch (error) {
+          setUiState((prev) => ({
+            ...prev,
+            workflowArtifactsError: error instanceof Error ? error.message : String(error),
+          }))
+          return
+        }
+      }
+      await materializeWorkflowArtifacts(uiState.workflowArtifactsStatus === 'retained')
+    },
+    async retainWorkflowArtifacts() {
+      await materializeWorkflowArtifacts(true)
+    },
+    async discardWorkflowArtifactPreview() {
+      if (uiState.workflowArtifactsStatus !== 'preview') {
+        return
+      }
+      setUiState((prev) => ({
+        ...prev,
+        workflowArtifactsIsWorking: true,
+        workflowArtifactsError: null,
+      }))
+      try {
+        const artifactDirectory = getWorkflowArtifactDirectory(true)
+        const fileService = accessorRef.current.get('IFileService')
+        if (await fileService.exists(artifactDirectory)) {
+          await fileService.del(artifactDirectory, { recursive: true })
+        }
+        setUiState((prev) => ({
+          ...prev,
+          workflowArtifactsStatus: 'idle',
+          workflowArtifactsDirectoryPath: null,
+          workflowArtifactsWrittenFiles: [],
+          latestNotification: {
+            level: 'info',
+            title: 'WorkflowArtifacts',
+            message: '阶段产物预览文件已清理。',
+          },
+        }))
+      } catch (error) {
+        setUiState((prev) => ({
+          ...prev,
+          workflowArtifactsError: error instanceof Error ? error.message : String(error),
+        }))
+      } finally {
+        setUiState((prev) => ({
+          ...prev,
+          workflowArtifactsIsWorking: false,
+        }))
+      }
+    },
     setPrompt(prompt: string) {
       entryRef.current?.setPrompt(prompt)
     },
@@ -877,6 +1050,10 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         testCodeExecutionError: null,
         testCodeRepairResult: null,
         testCodeRepairError: null,
+        workflowArtifactsStatus: 'idle',
+        workflowArtifactsDirectoryPath: null,
+        workflowArtifactsWrittenFiles: [],
+        workflowArtifactsError: null,
       }))
 
       try {
@@ -984,6 +1161,14 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
                   event.type === 'result'
                     ? null
                     : prev.testCodeRepairResult,
+                workflowArtifactsStatus:
+                  event.type === 'result' ? 'idle' : prev.workflowArtifactsStatus,
+                workflowArtifactsDirectoryPath:
+                  event.type === 'result' ? null : prev.workflowArtifactsDirectoryPath,
+                workflowArtifactsWrittenFiles:
+                  event.type === 'result' ? [] : prev.workflowArtifactsWrittenFiles,
+                workflowArtifactsError:
+                  event.type === 'result' ? null : prev.workflowArtifactsError,
                 requirementAnalysisError:
                   event.type === 'error'
                     ? event.message
@@ -1107,6 +1292,10 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         requirementAnalysisResult: acceptedResult,
         testCaseGenerationPlanDraft: buildTestCaseGenerationWorkflowDraft(acceptedResult),
         testCodeGenerationPlanDraft: '',
+        workflowArtifactsStatus: 'idle',
+        workflowArtifactsDirectoryPath: null,
+        workflowArtifactsWrittenFiles: [],
+        workflowArtifactsError: null,
         latestNotification: {
           level: 'info',
           title: 'RequirementAnalysis',
@@ -1196,6 +1385,10 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           testCodeExecutionError: null,
           testCodeRepairResult: null,
           testCodeRepairError: null,
+          workflowArtifactsStatus: 'idle',
+          workflowArtifactsDirectoryPath: null,
+          workflowArtifactsWrittenFiles: [],
+          workflowArtifactsError: null,
           latestNotification: {
             level: 'info',
             title: 'TestCaseGeneration',
@@ -1292,6 +1485,10 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           testCodeExecutionError: null,
           testCodeRepairResult: null,
           testCodeRepairError: null,
+          workflowArtifactsStatus: 'idle',
+          workflowArtifactsDirectoryPath: null,
+          workflowArtifactsWrittenFiles: [],
+          workflowArtifactsError: null,
           latestNotification: {
             level: 'info',
             title: 'TestCodeGeneration',
@@ -1776,6 +1973,10 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         setUiState((prev) => ({
           ...prev,
           testCodeRepairResult: envelope.data ?? null,
+          workflowArtifactsStatus: 'idle',
+          workflowArtifactsDirectoryPath: null,
+          workflowArtifactsWrittenFiles: [],
+          workflowArtifactsError: null,
           latestNotification: {
             level: 'info',
             title: 'TestCodeRepair',

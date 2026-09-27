@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node ./scripts/build.mjs",
+    "setup:native-source": "node ./scripts/setup-void-source.mjs",
     "prepare:native-runtime": "bash -lc 'unset npm_config_prefix; export NVM_DIR=\"$HOME/.nvm\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; nvm use 20.18.2 >/dev/null; node ./scripts/native-launcher.mjs prepare-runtime'",
     "install:native-deps": "bash -lc 'unset npm_config_prefix; export NVM_DIR=\"$HOME/.nvm\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; nvm use 20.18.2 >/dev/null; node ./scripts/native-launcher.mjs install-deps'",
     "build:native-react": "bash -lc 'unset npm_config_prefix; export NVM_DIR=\"$HOME/.nvm\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; nvm use 20.18.2 >/dev/null; node ./scripts/native-launcher.mjs build-react'",

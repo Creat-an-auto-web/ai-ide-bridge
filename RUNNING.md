@@ -2,26 +2,33 @@
 
 这份文件给出当前仓库里桥接层的最短运行路径。
 
-除非另有说明，下面的命令都假定从包含 `ai-ide-bridge/`、`.venv/` 和
-`OpenHands/` 的工作区根目录执行。请先把当前目录切换到该工作区根目录。
+除非另有说明，下面的命令都从项目根目录执行：
 
+```bash
+cd /Applications/web/web_research/ai-ide-bridge
+```
+
+模型配置只需要写入一次 `backend-bridge/.env`。后端会自动读取
+`GLM_API_KEY`、`GLM_MODEL`、`GLM_API_BASE` 和 `BRIDGE_ENGINE`，无需重复
+执行 `export GLM_*`。
 ## 当前已有内容
 
 - `backend-bridge/`
+
   - mock 后端桥接服务
   - HTTP 任务接口
   - WebSocket 任务事件流
-
 - `frontend/frontend-bridge/`
+
   - 前端 bridge 模块
   - 可独立运行的 demo UI
   - 不修改原始 `void/`
-
 - `frontend/void/`
+
   - Void 补丁层与原生启动器
   - 正式的原生 Void 前端启动入口
-
 - `frontend/harness/`
+
   - 基于 CLI 的 HTTP + WebSocket smoke test
 
 ## 1. 启动后端
@@ -70,13 +77,20 @@ http://127.0.0.1:27182/healthz
 ### 首次准备
 
 ```bash
-source .venv/bin/activate
+source "$HOME/.nvm/nvm.sh"
+nvm install 20.18.2
+nvm use 20.18.2
 
-pip install -r ai-ide-bridge/backend-bridge/requirements.txt
+.venv/bin/python -m pip install -r backend-bridge/requirements.txt
 
-npm install --prefix ai-ide-bridge/frontend/void
-npm run install:native-deps --prefix ai-ide-bridge/frontend/void
+npm install --prefix frontend/void
+npm run setup:native-source --prefix frontend/void
+npm run install:native-deps --prefix frontend/void
 ```
+
+`setup:native-source` 会把与当前补丁匹配的完整 Void 源码安装到项目内部的
+`upstream/Void/`。下载中断时可以直接重复执行。若要使用已有的完整 Void 工程，
+可在启动时设置 `VOID_SOURCE_ROOT`。
 
 如果你要跑真实 OpenHands 任务，建议先确认本机 Docker 可用：
 
@@ -228,8 +242,11 @@ http://127.0.0.1:4310
 如果你要通过我们的桥接层启动 Void 原生前端，推荐执行：
 
 ```bash
-npm run install:native-deps --prefix ai-ide-bridge/frontend/void
-npm run start:native --prefix ai-ide-bridge/frontend/void
+source "$HOME/.nvm/nvm.sh"
+nvm use 20.18.2
+npm run setup:native-source --prefix frontend/void
+npm run install:native-deps --prefix frontend/void
+npm run start:native --prefix frontend/void
 ```
 
 这条链路会自动：

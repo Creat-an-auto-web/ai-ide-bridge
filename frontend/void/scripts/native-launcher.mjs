@@ -12,9 +12,10 @@ const __dirname = path.dirname(__filename)
 const voidPatchRoot = path.resolve(__dirname, '..')
 const frontendRoot = path.resolve(voidPatchRoot, '..')
 const projectRoot = path.resolve(frontendRoot, '..')
-const repoRoot = path.resolve(projectRoot, '..')
 
-const sourceVoidRoot = path.join(repoRoot, 'void')
+const sourceVoidRoot = process.env.VOID_SOURCE_ROOT
+  ? path.resolve(process.env.VOID_SOURCE_ROOT)
+  : path.join(projectRoot, 'upstream', 'Void')
 const sourceFrontendBridgeRoot = path.join(frontendRoot, 'frontend-bridge')
 const runtimeRoot = path.join(frontendRoot, '.runtime', 'void-native')
 const runtimeVoidRoot = path.join(runtimeRoot, 'void')
@@ -113,7 +114,6 @@ const resolvePythonCommand = async () => {
   }
 
   const candidatePaths = [
-    path.join(repoRoot, '.venv', 'bin', 'python'),
     path.join(projectRoot, '.venv', 'bin', 'python'),
   ]
 
@@ -270,7 +270,14 @@ const writeRuntimeMarker = async () => {
 
 const prepareRuntime = async ({ fresh = false } = {}) => {
   if (!await exists(path.join(sourceVoidRoot, 'package.json'))) {
-    throw new Error(`未找到原始 Void 工程：${sourceVoidRoot}`)
+    throw new Error(
+      [
+        `未找到完整 Void 工程：${sourceVoidRoot}`,
+        '请先在项目根目录执行：',
+        'npm run setup:native-source --prefix frontend/void',
+        '也可以通过 VOID_SOURCE_ROOT 指向已有的完整 Void 工程。',
+      ].join('\n'),
+    )
   }
 
   if (!await exists(path.join(sourceFrontendBridgeRoot, 'src', 'index.ts'))) {
