@@ -32,6 +32,7 @@ import {
   createVoidRealContextSourceFromAccessor,
   emptyBridgeSidebarState,
   normalizeRequirementAnalysisSettings,
+  parseWorkflowArtifactBundle,
   summarizeRequirementAnalysisSettings,
   createSandboxExecutionDebugDraft,
   splitCommandDraft,
@@ -844,12 +845,15 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     options.testLogsProvider,
   ])
 
-  const workflowArtifactBundle = buildWorkflowArtifactBundle({
-    requirementAnalysisResult: uiState.requirementAnalysisResult,
-    testCaseGenerationResult: uiState.testCaseGenerationResult,
-    testCodeGenerationResult: uiState.testCodeGenerationResult,
-    testCodeRepairResult: uiState.testCodeRepairResult,
-  })
+  const workflowArtifactBundle = (
+    parseWorkflowArtifactBundle(uiState.panel.finalArtifacts?.workflowArtifacts)
+    ?? buildWorkflowArtifactBundle({
+      requirementAnalysisResult: uiState.requirementAnalysisResult,
+      testCaseGenerationResult: uiState.testCaseGenerationResult,
+      testCodeGenerationResult: uiState.testCodeGenerationResult,
+      testCodeRepairResult: uiState.testCodeRepairResult,
+    })
+  )
 
   const getWorkflowArtifactDirectory = (preview: boolean) => {
     if (!workflowArtifactBundle) {

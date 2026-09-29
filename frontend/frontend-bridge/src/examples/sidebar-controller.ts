@@ -43,6 +43,7 @@ export interface BridgeSidebarPanelState {
   patch: TaskPatchPayload | null
   testSummary: string | null
   finalSummary: string | null
+  finalArtifacts: Record<string, unknown> | null
   errorMessage: string | null
 }
 
@@ -72,6 +73,7 @@ export const emptyBridgeSidebarState = (): BridgeSidebarPanelState => ({
   patch: null,
   testSummary: null,
   finalSummary: null,
+  finalArtifacts: null,
   errorMessage: null,
 })
 
@@ -110,6 +112,7 @@ const toSidebarState = (
     finalSummary: bridgeState.finalResult
       ? `${bridgeState.finalResult.outcome}: ${bridgeState.finalResult.summary}`
       : null,
+    finalArtifacts: bridgeState.finalResult?.artifacts ?? null,
     errorMessage: bridgeState.error?.message ?? bridgeState.protocolError,
   }
 }

@@ -212,3 +212,25 @@ class TddEngineTest(unittest.IsolatedAsyncioTestCase):
             final = next(event for event in events if event.type == "task.final")
             self.assertEqual(final.payload["outcome"], "completed")
             self.assertEqual(len(final.payload["artifacts"]["attempts"]), 2)
+            workflow_artifacts = final.payload["artifacts"]["workflowArtifacts"]
+            self.assertEqual(
+                workflow_artifacts["completedStages"],
+                [
+                    "requirement_analysis",
+                    "test_case_generation",
+                    "test_code_generation",
+                ],
+            )
+            artifact_files = {
+                item["relativePath"]: item["content"]
+                for item in workflow_artifacts["files"]
+            }
+            self.assertIn(
+                "01-requirement-analysis/requirement-analysis.json",
+                artifact_files,
+            )
+            self.assertIn("02-test-cases/test-cases.json", artifact_files)
+            self.assertIn("02-test-cases/test-plan.md", artifact_files)
+            self.assertIn("03-test-code/manifest.json", artifact_files)
+            self.assertIn("03-test-code/files/tests/test_calc.py", artifact_files)
+            self.assertIn("test_add", artifact_files["03-test-code/files/tests/test_calc.py"])

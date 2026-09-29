@@ -32,6 +32,75 @@ export interface BuildWorkflowArtifactBundleOptions {
   testCodeRepairResult?: TestCodeRepairResultPayload | null
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+)
+
+const isSafeRelativePath = (value: string): boolean => {
+  const normalized = value.replace(/\\/g, '/')
+  return (
+    normalized.length > 0
+    && !normalized.startsWith('/')
+    && !/^[a-zA-Z]:/.test(normalized)
+    && normalized.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
+  )
+}
+
+export const parseWorkflowArtifactBundle = (
+  value: unknown,
+): WorkflowArtifactBundle | null => {
+  if (!isRecord(value)) return null
+  const taskId = value.taskId
+  const directoryName = value.directoryName
+  const completedStages = value.completedStages
+  const rawFiles = value.files
+  if (
+    typeof taskId !== 'string'
+    || typeof directoryName !== 'string'
+    || !Array.isArray(completedStages)
+    || !Array.isArray(rawFiles)
+  ) {
+    return null
+  }
+
+  const validStages = new Set<WorkflowArtifactStage>([
+    'requirement_analysis',
+    'test_case_generation',
+    'test_code_generation',
+  ])
+  const files: WorkflowArtifactFile[] = []
+  for (const rawFile of rawFiles) {
+    if (!isRecord(rawFile)) return null
+    const { relativePath, stage, title, content } = rawFile
+    if (
+      typeof relativePath !== 'string'
+      || !isSafeRelativePath(relativePath)
+      || typeof title !== 'string'
+      || typeof content !== 'string'
+      || (stage !== 'summary' && !validStages.has(stage as WorkflowArtifactStage))
+    ) {
+      return null
+    }
+    files.push({
+      relativePath,
+      stage: stage as WorkflowArtifactFile['stage'],
+      title,
+      content,
+    })
+  }
+
+  return {
+    taskId,
+    directoryName: toSafePathSegment(directoryName, 'workflow-task'),
+    files,
+    completedStages: completedStages.filter(
+      (stage): stage is WorkflowArtifactStage => (
+        typeof stage === 'string' && validStages.has(stage as WorkflowArtifactStage)
+      ),
+    ),
+  }
+}
+
 const toSafePathSegment = (value: string, fallback: string): string => {
   const normalized = value
     .trim()

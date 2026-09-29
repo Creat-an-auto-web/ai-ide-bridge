@@ -453,6 +453,12 @@ class TddEngine:
             "testCases": [asdict(item) for item in test_cases.test_cases],
             "generatedFiles": [item.path for item in implementation.files],
             "testFiles": [item["path"] for item in immutable_test_files],
+            "workflowArtifacts": self._build_workflow_artifacts(
+                task_id,
+                analysis,
+                test_cases,
+                test_code,
+            ),
             "attempts": attempts,
             "finalExecution": self._compact_execution(execution),
         }
@@ -676,6 +682,133 @@ class TddEngine:
             "stderr": execution.get("outputs", {}).get("stderr", "")[-12000:],
             "failure": execution.get("failure"),
         }
+
+    @staticmethod
+    def _build_workflow_artifacts(
+        task_id: str,
+        analysis: Any,
+        test_cases: Any,
+        test_code: Any,
+    ) -> dict[str, Any]:
+        requirement_result = asdict(analysis)
+        test_case_result = asdict(test_cases)
+        test_code_result = asdict(test_code)
+        test_files = test_code_result.get("test_files", [])
+
+        files = [
+            {
+                "relativePath": "README.md",
+                "stage": "summary",
+                "title": "Artifact summary",
+                "content": "\n".join(
+                    [
+                        "# AI IDE workflow artifacts",
+                        "",
+                        f"Task: {task_id}",
+                        "",
+                        "## Stage status",
+                        "",
+                        "- 01 Requirement analysis: complete",
+                        "- 02 Test case generation: complete",
+                        "- 03 Test code generation: complete",
+                        "",
+                        "## Generated test file drafts",
+                        "",
+                        *(
+                            [
+                                f"- `03-test-code/files/{item['path']}`"
+                                for item in test_files
+                            ]
+                            or ["- No test file draft has been generated."]
+                        ),
+                        "",
+                        "These files are review snapshots. Generated test code stays under this artifact directory and does not overwrite workspace source files.",
+                        "",
+                    ]
+                ),
+            },
+            {
+                "relativePath": "01-requirement-analysis/requirement-analysis.json",
+                "stage": "requirement_analysis",
+                "title": "Stage 1 requirement analysis",
+                "content": json.dumps(
+                    requirement_result,
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                )
+                + "\n",
+            },
+            {
+                "relativePath": "02-test-cases/test-cases.json",
+                "stage": "test_case_generation",
+                "title": "Stage 2 test cases",
+                "content": json.dumps(
+                    test_case_result,
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                )
+                + "\n",
+            },
+            {
+                "relativePath": "02-test-cases/test-plan.md",
+                "stage": "test_case_generation",
+                "title": "Stage 2 test plan",
+                "content": f"{test_cases.test_plan.rstrip()}\n",
+            },
+            {
+                "relativePath": "03-test-code/manifest.json",
+                "stage": "test_code_generation",
+                "title": "Stage 3 test code manifest",
+                "content": json.dumps(
+                    {
+                        "implementation_plan": test_code_result.get("implementation_plan", []),
+                        "changed_files": test_code_result.get("changed_files", []),
+                        "rationale": test_code_result.get("rationale", ""),
+                        "warnings": test_code_result.get("warnings", []),
+                        "quality_checks": test_code_result.get("quality_checks", {}),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                )
+                + "\n",
+            },
+        ]
+
+        for index, test_file in enumerate(test_files, start=1):
+            path = str(test_file.get("path") or f"generated-test-{index}.txt")
+            safe_path = TddEngine._safe_artifact_relative_path(path, index)
+            content = str(test_file.get("content") or "")
+            files.append(
+                {
+                    "relativePath": f"03-test-code/files/{safe_path}",
+                    "stage": "test_code_generation",
+                    "title": path,
+                    "content": content if content.endswith("\n") else f"{content}\n",
+                }
+            )
+
+        return {
+            "taskId": task_id,
+            "directoryName": task_id,
+            "completedStages": [
+                "requirement_analysis",
+                "test_case_generation",
+                "test_code_generation",
+            ],
+            "files": files,
+        }
+
+    @staticmethod
+    def _safe_artifact_relative_path(path: str, index: int) -> str:
+        parts = []
+        for part in path.replace("\\", "/").split("/"):
+            normalized = part.strip()
+            if normalized and normalized not in {".", ".."}:
+                parts.append(normalized.replace(":", "-"))
+        return "/".join(parts) or f"generated-test-{index}.txt"
 
     @staticmethod
     def _test_files_as_code_files(test_files: list[dict[str, Any]]) -> list[GeneratedCodeFile]:
