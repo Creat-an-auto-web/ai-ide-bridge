@@ -458,6 +458,7 @@ class TddEngine:
                 analysis,
                 test_cases,
                 test_code,
+                implementation,
             ),
             "attempts": attempts,
             "finalExecution": self._compact_execution(execution),
@@ -689,11 +690,14 @@ class TddEngine:
         analysis: Any,
         test_cases: Any,
         test_code: Any,
+        implementation: Any,
     ) -> dict[str, Any]:
         requirement_result = asdict(analysis)
         test_case_result = asdict(test_cases)
         test_code_result = asdict(test_code)
+        implementation_result = asdict(implementation)
         test_files = test_code_result.get("test_files", [])
+        implementation_files = implementation_result.get("files", [])
 
         files = [
             {
@@ -710,19 +714,29 @@ class TddEngine:
                         "",
                         "- 01 Requirement analysis: complete",
                         "- 02 Test case generation: complete",
-                        "- 03 Test code generation: complete",
+                        "- 03 Business implementation: complete",
                         "",
-                        "## Generated test file drafts",
+                        "## Test baseline",
                         "",
                         *(
                             [
-                                f"- `03-test-code/files/{item['path']}`"
+                                f"- `02-test-cases/test-code/{item['path']}`"
                                 for item in test_files
                             ]
                             or ["- No test file draft has been generated."]
                         ),
                         "",
-                        "These files are review snapshots. Generated test code stays under this artifact directory and does not overwrite workspace source files.",
+                        "## Generated business implementation",
+                        "",
+                        *(
+                            [
+                                f"- `03-implementation/files/{item['path']}`"
+                                for item in implementation_files
+                            ]
+                            or ["- No production implementation has been generated."]
+                        ),
+                        "",
+                        "These files are review snapshots. They do not overwrite workspace source files.",
                         "",
                     ]
                 ),
@@ -758,9 +772,9 @@ class TddEngine:
                 "content": f"{test_cases.test_plan.rstrip()}\n",
             },
             {
-                "relativePath": "03-test-code/manifest.json",
-                "stage": "test_code_generation",
-                "title": "Stage 3 test code manifest",
+                "relativePath": "02-test-cases/test-code-manifest.json",
+                "stage": "test_case_generation",
+                "title": "Stage 2 test code baseline manifest",
                 "content": json.dumps(
                     {
                         "implementation_plan": test_code_result.get("implementation_plan", []),
@@ -783,8 +797,41 @@ class TddEngine:
             content = str(test_file.get("content") or "")
             files.append(
                 {
-                    "relativePath": f"03-test-code/files/{safe_path}",
-                    "stage": "test_code_generation",
+                    "relativePath": f"02-test-cases/test-code/{safe_path}",
+                    "stage": "test_case_generation",
+                    "title": path,
+                    "content": content if content.endswith("\n") else f"{content}\n",
+                }
+            )
+
+        files.append(
+            {
+                "relativePath": "03-implementation/manifest.json",
+                "stage": "code_implementation",
+                "title": "Stage 3 business implementation manifest",
+                "content": json.dumps(
+                    {
+                        "implementation_plan": implementation_result.get("implementation_plan", []),
+                        "changed_files": implementation_result.get("changed_files", []),
+                        "rationale": implementation_result.get("rationale", ""),
+                        "test_command": implementation_result.get("test_command", []),
+                        "warnings": implementation_result.get("warnings", []),
+                        "quality_checks": implementation_result.get("quality_checks", {}),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                ) + "\n",
+            }
+        )
+        for index, implementation_file in enumerate(implementation_files, start=1):
+            path = str(implementation_file.get("path") or f"generated-code-{index}.txt")
+            safe_path = TddEngine._safe_artifact_relative_path(path, index)
+            content = str(implementation_file.get("content") or "")
+            files.append(
+                {
+                    "relativePath": f"03-implementation/files/{safe_path}",
+                    "stage": "code_implementation",
                     "title": path,
                     "content": content if content.endswith("\n") else f"{content}\n",
                 }
@@ -796,7 +843,7 @@ class TddEngine:
             "completedStages": [
                 "requirement_analysis",
                 "test_case_generation",
-                "test_code_generation",
+                "code_implementation",
             ],
             "files": files,
         }

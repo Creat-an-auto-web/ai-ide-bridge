@@ -8,6 +8,7 @@ import {
   BridgeSidebarPanelState,
   buildTestCaseGenerationWorkflowDraft,
   buildTestCodeGenerationWorkflowDraft,
+  buildCodeImplementationWorkflowDraft,
   GlobalFeedbackPayload,
   PatchReviewModel,
   RequirementAnalysisAgentSettings,
@@ -19,6 +20,7 @@ import {
   TestCodeExecutionResultPayload,
   TestCodeGenerationResultPayload,
   TestCodeRepairResultPayload,
+  CodeImplementationResultPayload,
   RequirementAnalysisStreamEvent,
   DockerRuntimeStatusPayload,
   SandboxExecutionDebugDraft,
@@ -41,6 +43,8 @@ import {
   toTestCodeExecutionInputPayload,
   toTestCodeGenerationInputPayload,
   toTestCodeGenerationSettingsPayload,
+  toCodeImplementationInputPayload,
+  toCodeImplementationSettingsPayload,
   toTestCodeRepairInputPayload,
   toTestCodeRepairSettingsPayload,
   toRequirementAnalysisAgentSettingsPayload,
@@ -104,6 +108,10 @@ export interface AiIdeBridgeUiState {
   testCodeGenerationResult: TestCodeGenerationResultPayload | null
   testCodeGenerationError: string | null
   testCodeGenerationIsRunning: boolean
+  codeImplementationPlanDraft: string
+  codeImplementationResult: CodeImplementationResultPayload | null
+  codeImplementationError: string | null
+  codeImplementationIsRunning: boolean
   testCodeExecutionCommandDraft: string
   testCodeExecutionResult: TestCodeExecutionResultPayload | null
   testCodeExecutionError: string | null
@@ -751,6 +759,10 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
     testCodeGenerationResult: null,
     testCodeGenerationError: null,
     testCodeGenerationIsRunning: false,
+    codeImplementationPlanDraft: '',
+    codeImplementationResult: null,
+    codeImplementationError: null,
+    codeImplementationIsRunning: false,
     testCodeExecutionCommandDraft: '',
     testCodeExecutionResult: null,
     testCodeExecutionError: null,
@@ -852,6 +864,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
       testCaseGenerationResult: uiState.testCaseGenerationResult,
       testCodeGenerationResult: uiState.testCodeGenerationResult,
       testCodeRepairResult: uiState.testCodeRepairResult,
+      codeImplementationResult: uiState.codeImplementationResult,
     })
   )
 
@@ -1049,6 +1062,9 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         testCaseGenerationError: null,
         testCodeGenerationResult: null,
         testCodeGenerationError: null,
+        codeImplementationPlanDraft: '',
+        codeImplementationResult: null,
+        codeImplementationError: null,
         testCodeExecutionCommandDraft: '',
         testCodeExecutionResult: null,
         testCodeExecutionError: null,
@@ -1153,6 +1169,12 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
                   event.type === 'result'
                     ? null
                     : prev.testCodeGenerationResult,
+                codeImplementationPlanDraft:
+                  event.type === 'result' ? '' : prev.codeImplementationPlanDraft,
+                codeImplementationResult:
+                  event.type === 'result' ? null : prev.codeImplementationResult,
+                codeImplementationError:
+                  event.type === 'result' ? null : prev.codeImplementationError,
                 testCodeExecutionCommandDraft:
                   event.type === 'result'
                     ? ''
@@ -1384,6 +1406,9 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           testCodeGenerationPlanDraft: nextTestCodePlanDraft,
           testCodeGenerationResult: null,
           testCodeGenerationError: null,
+          codeImplementationPlanDraft: '',
+          codeImplementationResult: null,
+          codeImplementationError: null,
           testCodeExecutionCommandDraft: '',
           testCodeExecutionResult: null,
           testCodeExecutionError: null,
@@ -1484,6 +1509,13 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         setUiState((prev) => ({
           ...prev,
           testCodeGenerationResult: envelope.data ?? null,
+          codeImplementationPlanDraft: buildCodeImplementationWorkflowDraft(
+            uiState.requirementAnalysisResult!,
+            uiState.testCaseGenerationResult!,
+            envelope.data.test_files,
+          ),
+          codeImplementationResult: null,
+          codeImplementationError: null,
           testCodeExecutionCommandDraft: '',
           testCodeExecutionResult: null,
           testCodeExecutionError: null,
@@ -1510,6 +1542,79 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
           ...prev,
           testCodeGenerationIsRunning: false,
         }))
+      }
+    },
+    setCodeImplementationPlanDraft(planDraft: string) {
+      setUiState((prev) => ({ ...prev, codeImplementationPlanDraft: planDraft }))
+    },
+    resetCodeImplementationPlanDraft() {
+      const requirementResult = uiState.requirementAnalysisResult
+      const testCaseResult = uiState.testCaseGenerationResult
+      const testFiles = uiState.testCodeRepairResult?.test_files ?? uiState.testCodeGenerationResult?.test_files
+      if (!requirementResult || !testCaseResult || !testFiles?.length) return
+      setUiState((prev) => ({
+        ...prev,
+        codeImplementationPlanDraft: buildCodeImplementationWorkflowDraft(
+          requirementResult,
+          testCaseResult,
+          testFiles,
+        ),
+      }))
+    },
+    async generateBusinessImplementation() {
+      const requirementResult = uiState.requirementAnalysisResult
+      const testCaseResult = uiState.testCaseGenerationResult
+      const testFiles = uiState.testCodeRepairResult?.test_files ?? uiState.testCodeGenerationResult?.test_files
+      if (!requirementResult || !testCaseResult || !testFiles?.length) {
+        setUiState((prev) => ({
+          ...prev,
+          codeImplementationError: '请先生成测试用例与固定测试代码，再生成业务实现。',
+        }))
+        return
+      }
+      setUiState((prev) => ({ ...prev, codeImplementationIsRunning: true, codeImplementationError: null }))
+      try {
+        const contextSource = createVoidRealContextSourceFromAccessor({ accessor: accessorRef.current as never })
+        const repoRoot = await contextSource.getRepoRootPath()
+        if (!repoRoot) throw new Error('当前未检测到仓库根目录，无法生成业务实现。')
+        const payload = {
+          settings: toCodeImplementationSettingsPayload(uiState.requirementAnalysisSettings),
+          input: toCodeImplementationInputPayload(
+            requirementResult,
+            testCaseResult,
+            testFiles,
+            repoRoot,
+            `${uiState.panel.composer.prompt}\n\n${uiState.codeImplementationPlanDraft}`,
+          ),
+        }
+        const response = await bridgeFetchImpl(
+          new URL('/v1/code-implementation/runs', bridgeBaseUrl).toString(),
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+        )
+        const bodyText = await response.text()
+        const envelope = bodyText ? JSON.parse(bodyText) as {
+          success?: boolean; data?: CodeImplementationResultPayload; error?: { message?: string }
+        } : {}
+        if (!response.ok || !envelope.success || !envelope.data) {
+          throw new Error(envelope.error?.message || `业务实现生成失败（HTTP ${response.status}）`)
+        }
+        setUiState((prev) => ({
+          ...prev,
+          codeImplementationResult: envelope.data,
+          testCodeExecutionCommandDraft: envelope.data.test_command.join(' '),
+          testCodeExecutionResult: null,
+          testCodeExecutionError: null,
+          workflowArtifactsStatus: 'idle',
+          workflowArtifactsDirectoryPath: null,
+          workflowArtifactsWrittenFiles: [],
+          workflowArtifactsError: null,
+          latestNotification: { level: 'info', title: 'CodeImplementation', message: `已生成 ${envelope.data.files.length} 个业务实现文件` },
+          finalSummary: `业务实现生成完成，共 ${envelope.data.files.length} 个文件，可在隔离环境中验证。`,
+        }))
+      } catch (error) {
+        setUiState((prev) => ({ ...prev, codeImplementationError: error instanceof Error ? error.message : String(error) }))
+      } finally {
+        setUiState((prev) => ({ ...prev, codeImplementationIsRunning: false }))
       }
     },
     setSandboxDebugDraft(draft: SandboxExecutionDebugDraft) {
@@ -1859,6 +1964,7 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
             repoRoot,
             currentTestFiles,
             commandDraft ?? uiState.testCodeExecutionCommandDraft,
+            uiState.codeImplementationResult?.files ?? [],
           ),
         }
         const response = await bridgeFetchImpl(
@@ -1977,6 +2083,9 @@ export const useAiIdeBridge = (options: UseAiIdeBridgeOptions = {}) => {
         setUiState((prev) => ({
           ...prev,
           testCodeRepairResult: envelope.data ?? null,
+          codeImplementationPlanDraft: '',
+          codeImplementationResult: null,
+          codeImplementationError: null,
           workflowArtifactsStatus: 'idle',
           workflowArtifactsDirectoryPath: null,
           workflowArtifactsWrittenFiles: [],

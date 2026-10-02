@@ -1287,6 +1287,10 @@ class SandboxExecutionBackendService:
             SandboxTestFilePayload.model_validate(test_file.model_dump())
             for test_file in payload.input.test_files
         ]
+        workspace_files = [
+            SandboxWorkspaceFilePayload.model_validate(workspace_file.model_dump())
+            for workspace_file in payload.input.workspace_files
+        ]
         command_text = payload.input.test_command
         if command_text and command_text.strip():
             argv = shlex.split(command_text)
@@ -1300,6 +1304,7 @@ class SandboxExecutionBackendService:
             task_id=payload.input.task_id,
             workspace={"repo_root": payload.input.repo_root},
             test_files=test_files,
+            workspace_files=workspace_files,
             command=command,
             execution_policy=SandboxExecutionPolicyPayload(
                 runtime="local_copy",

@@ -59,7 +59,8 @@ RequirementAnalysis
 - `testFiles`
 - `attempts`
 - `finalExecution`
-- `workflowArtifacts`：一、二、三阶段的可预览文件清单与完整内容。IDE 可先写入
+- `workflowArtifacts`：一、二、三阶段的可预览文件清单与完整内容。第二阶段测试基线
+  位于 `02-test-cases/test-code/`，第三阶段业务实现位于 `03-implementation/`。IDE 可先写入
   `.preview-<task-id>` 目录供用户查看，再由用户选择保留到
   `ai-ide-artifacts/<task-id>/` 或清理预览文件。
 

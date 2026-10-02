@@ -5,11 +5,12 @@ import {
   TestCodeGenerationResultPayload,
 } from './test-code-generation.js'
 import { TestCodeRepairResultPayload } from './test-code-repair.js'
+import { CodeImplementationResultPayload, GeneratedImplementationFilePayload } from './code-implementation.js'
 
 export type WorkflowArtifactStage =
   | 'requirement_analysis'
   | 'test_case_generation'
-  | 'test_code_generation'
+  | 'code_implementation'
 
 export interface WorkflowArtifactFile {
   relativePath: string
@@ -30,6 +31,7 @@ export interface BuildWorkflowArtifactBundleOptions {
   testCaseGenerationResult: TestCaseGenerationResultPayload | null
   testCodeGenerationResult: TestCodeGenerationResultPayload | null
   testCodeRepairResult?: TestCodeRepairResultPayload | null
+  codeImplementationResult?: CodeImplementationResultPayload | null
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -66,7 +68,7 @@ export const parseWorkflowArtifactBundle = (
   const validStages = new Set<WorkflowArtifactStage>([
     'requirement_analysis',
     'test_case_generation',
-    'test_code_generation',
+    'code_implementation',
   ])
   const files: WorkflowArtifactFile[] = []
   for (const rawFile of rawFiles) {
@@ -127,6 +129,7 @@ const buildSummary = (
   taskId: string,
   completedStages: WorkflowArtifactStage[],
   testFiles: GeneratedTestFilePayload[],
+  implementationFiles: GeneratedImplementationFilePayload[],
 ): string => {
   const hasStage = (stage: WorkflowArtifactStage) => completedStages.includes(stage)
   return [
@@ -138,15 +141,21 @@ const buildSummary = (
     '',
     `- 01 Requirement analysis: ${hasStage('requirement_analysis') ? 'complete' : 'not generated'}`,
     `- 02 Test case generation: ${hasStage('test_case_generation') ? 'complete' : 'not generated'}`,
-    `- 03 Test code generation: ${hasStage('test_code_generation') ? 'complete' : 'not generated'}`,
+    `- 03 Business implementation: ${hasStage('code_implementation') ? 'complete' : 'not generated'}`,
     '',
-    '## Generated test file drafts',
+    '## Test baseline',
     '',
     ...(testFiles.length > 0
-      ? testFiles.map((file) => `- \`03-test-code/files/${toSafeRelativePath(file.path, 'generated-test.txt')}\``)
+      ? testFiles.map((file) => `- \`02-test-cases/test-code/${toSafeRelativePath(file.path, 'generated-test.txt')}\``)
       : ['- No test file draft has been generated.']),
     '',
-    'These files are review snapshots. Generated test code stays under this artifact directory and does not overwrite workspace source files.',
+    '## Generated business implementation',
+    '',
+    ...(implementationFiles.length > 0
+      ? implementationFiles.map((file) => `- \`03-implementation/files/${toSafeRelativePath(file.path, 'generated-code.txt')}\``)
+      : ['- No production implementation has been generated.']),
+    '',
+    'These files are review snapshots. They do not overwrite workspace source files.',
     '',
   ].join('\n')
 }
@@ -161,6 +170,7 @@ export const buildWorkflowArtifactBundle = (
 
   const testCaseResult = options.testCaseGenerationResult
   const testCodeResult = options.testCodeGenerationResult
+  const implementationResult = options.codeImplementationResult ?? null
   const repairedTestFiles = options.testCodeRepairResult?.test_files ?? []
   const testFiles = repairedTestFiles.length > 0
     ? repairedTestFiles
@@ -172,15 +182,15 @@ export const buildWorkflowArtifactBundle = (
   if (testCaseResult) {
     completedStages.push('test_case_generation')
   }
-  if (testCodeResult) {
-    completedStages.push('test_code_generation')
+  if (implementationResult) {
+    completedStages.push('code_implementation')
   }
 
   files.push({
     relativePath: 'README.md',
     stage: 'summary',
     title: 'Artifact summary',
-    content: buildSummary(taskId, completedStages, testFiles),
+    content: buildSummary(taskId, completedStages, testFiles, implementationResult?.files ?? []),
   })
   files.push({
     relativePath: '01-requirement-analysis/requirement-analysis.json',
@@ -206,9 +216,9 @@ export const buildWorkflowArtifactBundle = (
 
   if (testCodeResult) {
     files.push({
-      relativePath: '03-test-code/manifest.json',
-      stage: 'test_code_generation',
-      title: 'Stage 3 test code manifest',
+        relativePath: '02-test-cases/test-code-manifest.json',
+        stage: 'test_case_generation',
+        title: 'Stage 2 test code baseline manifest',
       content: toJson({
         implementation_plan: testCodeResult.implementation_plan,
         changed_files: testCodeResult.changed_files,
@@ -227,9 +237,33 @@ export const buildWorkflowArtifactBundle = (
     })
     testFiles.forEach((file, index) => {
       files.push({
-        relativePath: `03-test-code/files/${toSafeRelativePath(file.path, `generated-test-${index + 1}.txt`)}`,
-        stage: 'test_code_generation',
+          relativePath: `02-test-cases/test-code/${toSafeRelativePath(file.path, `generated-test-${index + 1}.txt`)}`,
+          stage: 'test_case_generation',
         title: file.path || `Generated test ${index + 1}`,
+        content: file.content.endsWith('\n') ? file.content : `${file.content}\n`,
+      })
+    })
+  }
+
+  if (implementationResult) {
+    files.push({
+      relativePath: '03-implementation/manifest.json',
+      stage: 'code_implementation',
+      title: 'Stage 3 business implementation manifest',
+      content: toJson({
+        implementation_plan: implementationResult.implementation_plan,
+        changed_files: implementationResult.changed_files,
+        rationale: implementationResult.rationale,
+        test_command: implementationResult.test_command,
+        warnings: implementationResult.warnings,
+        quality_checks: implementationResult.quality_checks,
+      }),
+    })
+    implementationResult.files.forEach((file, index) => {
+      files.push({
+        relativePath: `03-implementation/files/${toSafeRelativePath(file.path, `generated-code-${index + 1}.txt`)}`,
+        stage: 'code_implementation',
+        title: file.path || `Generated implementation ${index + 1}`,
         content: file.content.endsWith('\n') ? file.content : `${file.content}\n`,
       })
     })

@@ -12,10 +12,18 @@ class GeneratedTestFilePayload(BaseModel):
     content: str
 
 
+class GeneratedWorkspaceFilePayload(BaseModel):
+    path: str
+    language: str
+    purpose: str
+    content: str
+
+
 class TestCodeExecutionInputPayload(BaseModel):
     task_id: str
     repo_root: str
     test_files: list[GeneratedTestFilePayload] = Field(default_factory=list)
+    workspace_files: list[GeneratedWorkspaceFilePayload] = Field(default_factory=list)
     test_command: str | None = None
     timeout_seconds: int = 120
 

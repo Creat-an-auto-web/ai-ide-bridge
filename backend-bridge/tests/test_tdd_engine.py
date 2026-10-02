@@ -218,7 +218,7 @@ class TddEngineTest(unittest.IsolatedAsyncioTestCase):
                 [
                     "requirement_analysis",
                     "test_case_generation",
-                    "test_code_generation",
+                    "code_implementation",
                 ],
             )
             artifact_files = {
@@ -231,6 +231,8 @@ class TddEngineTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("02-test-cases/test-cases.json", artifact_files)
             self.assertIn("02-test-cases/test-plan.md", artifact_files)
-            self.assertIn("03-test-code/manifest.json", artifact_files)
-            self.assertIn("03-test-code/files/tests/test_calc.py", artifact_files)
-            self.assertIn("test_add", artifact_files["03-test-code/files/tests/test_calc.py"])
+            self.assertIn("02-test-cases/test-code-manifest.json", artifact_files)
+            self.assertIn("02-test-cases/test-code/tests/test_calc.py", artifact_files)
+            self.assertIn("03-implementation/manifest.json", artifact_files)
+            self.assertIn("03-implementation/files/src/calc.py", artifact_files)
+            self.assertIn("test_add", artifact_files["02-test-cases/test-code/tests/test_calc.py"])

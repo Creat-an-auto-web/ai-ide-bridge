@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import {
   RequirementAnalysisAgentSettings,
+  RequirementAnalysisResultPayload,
   createDefaultRequirementAnalysisSettings,
   toRequirementAnalysisAgentSettingsDisplayPayload,
 } from '../../../../../../../../ai-ide-bridge/frontend-bridge/src/index.js'
@@ -52,6 +53,12 @@ const safeArray = <T,>(value: T[] | null | undefined): T[] => (
   Array.isArray(value) ? value : []
 )
 
+type RequirementCapabilityGroup = RequirementAnalysisResultPayload['capability_groups'][number]
+type RequirementStoryUnit = RequirementAnalysisResultPayload['story_units'][number]
+type RequirementStoryGroup = RequirementCapabilityGroup & {
+  stories: RequirementStoryUnit[]
+}
+
 const splitIntoDisplayGroups = <T,>(items: T[], groupCount: number): T[][] => {
   const normalizedGroupCount = Math.max(1, Math.min(groupCount, items.length || 1))
   const groups = Array.from({ length: normalizedGroupCount }, () => [] as T[])
@@ -97,6 +104,10 @@ export const AiIdeBridgePanel = () => {
     testCodeGenerationResult,
     testCodeGenerationError,
     testCodeGenerationIsRunning,
+    codeImplementationPlanDraft,
+    codeImplementationResult,
+    codeImplementationError,
+    codeImplementationIsRunning,
     testCodeExecutionCommandDraft,
     testCodeExecutionResult,
     testCodeExecutionError,
@@ -189,34 +200,43 @@ export const AiIdeBridgePanel = () => {
     () => toRequirementAnalysisAgentSettingsDisplayPayload(requirementAnalysisSettings),
     [requirementAnalysisSettings],
   )
-  const requirementStoryUnits = safeArray(requirementAnalysisResult?.story_units)
-  const alternateRequirementCapabilityGroups = (
-    requirementAnalysisResult as { capabilityGroups?: typeof requirementAnalysisResult.capability_groups } | null | undefined
-  )?.capabilityGroups
+  const requirementStoryUnits: RequirementStoryUnit[] = safeArray(
+    requirementAnalysisResult?.story_units,
+  )
+  const alternateRequirementCapabilityGroups: RequirementCapabilityGroup[] = safeArray<RequirementCapabilityGroup>((
+    requirementAnalysisResult as (RequirementAnalysisResultPayload & {
+      capabilityGroups?: RequirementCapabilityGroup[]
+    }) | null
+  )?.capabilityGroups)
+  const primaryRequirementCapabilityGroups: RequirementCapabilityGroup[] = safeArray<RequirementCapabilityGroup>(
+    requirementAnalysisResult?.capability_groups,
+  )
   const requirementAnalysisSummary = requirementAnalysisResult?.analysis_summary ?? {
     capability_group_count: safeArray(
-      safeArray(requirementAnalysisResult?.capability_groups).length > 0
-        ? requirementAnalysisResult?.capability_groups
+      primaryRequirementCapabilityGroups.length > 0
+        ? primaryRequirementCapabilityGroups
         : alternateRequirementCapabilityGroups,
     ).length,
     story_unit_count: requirementStoryUnits.length,
   }
-  const requirementCapabilityGroups = safeArray(
-    safeArray(requirementAnalysisResult?.capability_groups).length > 0
-      ? requirementAnalysisResult?.capability_groups
-      : alternateRequirementCapabilityGroups,
+  const requirementCapabilityGroups: RequirementCapabilityGroup[] = (
+    primaryRequirementCapabilityGroups.length > 0
+      ? primaryRequirementCapabilityGroups
+      : alternateRequirementCapabilityGroups
   )
-  const requirementStoryGroups = useMemo(() => {
+  const requirementStoryGroups = useMemo<RequirementStoryGroup[]>(() => {
     if (!requirementAnalysisResult) {
       return []
     }
 
-    const storyById = new Map(requirementStoryUnits.map((storyUnit) => [storyUnit.id, storyUnit]))
+    const storyById = new Map<string, RequirementStoryUnit>(
+      requirementStoryUnits.map((storyUnit) => [storyUnit.id, storyUnit]),
+    )
     const groupedStoryIds = new Set<string>()
-    const groups = requirementCapabilityGroups.map((group) => {
+    const groups: RequirementStoryGroup[] = requirementCapabilityGroups.map((group) => {
       const stories = safeArray(group.story_ids)
         .map((storyId) => storyById.get(storyId))
-        .filter((storyUnit): storyUnit is NonNullable<ReturnType<typeof storyById.get>> => Boolean(storyUnit))
+        .filter((storyUnit): storyUnit is RequirementStoryUnit => Boolean(storyUnit))
 
       stories.forEach((storyUnit) => groupedStoryIds.add(storyUnit.id))
 
@@ -228,7 +248,7 @@ export const AiIdeBridgePanel = () => {
 
     const ungroupedStories = requirementStoryUnits.filter((storyUnit) => !groupedStoryIds.has(storyUnit.id))
     if (groups.length === 0 && requirementAnalysisSummary.capability_group_count > 1 && ungroupedStories.length > 0) {
-      return splitIntoDisplayGroups(ungroupedStories, requirementAnalysisSummary.capability_group_count).map((stories, index) => ({
+      return splitIntoDisplayGroups(ungroupedStories, requirementAnalysisSummary.capability_group_count).map((stories, index): RequirementStoryGroup => ({
         id: `__derived_capability_group_${index + 1}__`,
         title: `功能组 ${index + 1}`,
         goal: '当前结果提供了功能组数量，但未携带可展示的分组明细；这里按 story 顺序临时分组展示。',
@@ -271,7 +291,9 @@ export const AiIdeBridgePanel = () => {
       story_granularity: 0,
     },
   }
-  const requirementVerificationIssues = safeArray(requirementVerification.issues)
+  const requirementVerificationIssues = safeArray<RequirementAnalysisResultPayload['verification']['issues'][number]>(
+    requirementVerification.issues,
+  )
   const requirementWarnings = safeArray(requirementAnalysisResult?.warnings)
   const requirementDebugPayload = requirementAnalysisResult?.debug_payload ?? null
   const requirementDebugFailedStory = requirementDebugPayload?.failed_story ?? null
@@ -349,14 +371,15 @@ export const AiIdeBridgePanel = () => {
       || hasPassedCompositionVerification
     )
   )
+  const activeTestFiles = testCodeRepairResult?.test_files ?? testCodeGenerationResult?.test_files ?? []
   const canGenerateTestCode = Boolean(testCaseGenerationResult) && !testCodeGenerationIsRunning
-  const canRunGeneratedTests = Boolean(testCodeGenerationResult) && !testCodeExecutionIsRunning
+  const canGenerateBusinessImplementation = Boolean(activeTestFiles.length) && !codeImplementationIsRunning
+  const canRunGeneratedTests = Boolean(activeTestFiles.length && codeImplementationResult) && !testCodeExecutionIsRunning
   const canRepairGeneratedTests = (
-    Boolean(testCodeExecutionResult)
+    testCodeExecutionResult !== null
     && !testCodeRepairIsRunning
     && testCodeExecutionResult.evaluation.decision === 'repair'
   )
-  const activeTestFiles = testCodeRepairResult?.test_files ?? testCodeGenerationResult?.test_files ?? []
   const reviewSummaryPoints = safeArray(userReviewGuidance?.summary_points)
   const reviewSuggestions = safeArray(userReviewGuidance?.suggestions)
   const reviewClarificationQuestions = safeArray(userReviewGuidance?.clarification_questions)
@@ -378,6 +401,9 @@ export const AiIdeBridgePanel = () => {
   const testCodeChangedFiles = safeArray(testCodeGenerationResult?.changed_files)
   const testCodeWarnings = safeArray(testCodeGenerationResult?.warnings)
   const testCodeFiles = safeArray(testCodeGenerationResult?.test_files)
+  const implementationPlan = safeArray(codeImplementationResult?.implementation_plan)
+  const implementationFiles = safeArray(codeImplementationResult?.files)
+  const implementationWarnings = safeArray(codeImplementationResult?.warnings)
   const writtenTestFiles = safeArray(testCodeExecutionResult?.artifacts?.written_files)
   const failedTests = safeArray(testCodeExecutionResult?.failed_tests)
   const passedTests = safeArray(testCodeExecutionResult?.passed_tests)
@@ -1149,7 +1175,7 @@ export const AiIdeBridgePanel = () => {
               <div style={{ fontSize: 12, marginBottom: 2, color: 'var(--vscode-input-foreground)' }}>
                 Story 审核树：默认只展示功能组，展开后可查看 story 标题和正文。
               </div>
-              {requirementStoryGroups.map((group) => (
+              {requirementStoryGroups.map((group: RequirementStoryGroup) => (
                 <details
                   key={group.id}
                   style={{
@@ -1731,6 +1757,72 @@ export const AiIdeBridgePanel = () => {
       {testCodeGenerationResult && (
         <div style={sectionStyle}>
           <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
+            阶段三：业务实现代码生成
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
+            使用阶段二的测试代码作为不可修改的基线，只生成业务实现文件；生成结果可先在下方查看，并在隔离环境中与测试代码一起验证。
+          </div>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+            <span>Business Implementation Draft</span>
+            <textarea
+              value={codeImplementationPlanDraft}
+              onChange={(event) => bridge.setCodeImplementationPlanDraft(event.target.value)}
+              placeholder='业务实现约束会在生成测试代码后自动填入，也可补充模块边界和兼容性要求。'
+              style={{ ...inputStyle, minHeight: 140, resize: 'vertical' }}
+            />
+          </label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <button
+              onClick={() => { void bridge.generateBusinessImplementation() }}
+              disabled={!canGenerateBusinessImplementation}
+              style={{ ...buttonStyle, opacity: canGenerateBusinessImplementation ? 1 : 0.55, background: canGenerateBusinessImplementation ? 'rgba(92, 196, 137, 0.18)' : 'rgba(255, 255, 255, 0.03)' }}
+            >
+              {codeImplementationIsRunning ? '业务实现生成中' : '生成业务实现'}
+            </button>
+            <button
+              onClick={() => bridge.resetCodeImplementationPlanDraft()}
+              disabled={!activeTestFiles.length}
+              style={{ ...buttonStyle, opacity: activeTestFiles.length ? 1 : 0.55 }}
+            >
+              重置实现 draft
+            </button>
+          </div>
+          {codeImplementationError && (
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--vscode-errorForeground)' }}>
+              业务实现生成错误：{codeImplementationError}
+            </div>
+          )}
+          {codeImplementationResult && (
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                实现计划：{implementationPlan.join(' -> ')}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--vscode-input-foreground)' }}>
+                变更文件：{safeArray(codeImplementationResult.changed_files).join('、')} · 测试命令：{safeArray(codeImplementationResult.test_command).join(' ')}
+              </div>
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, lineHeight: 1.6, color: 'var(--vscode-input-foreground)', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--vscode-panel-border)', borderRadius: 8, padding: '10px 12px' }}>
+                {codeImplementationResult.rationale}
+              </pre>
+              {implementationWarnings.length > 0 && (
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7 }}>
+                  {implementationWarnings.map((warning) => <li key={warning}>{warning}</li>)}
+                </ul>
+              )}
+              {implementationFiles.map((file) => (
+                <div key={file.path} style={{ border: '1px solid var(--vscode-panel-border)', borderRadius: 8, padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{file.path}</div>
+                  <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>{file.language} · {file.purpose}</div>
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, lineHeight: 1.6, color: 'var(--vscode-input-foreground)' }}>{file.content}</pre>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {testCodeGenerationResult && (
+        <div style={sectionStyle}>
+          <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--vscode-editor-foreground)' }}>
             下一阶段：隔离运行与 Repair
           </div>
           <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--vscode-input-foreground)' }}>
@@ -1939,7 +2031,7 @@ export const AiIdeBridgePanel = () => {
           <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.7, color: 'var(--vscode-input-foreground)' }}>
             阶段一 需求分析：已生成
             {' · '}阶段二 测试用例：{workflowArtifactCompletedStages.includes('test_case_generation') ? '已生成' : '未生成'}
-            {' · '}阶段三 测试代码：{workflowArtifactCompletedStages.includes('test_code_generation') ? '已生成' : '未生成'}
+            {' · '}阶段三 业务实现：{workflowArtifactCompletedStages.includes('code_implementation') ? '已生成' : '未生成'}
           </div>
           <details style={{ marginTop: 8 }}>
             <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--vscode-editor-foreground)' }}>

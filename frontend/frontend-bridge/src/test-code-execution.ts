@@ -1,4 +1,5 @@
 import { GeneratedTestFilePayload } from './test-code-generation.js'
+import { GeneratedImplementationFilePayload } from './code-implementation.js'
 
 export type SandboxExecutionStatus =
   | 'passed'
@@ -113,6 +114,7 @@ export interface TestCodeExecutionRunInputPayload {
   task_id: string
   repo_root: string
   test_files: GeneratedTestFilePayload[]
+  workspace_files: GeneratedImplementationFilePayload[]
   test_command: string | null
   timeout_seconds: number
 }
@@ -244,11 +246,13 @@ export const toTestCodeExecutionInputPayload = (
   repoRoot: string,
   testFiles: GeneratedTestFilePayload[],
   testCommand: string,
+  workspaceFiles: GeneratedImplementationFilePayload[] = [],
   timeoutSeconds = 120,
 ): TestCodeExecutionRunInputPayload => ({
   task_id: taskId,
   repo_root: repoRoot,
   test_files: testFiles,
+  workspace_files: workspaceFiles,
   test_command: testCommand.trim() || null,
   timeout_seconds: timeoutSeconds,
 })
